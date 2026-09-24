@@ -1,0 +1,216 @@
+@page "/hr/reports/employee-detail"
+@page "/hr/{TenantKey}/reports/employee-detail"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Text
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IEmployeeReportService Reports
+@inject IExcelExporter Excel
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
+
+<PageTitle>Employee Detail Report | HR Portal</PageTitle>
+
+@* Named-only destination (scopedocs/web-portal/10 §1): no reference layout, so the table shows the record as stored. *@
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="EMPLOYEE REPORT" Title="Employee Detail Report"
+             Subtitle="Every employee with designation, placement, grade and reporting line."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Division
+            <select value="@DivisionCode" @onchange="args => ChangeAsync(() => DivisionCode = Text(args))">
+                <option value="">All divisions</option>
+                @foreach (var option in Options(MasterCategories.Division))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Department
+            <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
+                <option value="">All departments</option>
+                @foreach (var option in Options(MasterCategories.Department))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Status
+            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="">Everyone</option>
+            </select>
+        </label>
+        <label>
+            Search
+            <input type="search" placeholder="Name, number, title or email" value="@Search"
+                   @onchange="args => ChangeAsync(() => Search = Text(args))" />
+        </label>
+        <button class="hr-button small ghost" type="button" disabled="@(!CanExport || Rows.Count == 0)"
+                title="@(CanExport ? null : "Needs REPORTS.EXPORT")" @onclick="ExportAsync">⬇ Export</button>
+        <button class="hr-button small ghost" type="button" disabled="@(Rows.Count == 0)" @onclick="PrintAsync">🖨 Print</button>
+    </Filters>
+
+    <ChildContent>
+        <section class="org-tiles">
+            <div><span>Employees</span><strong>@Rows.Count</strong></div>
+            <div class="@(Rows.Any(row => row.GradeCode is null) ? "warn" : null)">
+                <span>No grade</span><strong>@Rows.Count(row => row.GradeCode is null)</strong><small>cannot be paid</small>
+            </div>
+            <div><span>No manager recorded</span><strong>@Rows.Count(row => row.ManagerId is null)</strong></div>
+            <div><span>On probation</span><strong>@Rows.Count(row => row.EmploymentStatus == "Probation")</strong></div>
+        </section>
+
+        <section class="hr-panel">
+            @if (IsLoading)
+            {
+                <p class="hr-empty">Loading employees…</p>
+            }
+            else if (Rows.Count == 0)
+            {
+                <p class="hr-empty">Nobody matches these filters.</p>
+            }
+            else
+            {
+                <div id="rep-print-area" class="pay-table-scroll">
+                    <table class="pay-table">
+                        <thead>
+                            <tr>
+                                <th>Employee</th><th>Designation</th><th>Department</th><th>Division</th><th>Location</th>
+                                <th>Grade</th><th>Joined</th><th>Type</th><th>Status</th><th>Reports to</th><th>Team</th>
+                                <th>Email</th><th>Phone</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Rows)
+                            {
+                                <tr @key="row.EmployeeId">
+                                    <td>
+                                        <span class="pay-person">
+                                            <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                                            <span><strong>@row.DisplayName</strong><small>@row.EmployeeNumber</small></span>
+                                        </span>
+                                    </td>
+                                    <td>@(row.JobTitle ?? "—")</td>
+                                    <td>@row.DepartmentName</td>
+                                    <td>@row.DivisionName</td>
+                                    <td>@row.LocationName</td>
+                                    <td>@(row.GradeName ?? "—")</td>
+                                    <td>@row.JoinedOn.ToString("dd MMM yyyy")</td>
+                                    <td>@row.EmploymentType</td>
+                                    <td><span class="hr-tag tone-@(row.IsActive ? "success" : "neutral")">@row.EmploymentStatus</span></td>
+                                    <td>@(row.ManagerName ?? "—")</td>
+                                    <td>@(row.DirectReports == 0 ? "—" : row.DirectReports.ToString())</td>
+                                    <td>@(row.Email ?? "—")</td>
+                                    <td>@(row.Phone ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private IReadOnlyList<EmployeeDirectoryRowDto> Rows = [];
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+
+    private string DivisionCode = string.Empty;
+    private string DepartmentCode = string.Empty;
+    private string Status = "Active";
+    private string Search = string.Empty;
+
+    private bool IsLoading = true;
+    private bool CanExport;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanExport = await PortalCaller.HasAsync("REPORTS.EXPORT");
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Rows = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery
+            {
+                DivisionCode = DivisionCode,
+                DepartmentCode = DepartmentCode,
+                Status = Status,
+                Search = Search
+            });
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Rows = [];
+            LoadError = $"This account does not hold {denied.Permission}, so the report cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ChangeAsync(Action change)
+    {
+        change();
+        await LoadAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        var rows = Rows.ToList();
+        var sheet = new ExcelSheet("Employees", "Employee detail report",
+            $"{rows.Count} employee(s) · exported {DateTime.Now:dd MMM yyyy, h:mm tt}",
+            [
+                new("Employee Number"), new("Name"), new("Designation"), new("Department"), new("Division"), new("Location"), new("Grade"),
+                new("Joined", ExcelFormat.Date), new("Type"), new("Status"), new("Reports To"), new("Direct Reports", ExcelFormat.Integer),
+                new("Email"), new("Phone")
+            ],
+            rows.Select(row => ExcelDownload.Row(row.EmployeeNumber, row.DisplayName, row.JobTitle, row.DepartmentName, row.DivisionName,
+                row.LocationName, row.GradeName, row.JoinedOn, row.EmploymentType, row.EmploymentStatus, row.ManagerName,
+                row.DirectReports, row.Email, row.Phone)).ToList());
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"employee-detail-report-{DateTime.Today:yyyy-MM-dd}.xlsx", sheet);
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#rep-print-area");
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+}

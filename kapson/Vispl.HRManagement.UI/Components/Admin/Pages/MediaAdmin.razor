@@ -1,0 +1,81 @@
+@page "/admin/media"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject IMediaLibraryService MediaLibraryService
+
+<PageTitle>Media | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav />
+    <main class="admin-page">
+        <div class="admin-page-heading"><div><span class="admin-kicker">ASSET MANAGEMENT</span><h1>Media library</h1><p>Upload reusable logos and career imagery. Files are stored outside the web root and streamed through stable media URLs.</p></div></div>
+        <div class="admin-context-bar">
+            <label>Client<select value="@TenantKey" @onchange="ChangeTenant">@foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }</select></label>
+            <label class="admin-upload-button">@(IsUploading ? "Uploading…" : "Upload image")<InputFile OnChange="UploadAsync" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" disabled="@IsUploading" /></label>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="admin-alert @StatusClass">@StatusMessage</div> }
+
+        <section class="admin-panel">
+            <div class="admin-section-title"><div><span>@MediaAssets.Count</span><h2>Tenant assets</h2></div><small>PNG, JPEG, WebP, GIF or SVG · maximum 10 MB</small></div>
+            @if (MediaAssets.Count == 0)
+            {
+                <div class="admin-empty-state"><h2>No media yet</h2><p>Upload the first logo or career image for this client.</p></div>
+            }
+            else
+            {
+                <div class="admin-media-grid">
+                    @foreach (var asset in MediaAssets)
+                    {
+                        <article class="admin-media-card">
+                            <div><img src="@asset.PublicUrl" alt="@asset.OriginalFileName" loading="lazy" /></div>
+                            <strong title="@asset.OriginalFileName">@asset.OriginalFileName</strong>
+                            <small>@FormatBytes(asset.Length) · @asset.CreatedUtc.ToLocalTime().ToString("dd MMM yyyy")</small>
+                            <code>@asset.PublicUrl</code>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tenant")] public string? RequestedTenant { get; set; }
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<MediaAssetDto> MediaAssets { get; set; } = [];
+    private string TenantKey { get; set; } = "kapson";
+    private bool IsUploading { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = Tenants.Any(item => item.TenantKey == RequestedTenant) ? RequestedTenant! : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await RefreshAsync();
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        TenantKey = args.Value?.ToString() ?? TenantKey;
+        StatusMessage = null;
+        await RefreshAsync();
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            IsUploading = true; StatusMessage = null;
+            var file = args.File;
+            await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            await MediaLibraryService.UploadAsync(TenantKey, file.Name, file.ContentType, file.Size, stream);
+            await RefreshAsync();
+            StatusClass = "success"; StatusMessage = $"{file.Name} uploaded to the {TenantKey} media library.";
+        }
+        catch (Exception exception) { StatusClass = "error"; StatusMessage = exception.Message; }
+        finally { IsUploading = false; }
+    }
+
+    private async Task RefreshAsync() => MediaAssets = await MediaLibraryService.GetAllAsync(TenantKey);
+    private static string FormatBytes(long length) => length >= 1024 * 1024 ? $"{length / 1024d / 1024d:0.0} MB" : $"{length / 1024d:0.0} KB";
+}

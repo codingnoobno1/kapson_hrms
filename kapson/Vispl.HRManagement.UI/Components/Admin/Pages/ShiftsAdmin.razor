@@ -1,0 +1,401 @@
+@page "/admin/shifts"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject IShiftConfigurationService ShiftConfiguration
+
+<PageTitle>Shifts | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="shifts" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">WORKFORCE</span>
+                <h1>Shifts</h1>
+                <p>When the working day starts and ends, and how much lateness is tolerated. Attendance measures every arrival against these, so a change here changes what counts as late from now on.</p>
+            </div>
+            <div class="admin-context-bar-inline">
+                <label>Client
+                    <select value="@TenantKey" @onchange="ChangeTenant">
+                        @foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        <div class="admin-masters-shell admin-leave-shell">
+
+            <section class="admin-masters-list-panel admin-panel">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@Definitions.Count</span>
+                        <h2>Shifts</h2>
+                    </div>
+                    <button class="admin-button secondary" type="button" @onclick="NewDefinition">+ Add shift</button>
+                </div>
+                <div class="admin-master-list">
+                    @foreach (var definition in Definitions)
+                    {
+                        <button type="button"
+                                class="admin-master-item @(EditorModel.Id != 0 && EditorModel.Id == definition.Id ? "active" : null)"
+                                @onclick="() => EditDefinition(definition)">
+                            <code>@definition.Code</code>
+                            <span>
+                                <strong>@definition.Name</strong>
+                                <small>
+                                    @definition.StartTime.ToString("HH\\:mm")–@definition.EndTime.ToString("HH\\:mm")
+                                    · @(definition.ExpectedMinutes / 60)h @(definition.ExpectedMinutes % 60)m
+                                    @if (definition.IsDefault) { <text> · default</text> }
+                                    @if (!definition.IsActive) { <text> · inactive</text> }
+                                    @if (definition.AssignedCount > 0) { <text> · @definition.AssignedCount assigned</text> }
+                                </small>
+                            </span>
+                        </button>
+                    }
+                    @if (Definitions.Count == 0)
+                    {
+                        <p class="admin-empty">No shifts yet. Attendance will fall back to a 09:00 day.</p>
+                    }
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                <EditForm Model="EditorModel" OnValidSubmit="SaveAsync">
+                    <DataAnnotationsValidator />
+                    <div class="admin-section-title">
+                        <div><h2>@(EditorModel.Id == 0 ? "New shift" : EditorModel.Name)</h2></div>
+                    </div>
+
+                    @if (EditorModel.Id != 0 && EditorModel.AssignedCount > 0)
+                    {
+                        <div class="admin-alert warning">
+                            @EditorModel.AssignedCount employee(s) work this shift. Changing the times changes
+                            what counts as late for them from now on; days already computed keep their result
+                            until they are recalculated.
+                        </div>
+                    }
+
+                    <div class="admin-form-grid">
+                        <label>Code
+                            <InputText @bind-Value="EditorModel.Code" disabled="@(EditorModel.Id != 0)" placeholder="GENERAL" />
+                            <small>Permanent once saved.</small>
+                        </label>
+                        <label>Name
+                            <InputText @bind-Value="EditorModel.Name" placeholder="General shift" />
+                        </label>
+
+                        <label>Start
+                            <input type="time" value="@EditorModel.StartTime.ToString("HH\\:mm")" @onchange="SetStart" />
+                        </label>
+                        <label>End
+                            <input type="time" value="@EditorModel.EndTime.ToString("HH\\:mm")" @onchange="SetEnd" />
+                        </label>
+
+                        <label>Unpaid break (minutes)
+                            <InputNumber @bind-Value="EditorModel.BreakMinutes" />
+                        </label>
+                        <label>Grace (minutes)
+                            <InputNumber @bind-Value="EditorModel.GraceMinutes" />
+                            <small>Arrivals within this are on time.</small>
+                        </label>
+
+                        <div class="span-two">
+                            <span class="admin-field-label">Working days</span>
+                            <div class="admin-day-toggles">
+                                <label><InputCheckbox @bind-Value="EditorModel.Monday" /><span>Mon</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Tuesday" /><span>Tue</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Wednesday" /><span>Wed</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Thursday" /><span>Thu</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Friday" /><span>Fri</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Saturday" /><span>Sat</span></label>
+                                <label><InputCheckbox @bind-Value="EditorModel.Sunday" /><span>Sun</span></label>
+                            </div>
+                            <small>A day left off is a rest day: no punches on it is not an absence.</small>
+                        </div>
+
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.CrossesMidnight" />
+                            <span>Crosses midnight<small>Tick for a night shift, where the end time is on the next day.</small></span>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.IsDefault" />
+                            <span>Default shift<small>Used for anyone with no assignment. Exactly one shift is the default.</small></span>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.IsActive" />
+                            <span>Active<small>An inactive shift cannot be assigned.</small></span>
+                        </label>
+                    </div>
+
+                    <p class="admin-form-note">
+                        Paid time: <strong>@(EditorModel.ExpectedMinutes / 60)h @(EditorModel.ExpectedMinutes % 60)m</strong>
+                        — the span less the unpaid break. This is what a full day is measured against.
+                    </p>
+
+                    <ValidationSummary />
+
+                    <div class="admin-form-actions">
+                        <button class="admin-button" type="submit" disabled="@IsSaving">
+                            @(IsSaving ? "Saving…" : "Save shift")
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+
+        <section class="admin-panel">
+            <div class="admin-section-title">
+                <div>
+                    <span>@Assignments.Count</span>
+                    <h2>Who works which shift</h2>
+                </div>
+            </div>
+
+            @if (Definitions.Count > 0)
+            {
+                <div class="admin-form-grid">
+                    <label>Employee
+                        <select @onchange="SetAssignEmployee">
+                            <option value="">Choose an employee</option>
+                            @foreach (var person in Staff)
+                            {
+                                <option value="@person.Id">
+                                    @person.Name — @person.DepartmentCode
+                                    @(person.CurrentShiftCode is null ? "(default)" : $"({person.CurrentShiftCode})")
+                                </option>
+                            }
+                        </select>
+                    </label>
+                    <label>Shift
+                        <select @onchange="SetAssignShift">
+                            <option value="">Choose a shift</option>
+                            @foreach (var definition in Definitions.Where(item => item.IsActive))
+                            {
+                                <option value="@definition.Id">@definition.Name (@definition.Code)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Effective from
+                        <input type="date" value="@AssignFrom.ToString("yyyy-MM-dd")" @onchange="SetAssignFrom" />
+                    </label>
+                    <label>Effective to (optional)
+                        <input type="date" @onchange="SetAssignTo" />
+                        <small>Leave blank for an open-ended assignment.</small>
+                    </label>
+                </div>
+                <div class="admin-form-actions">
+                    <button class="admin-button" type="button" @onclick="AssignAsync" disabled="@IsSaving">Assign shift</button>
+                </div>
+            }
+
+            @if (Assignments.Count == 0)
+            {
+                <p class="admin-empty">Nobody is assigned a shift yet, so everyone falls back to the default.</p>
+            }
+            else
+            {
+                <table class="admin-table">
+                    <thead>
+                        <tr><th>Employee</th><th>Department</th><th>Shift</th><th>From</th><th>To</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var assignment in Assignments)
+                        {
+                            <tr>
+                                <td>@assignment.EmployeeName</td>
+                                <td>@assignment.DepartmentCode</td>
+                                <td>@assignment.ShiftName <code>@assignment.ShiftCode</code></td>
+                                <td>@assignment.EffectiveFrom.ToString("dd MMM yyyy")</td>
+                                <td>@(assignment.EffectiveTo?.ToString("dd MMM yyyy") ?? "open")</td>
+                                <td>
+                                    <button class="admin-button secondary" type="button"
+                                            @onclick="() => RemoveAssignmentAsync(assignment.Id)">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants = [];
+    private IReadOnlyList<ShiftDefinitionAdminDto> Definitions = [];
+    private IReadOnlyList<ShiftAssignmentAdminDto> Assignments = [];
+    private IReadOnlyList<AssignableEmployeeDto> Staff = [];
+
+    private ShiftDefinitionAdminDto EditorModel = new();
+    private string TenantKey = "kapson";
+    private string? StatusMessage;
+    private string StatusClass = "success";
+    private bool IsSaving;
+
+    private long AssignEmployeeId;
+    private long AssignShiftId;
+    private DateOnly AssignFrom = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly? AssignTo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await RefreshAsync();
+        NewDefinition();
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        var requested = args.Value?.ToString();
+        TenantKey = Tenants.Any(tenant => tenant.TenantKey == requested)
+            ? requested!
+            : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+
+        StatusMessage = null;
+        await RefreshAsync();
+        NewDefinition();
+    }
+
+    private void SetStart(ChangeEventArgs args)
+    {
+        if (TimeOnly.TryParse(args.Value?.ToString(), out var parsed)) { EditorModel.StartTime = parsed; }
+    }
+
+    private void SetEnd(ChangeEventArgs args)
+    {
+        if (TimeOnly.TryParse(args.Value?.ToString(), out var parsed)) { EditorModel.EndTime = parsed; }
+    }
+
+    private void SetAssignEmployee(ChangeEventArgs args) =>
+        AssignEmployeeId = long.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+
+    private void SetAssignShift(ChangeEventArgs args) =>
+        AssignShiftId = long.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+
+    private void SetAssignFrom(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed)) { AssignFrom = parsed; }
+    }
+
+    private void SetAssignTo(ChangeEventArgs args) =>
+        AssignTo = DateOnly.TryParse(args.Value?.ToString(), out var parsed) ? parsed : null;
+
+    private void NewDefinition() => EditorModel = new ShiftDefinitionAdminDto
+    {
+        TenantKey = TenantKey,
+        IsActive = true
+    };
+
+    private void EditDefinition(ShiftDefinitionAdminDto definition)
+    {
+        StatusMessage = null;
+        EditorModel = new ShiftDefinitionAdminDto
+        {
+            Id = definition.Id,
+            TenantKey = definition.TenantKey,
+            Code = definition.Code,
+            Name = definition.Name,
+            StartTime = definition.StartTime,
+            EndTime = definition.EndTime,
+            BreakMinutes = definition.BreakMinutes,
+            GraceMinutes = definition.GraceMinutes,
+            Monday = definition.Monday,
+            Tuesday = definition.Tuesday,
+            Wednesday = definition.Wednesday,
+            Thursday = definition.Thursday,
+            Friday = definition.Friday,
+            Saturday = definition.Saturday,
+            Sunday = definition.Sunday,
+            CrossesMidnight = definition.CrossesMidnight,
+            IsDefault = definition.IsDefault,
+            IsActive = definition.IsActive,
+            AssignedCount = definition.AssignedCount
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            EditorModel.TenantKey = TenantKey;
+            var id = await ShiftConfiguration.SaveDefinitionAsync(EditorModel);
+            await RefreshAsync();
+
+            var saved = Definitions.FirstOrDefault(item => item.Id == id);
+            if (saved is not null) { EditDefinition(saved); }
+
+            StatusClass = "success";
+            StatusMessage = $"{EditorModel.Name} saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task AssignAsync()
+    {
+        if (AssignEmployeeId == 0 || AssignShiftId == 0)
+        {
+            StatusClass = "error";
+            StatusMessage = "Choose both an employee and a shift.";
+            return;
+        }
+
+        try
+        {
+            IsSaving = true;
+            await ShiftConfiguration.AssignAsync(new AssignShiftRequest
+            {
+                TenantKey = TenantKey,
+                EmployeeId = AssignEmployeeId,
+                ShiftDefinitionId = AssignShiftId,
+                EffectiveFrom = AssignFrom,
+                EffectiveTo = AssignTo
+            }, assignedBy: null);
+
+            await RefreshAsync();
+            StatusClass = "success";
+            StatusMessage = "Shift assigned.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task RemoveAssignmentAsync(long assignmentId)
+    {
+        try
+        {
+            IsSaving = true;
+            await ShiftConfiguration.RemoveAssignmentAsync(TenantKey, assignmentId);
+            await RefreshAsync();
+            StatusClass = "success";
+            StatusMessage = "Assignment removed. That employee falls back to the default shift.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task RefreshAsync()
+    {
+        Definitions = await ShiftConfiguration.GetDefinitionsAsync(TenantKey);
+        Assignments = await ShiftConfiguration.GetAssignmentsAsync(TenantKey);
+        Staff = await ShiftConfiguration.GetAssignableEmployeesAsync(TenantKey);
+    }
+}

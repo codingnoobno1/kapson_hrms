@@ -1,0 +1,324 @@
+@page "/people"
+@inject PeopleApi PeopleClient
+@using Vispl.HRManagement.Contracts.Mobile.Employee
+@using Vispl.HRManagement.Contracts.Mobile.Shared
+
+@* The employee directory, and the app-access decision that belongs beside it. *@
+<PageTitle>People</PageTitle>
+
+<h1 class="page-title">People</h1>
+
+@if (tab != "access")
+{
+    <SearchField Placeholder="Search by name or number..." Value="@search" ValueChanged="OnSearchChanged" />
+}
+<FilterChipGroup Chips="Tabs" Selected="@tab" SelectedChanged="OnTabChanged" />
+
+@if (isLoading)
+{
+    <SkeletonList Count="5" Label="Loading people" />
+}
+else if (tab == "access")
+{
+    @if (issued is { } credentials)
+    {
+        @* Shown once. The password is never stored in readable form and cannot be fetched
+           again, so it is handed over now or the account has to be reset. *@
+        <article class="card">
+            <div class="card-head">
+                <span class="list-item-title">@credentials.UserName can sign in</span>
+                <StatusPill Label="@credentials.RoleName" State="active" />
+            </div>
+            <p class="credential">@credentials.TemporaryPassword</p>
+            <p class="card-note">
+                Give this to the employee now — it is shown once and cannot be recovered.
+                They must replace it at first sign-in.
+            </p>
+            <button class="btn-ghost" type="button" @onclick="() => issued = null">Dismiss</button>
+        </article>
+    }
+
+    @if (accessError is { } problem)
+    {
+        <p class="inline-error">@problem</p>
+    }
+
+    @if (access is { Count: > 0 })
+    {
+        <div class="stagger">
+            @foreach (var person in access)
+            {
+                <article class="card">
+                    <div class="card-head">
+                        <div class="list-item-main">
+                            <span class="list-item-title">@person.DisplayName</span>
+                            <span class="list-item-meta">@person.EmployeeNumber · @person.DepartmentCode</span>
+                        </div>
+                        <StatusPill Label="@StateLabel(person.State)" State="@PillState(person.State)" />
+                    </div>
+
+                    @if (person.Explanation is { } why)
+                    {
+                        <p class="card-note">@why</p>
+                    }
+
+                    <div class="applicant-actions">
+                        @if (person.State == MobileAccessStates.NotGranted)
+                        {
+                            <button class="btn-primary" type="button"
+                                    disabled="@(pending == person.EmployeeId)"
+                                    @onclick="() => GrantAsync(person)">
+                                @(pending == person.EmployeeId ? "Approving…" : "Approve access")
+                            </button>
+                        }
+                        else if (person.State == MobileAccessStates.Suspended)
+                        {
+                            <button class="btn-primary" type="button"
+                                    disabled="@(pending == person.EmployeeId)"
+                                    @onclick="() => SetAccessAsync(person, true)">Restore</button>
+                        }
+                        else if (person.State != MobileAccessStates.Blocked)
+                        {
+                            <button class="btn-ghost" type="button"
+                                    disabled="@(pending == person.EmployeeId)"
+                                    @onclick="() => SetAccessAsync(person, false)">Suspend</button>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+    else if (access is not null)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><AppIcon Name="user-plus" Size="40" StrokeWidth="1.4" /></div>
+            <h2>Nobody waiting</h2>
+            <p>Every employee has already been given a decision.</p>
+        </div>
+    }
+    else if (accessResult is not null)
+    {
+        <ProblemView Outcome="accessResult.Outcome" Problem="accessResult.Problem" OnRetry="LoadAsync" />
+    }
+}
+else if (people is { Count: > 0 })
+{
+    <div class="stagger">
+        @foreach (var person in people)
+        {
+            <article class="card pressable" @onclick="() => OpenAsync(person)">
+                <div class="card-head">
+                    <div class="list-item-main">
+                        <span class="list-item-title">@person.DisplayName</span>
+                        <span class="list-item-meta">@person.EmployeeNumber · @person.JobTitle</span>
+                        <span class="list-item-meta">@person.Department · @person.Location</span>
+                    </div>
+                    <StatusPill Label="@person.Status.Name" State="@person.Status.Tone" />
+                </div>
+            </article>
+        }
+    </div>
+}
+else if (people is not null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="search" Size="40" StrokeWidth="1.4" /></div>
+        <h2>No people</h2>
+        <p>Nobody matches the current filter.</p>
+    </div>
+}
+else if (result is not null)
+{
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@if (sheetOpen)
+{
+    <BottomSheet Title="Employee" OnClose="CloseSheet">
+        @if (detail is not null)
+        {
+            <div class="sheet-summary">
+                <div class="sheet-summary-head">
+                    <div>
+                        <div class="list-item-title">@detail.Summary.DisplayName</div>
+                        <div class="list-item-meta">@detail.Summary.EmployeeNumber</div>
+                    </div>
+                    <StatusPill Label="@detail.Summary.Status.Name" State="@detail.Summary.Status.Tone" />
+                </div>
+            </div>
+
+            <SectionHeader Title="Employment" Icon="briefcase" />
+            <KeyValueCard Rows="EmploymentRows(detail)" />
+
+            @if (detail.Actions.Count > 0)
+            {
+                @* Straight from the service, refusal reason included: "you cannot do this"
+                   without a why is the complaint every HR tool earns. *@
+                <SectionHeader Title="What you may do" Icon="check" />
+                <div class="action-list">
+                    @foreach (var action in detail.Actions)
+                    {
+                        <div class="action-row">
+                            <span class="action-name">@action.Action</span>
+                            <span class="@(action.IsAllowed ? "action-allowed" : "action-blocked")">
+                                @(action.IsAllowed ? "Allowed" : action.Reason ?? "Not allowed")
+                            </span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+        else if (detailResult is not null)
+        {
+            <ProblemView Outcome="detailResult.Outcome" Problem="detailResult.Problem" />
+        }
+        else
+        {
+            <LoadingView Text="Loading record…" />
+        }
+    </BottomSheet>
+}
+
+@code {
+    private static readonly FilterChipGroup.Chip[] Tabs =
+    [
+        new("all", "Everyone"),
+        new("Active", "Active"),
+        new("access", "App access")
+    ];
+
+    private string search = string.Empty;
+    private string tab = "all";
+    private bool isLoading = true;
+    private bool sheetOpen;
+    private string? pending;
+
+    private ApiResult<CursorPage<EmployeeListItemDto>>? result;
+    private IReadOnlyList<EmployeeListItemDto>? people;
+
+    private ApiResult<IReadOnlyList<EmployeeMobileAccessDto>>? accessResult;
+    private IReadOnlyList<EmployeeMobileAccessDto>? access;
+    private GrantMobileAccessResultDto? issued;
+    private string? accessError;
+
+    private ApiResult<EmployeeOverviewDto>? detailResult;
+    private EmployeeOverviewDto? detail;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnSearchChanged(string value)
+    {
+        search = value;
+        await LoadAsync();
+    }
+
+    private async Task OnTabChanged(string key)
+    {
+        tab = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+
+        if (tab == "access")
+        {
+            accessResult = await PeopleClient.GetMobileAccessAsync();
+            access = accessResult.Data;
+        }
+        else
+        {
+            result = await PeopleClient.GetAsync(
+                query: string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                status: tab == "all" ? null : tab);
+            people = result.Data?.Items;
+        }
+
+        isLoading = false;
+    }
+
+    private async Task GrantAsync(EmployeeMobileAccessDto person)
+    {
+        pending = person.EmployeeId;
+        accessError = null;
+
+        var granted = await PeopleClient.GrantMobileAccessAsync(person.EmployeeId);
+        pending = null;
+
+        if (granted.IsSuccess)
+        {
+            issued = granted.Data;
+            await LoadAsync();
+            return;
+        }
+
+        // Reported in place rather than replacing the list: the other rows are still valid,
+        // and losing them would hide the work still to do.
+        accessError = granted.Problem?.Title ?? "That grant was refused.";
+    }
+
+    private async Task SetAccessAsync(EmployeeMobileAccessDto person, bool isActive)
+    {
+        pending = person.EmployeeId;
+        accessError = null;
+
+        var changed = await PeopleClient.SetMobileAccessAsync(person.EmployeeId, isActive);
+        pending = null;
+
+        if (!changed.IsSuccess)
+        {
+            accessError = changed.Problem?.Title ?? "That change was refused.";
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task OpenAsync(EmployeeListItemDto person)
+    {
+        sheetOpen = true;
+        detail = null;
+        detailResult = null;
+        StateHasChanged();
+
+        detailResult = await PeopleClient.GetByIdAsync(person.Id);
+        detail = detailResult.Data;
+    }
+
+    private void CloseSheet()
+    {
+        sheetOpen = false;
+        detail = null;
+        detailResult = null;
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> EmploymentRows(EmployeeOverviewDto detail) =>
+    [
+        ("Job title", detail.Summary.JobTitle),
+        ("Department", detail.Summary.Department),
+        ("Location", detail.Summary.Location),
+        ("Reports to", detail.Manager?.DisplayName ?? "Nobody recorded"),
+        ("Joined", detail.JoinedOn?.ToString("dd MMM yyyy") ?? "Not recorded")
+    ];
+
+    /// <summary>The states are contract values; nobody should have to read camel case.</summary>
+    private static string StateLabel(string state) => state switch
+    {
+        MobileAccessStates.NotGranted => "Not granted",
+        MobileAccessStates.AwaitingFirstSignIn => "Not signed in",
+        MobileAccessStates.Active => "Active",
+        MobileAccessStates.Suspended => "Suspended",
+        MobileAccessStates.Blocked => "Cannot grant",
+        _ => state
+    };
+
+    private static string PillState(string state) => state switch
+    {
+        MobileAccessStates.Active => "active",
+        MobileAccessStates.AwaitingFirstSignIn => "pending",
+        MobileAccessStates.Suspended => "inactive",
+        MobileAccessStates.Blocked => "rejected",
+        _ => "draft"
+    };
+}

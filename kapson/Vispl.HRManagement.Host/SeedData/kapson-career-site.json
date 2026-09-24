@@ -1,0 +1,70 @@
+{
+  "tenantKey": "kapson",
+  "companyName": "Kapson",
+  "portalName": "Careers",
+  "templateKey": "executive",
+  "logoUrl": null,
+  "brandInitial": "K",
+  "primaryColor": "#0b1530",
+  "accentColor": "#e3b13d",
+  "surfaceColor": "#f7f3e9",
+  "seoTitle": "Careers at Kapson",
+  "seoDescription": "Explore opportunities and build your career with Kapson.",
+  "heroEyebrow": "CAREERS AT KAPSON",
+  "heroTitle": "Build what’s next. Grow with us.",
+  "heroSummary": "Join more than 1,500 people shaping memorable retail, brand and digital experiences across India.",
+  "heroCardTitle": "Ideas become impact here.",
+  "heroCardSubtitle": "Make your mark with Kapson.",
+  "introEyebrow": "WHO WE ARE",
+  "introTitle": "A place for ambitious people to do meaningful work.",
+  "introBody": "Kapson brings together retail craft, customer obsession and digital thinking. We give people ownership, room to learn and the support to turn bold ideas into everyday impact.",
+  "valuesTitle": "Bring your whole self. Do your best work.",
+  "hiringTitle": "A hiring process built around people.",
+  "hiringSummary": "Clear conversations, timely updates and space for both sides to find the right fit.",
+  "closingTitle": "Ready to make your mark?",
+  "closingSummary": "Explore opportunities across Kapson and find the team where your experience can create the most value.",
+  "aboutHeroTitle": "Built on trust. Growing through people.",
+  "aboutHeroSummary": "For more than three decades, Kapson has connected ambitious brands, talented teams and customers across India.",
+  "aboutStoryTitle": "We grow by staying close to what matters.",
+  "aboutStoryBody": "Our story is grounded in a simple belief: great businesses are built by people who care about the details and understand the bigger picture.\n\nFrom our retail roots to a broader digital and operational organisation, Kapson continues to evolve while keeping customers, teams and long-term relationships at the centre.",
+  "careersTitle": "Find work that moves you forward.",
+  "careersSummary": "Explore opportunities across retail, digital commerce, finance, people and brand experience.",
+  "footerTagline": "Building remarkable retail and digital experiences through remarkable people.",
+  "contactAddress": "Mohali, Punjab, India",
+  "contactEmail": "careers@kapsons.com",
+  "navigationItems": [
+    { "label": "Home", "url": "/kapson_home", "sortOrder": 1 },
+    { "label": "About us", "url": "/kapson/about", "sortOrder": 2 },
+    { "label": "Open positions", "url": "/kapson/careers", "sortOrder": 3 }
+  ],
+  "heroStatistics": [
+    { "code": "01", "title": "30+", "body": "Years of excellence", "sortOrder": 1 },
+    { "code": "02", "title": "1,500+", "body": "People growing together", "sortOrder": 2 },
+    { "code": "03", "title": "25+", "body": "Locations and teams", "sortOrder": 3 }
+  ],
+  "values": [
+    { "code": "01", "title": "Own your growth", "body": "Learn continuously, take on meaningful challenges and build a career shaped by your strengths.", "sortOrder": 1 },
+    { "code": "02", "title": "Win together", "body": "Work alongside generous, capable people who share context, celebrate progress and support each other.", "sortOrder": 2 },
+    { "code": "03", "title": "Stay curious", "body": "Question familiar answers, listen closely to customers and turn insight into better experiences.", "sortOrder": 3 },
+    { "code": "04", "title": "Create real impact", "body": "See how your decisions improve teams, stores, digital journeys and the communities we serve.", "sortOrder": 4 }
+  ],
+  "hiringSteps": [
+    { "code": "01", "title": "Apply", "body": "Choose a role and tell us what you want to build next.", "sortOrder": 1 },
+    { "code": "02", "title": "Connect", "body": "Meet our talent team and explore the opportunity together.", "sortOrder": 2 },
+    { "code": "03", "title": "Meet the team", "body": "Discuss the work, your experience and how we collaborate.", "sortOrder": 3 },
+    { "code": "04", "title": "Offer and join", "body": "Agree the details and begin a thoughtful onboarding journey.", "sortOrder": 4 }
+  ],
+  "principles": [
+    { "code": "01", "title": "Customer closeness", "body": "We listen, learn and create experiences people value.", "sortOrder": 1 },
+    { "code": "02", "title": "Long-term thinking", "body": "We build capability and relationships designed to last.", "sortOrder": 2 },
+    { "code": "03", "title": "Responsible growth", "body": "We grow with discipline, curiosity and respect for people.", "sortOrder": 3 }
+  ],
+  "homeSections": [
+    { "key": "hero", "displayName": "Hero", "sortOrder": 1, "isVisible": true },
+    { "key": "intro", "displayName": "Introduction", "sortOrder": 2, "isVisible": true },
+    { "key": "openings", "displayName": "Open positions", "sortOrder": 3, "isVisible": true },
+    { "key": "values", "displayName": "Values", "sortOrder": 4, "isVisible": true },
+    { "key": "hiring", "displayName": "Hiring process", "sortOrder": 5, "isVisible": true },
+    { "key": "closing", "displayName": "Closing call to action", "sortOrder": 6, "isVisible": true }
+  ]
+}

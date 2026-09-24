@@ -1,0 +1,35 @@
+@page "/admin/dashboard"
+@attribute [Authorize(Policy = "AdminPortal")]
+@using Vispl.HRManagement.Contracts.Admin
+
+<PageTitle>HR Management Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav />
+    <main class="admin-page">
+        <div class="admin-page-heading"><div><span class="admin-kicker">PLATFORM</span><h1>HR Management Admin</h1><p>Manage every client’s career-site configuration, recruitment masters, themes, media and openings.</p></div></div>
+        <div class="admin-module-grid admin-module-grid-wide">
+            <a href="/admin/tenants"><span>01</span><h2>Clients &amp; Tenants</h2><p>Domains, tenant status and portal access.</p></a>
+            <a href="/admin/career-site"><span>02</span><h2>Career Site Config</h2><p>Theme, logo, sections, page content and publishing.</p></a>
+            <a href="/admin/masters"><span>03</span><h2>HR Masters</h2><p>Gender, grades, leave types, locations, religion, qualifications and all controlled-value lists.</p></a>
+            <a href="/admin/jobs"><span>04</span><h2>Job Openings</h2><p>Create, update, publish and unpublish opportunities.</p></a>
+            <a href="/admin/media"><span>05</span><h2>Media Library</h2><p>Upload and reuse tenant logos and career imagery.</p></a>
+            <a href="/admin/accounts"><span>06</span><h2>Accounts</h2><p>Provision client HR and employee identities, passwords and role assignments.</p></a>
+            <a href="/admin/roles"><span>07</span><h2>Roles &amp; Permissions</h2><p>Protected system roles and client-specific permission bundles.</p></a>
+            <a href="/admin/leave-policies"><span>08</span><h2>Leave Policies</h2><p>Entitlement, accrual, carry-forward, notice and evidence rules the leave engine enforces.</p></a>
+            <a href="/admin/holidays"><span>09</span><h2>Holiday Calendar</h2><p>Days excluded from chargeable leave, per client and location.</p></a>
+            <a href="/admin/shifts"><span>10</span><h2>Shifts</h2><p>Working patterns and who works them. Attendance measures every arrival against these.</p></a>
+        </div>
+
+        <div class="admin-page-subheading"><h2>Quick access — HR Master groups</h2></div>
+        <div class="admin-module-grid">
+            @foreach (var (group, icon, cats) in MasterCategories.Groups)
+            {
+                <a href="/admin/masters?cat=@cats[0]">
+                    <span>@icon</span>
+                    <h2>@group</h2>
+                    <p>@string.Join(", ", cats.Take(3).Select(MasterCategories.DisplayName))@(cats.Length > 3 ? " …" : "")</p>
+                </a>
+            }
+        </div>
+    </main>
+</div>

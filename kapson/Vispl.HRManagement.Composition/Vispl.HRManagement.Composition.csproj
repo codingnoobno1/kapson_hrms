@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vispl.HRManagement.UI\Vispl.HRManagement.UI.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Identity\Vispl.HRManagement.Identity.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Worker\Vispl.HRManagement.Worker.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.BM\Vispl.HRManagement.BM.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.DL\Vispl.HRManagement.DL.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Contracts\Vispl.HRManagement.Contracts.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Mail\Vispl.HRManagement.Mail.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

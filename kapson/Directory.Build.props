@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Vispl.HRManagement.Identity'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.Composition'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.Worker'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.BM'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.DL'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.UI'
+                     Or '$(MSBuildProjectName)' == 'Vispl.HRManagement.Mail'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

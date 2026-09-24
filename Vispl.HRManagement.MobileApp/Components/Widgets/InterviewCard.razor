@@ -1,0 +1,34 @@
+@* RW-37 InterviewCard. The one tinted surface: pale blue plate with a solid
+   blue accent bar down the left edge. The tint means "interview", not a state. *@
+<div class="interview-card">
+    <div class="interview-head">
+        <div>
+            <div class="interview-name">@Interview.CandidateName</div>
+            <div class="interview-role">@Interview.Role</div>
+        </div>
+        <StatusPill Label="@Interview.StatusLabel" State="past-interview" />
+    </div>
+    <div class="interview-when">
+        <span><AppIcon Name="calendar" Size="14" /> @Interview.Date.ToString("yyyy-MM-dd")</span>
+        <span><AppIcon Name="clock" Size="14" /> @Interview.Time.ToString("HH:mm")</span>
+    </div>
+    <div class="interview-round">@Interview.Round</div>
+
+    @* Offered only where a caller asked for it. The dashboard's strip is a glance, not a
+       place to cancel somebody's interview by mistake. *@
+    @if (OnCancel.HasDelegate && Interview.CanCancel)
+    {
+        <div class="applicant-actions">
+            <button class="btn-ghost" type="button" disabled="@IsBusy" @onclick="OnCancel">
+                @(IsBusy ? "Cancelling…" : "Cancel interview")
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public InterviewModel Interview { get; set; } = default!;
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+}

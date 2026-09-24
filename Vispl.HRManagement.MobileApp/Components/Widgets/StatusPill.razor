@@ -1,0 +1,24 @@
+@* RW-24 StatusPill. Eight approved states; anything unmapped renders neutral
+   rather than an arbitrary colour. The label is always present, so state is
+   never carried by colour alone. *@
+<span class="status-pill @CssClass">@Label</span>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    /// <summary>One of: shortlisted, past-interview, inactive, active, draft, pending, expired, rejected.</summary>
+    [Parameter] public string? State { get; set; }
+
+    private string CssClass => State?.ToLowerInvariant() switch
+    {
+        "shortlisted" => "status-shortlisted",
+        "past-interview" or "info" => "status-past-interview",
+        "inactive" => "status-inactive",
+        "active" => "status-active",
+        "draft" => "status-draft",
+        "pending" or "pending-review" => "status-pending",
+        "expired" => "status-expired",
+        "rejected" => "status-rejected",
+        _ => string.Empty
+    };
+}

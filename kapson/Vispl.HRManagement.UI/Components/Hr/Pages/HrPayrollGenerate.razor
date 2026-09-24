@@ -1,0 +1,881 @@
+@page "/hr/payroll/generate"
+@page "/hr/{TenantKey}/payroll/generate"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using System.Text
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IPayrollService Payroll
+@inject IExcelExporter Excel
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
+
+<PageTitle>Generate Employee Salary | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="SALARY MANAGEMENT" Title="Generate Employee Salary"
+             Subtitle="Pay is prorated by attendance: days marked absent and days before joining are unpaid."
+             Error="@LoadError">
+    <ChildContent>
+        <div class="pay-crumbs">
+            <nav aria-label="Breadcrumb">
+                <a href="@Href("dashboard")">Dashboard</a> <span>›</span>
+                <a href="@Href("settings")">System Settings</a> <span>›</span>
+                <strong>Generate Employee Salary</strong>
+            </nav>
+            <div class="pay-crumb-actions">
+                <a class="pay-btn outline" href="@Href("payroll/bank-accounts")">🏦 Bank Accounts</a>
+                <button class="pay-btn outline" type="button" disabled title="Salary History has no approved layout yet">🕐 Salary History</button>
+            </div>
+        </div>
+
+        <section class="pay-controls">
+            <div class="pay-controls-intro">
+                <h2>⚙️ Salary Generation Controls</h2>
+                <p>Select month, year and scope, then generate payroll</p>
+            </div>
+            <div class="pay-controls-fields">
+                <label>
+                    MONTH
+                    <select value="@Month" @onchange="args => ChangeScopeAsync(() => Month = int.Parse(args.Value!.ToString()!))">
+                        @for (var month = 1; month <= 12; month++)
+                        {
+                            <option value="@month">@CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month)</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    YEAR
+                    <select value="@Year" @onchange="args => ChangeScopeAsync(() => Year = int.Parse(args.Value!.ToString()!))">
+                        @for (var year = DateTime.Today.Year - 3; year <= DateTime.Today.Year + 1; year++)
+                        {
+                            <option value="@year">@year</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    SALARY TYPE
+                    <select disabled title="Only monthly salary is configured">
+                        <option>Monthly Salary</option>
+                    </select>
+                </label>
+                <label>
+                    DIVISION
+                    <select value="@DivisionCode" @onchange="args => ChangeScopeAsync(() => DivisionCode = args.Value?.ToString() ?? string.Empty)">
+                        <option value="">All Divisions</option>
+                        @foreach (var division in DivisionOptions)
+                        {
+                            <option @key="division.Code" value="@division.Code">@division.Name</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    DEPARTMENT
+                    <select value="@DepartmentCode" @onchange="args => ChangeScopeAsync(() => DepartmentCode = args.Value?.ToString() ?? string.Empty)">
+                        <option value="">All Departments</option>
+                        @foreach (var department in DepartmentOptions)
+                        {
+                            <option @key="department.Code" value="@department.Code">@department.Name</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="pay-controls-actions">
+                <button class="pay-btn primary" type="button" disabled="@(!CanGenerate || IsBusy)"
+                        title="@GenerateHint()" @onclick="() => GenerateAsync(Array.Empty<string>())">
+                    📊 @(IsBusy ? "Working…" : "Generate Salary")
+                </button>
+                <button class="pay-btn muted" type="button" disabled="@(Workspace is null)" @onclick="OpenPreview">👁 Preview</button>
+            </div>
+        </section>
+
+        @if (Notice is not null)
+        {
+            <div class="hr-alert success compact">@Notice</div>
+        }
+        @if (ActionError is not null)
+        {
+            <div class="hr-alert error compact">@ActionError</div>
+        }
+
+        @if (Workspace is { } workspace)
+        {
+            @if (workspace.Run.IsApproved)
+            {
+                <div class="pay-banner approved">
+                    ✅ @workspace.MonthLabel payroll was approved on @workspace.Run.ApprovedUtc?.ToLocalTime().ToString("dd MMM yyyy, h:mm tt").
+                    It is locked: salaries can now be marked as paid or transferred, but not regenerated.
+                </div>
+            }
+
+            <section class="pay-tiles">
+                <div class="pay-tile rose">
+                    <span class="pay-tile-label">👥 TOTAL EMPLOYEES</span>
+                    <strong>@workspace.Summary.TotalEmployees</strong>
+                    <small>Active @workspace.Summary.ActiveDivisionCount @(workspace.Summary.ActiveDivisionCount == 1 ? "division" : "divisions")</small>
+                </div>
+                <div class="pay-tile yellow">
+                    <span class="pay-tile-label">💰 GROSS PAYROLL</span>
+                    <strong>@Lakhs(workspace.Summary.GrossPayroll)</strong>
+                    <small>@workspace.MonthLabel</small>
+                </div>
+                <div class="pay-tile green">
+                    <span class="pay-tile-label">⏳ PENDING</span>
+                    <strong>@workspace.Summary.Pending</strong>
+                    <small>Not yet generated</small>
+                </div>
+                <div class="pay-tile lavender">
+                    <span class="pay-tile-label">✓ GENERATED</span>
+                    <strong>@workspace.Summary.Generated</strong>
+                    <small>Ready to disburse</small>
+                </div>
+            </section>
+
+            <div class="pay-tabs" role="tablist">
+                <button type="button" role="tab" class="@(Tab == PayTab.Division ? "active" : null)" @onclick="() => Tab = PayTab.Division">
+                    🏢 Division-Wise <span>@workspace.Divisions.Count</span>
+                </button>
+                <button type="button" role="tab" class="@(Tab == PayTab.Department ? "active" : null)" @onclick="() => Tab = PayTab.Department">
+                    📁 Department-Wise <span>@DepartmentCount</span>
+                </button>
+                <button type="button" role="tab" class="@(Tab == PayTab.Individual ? "active" : null)" @onclick="() => Tab = PayTab.Individual">
+                    👤 Individual <span>@workspace.Employees.Count</span>
+                </button>
+            </div>
+
+            <section class="pay-panel">
+                <div class="pay-toolbar">
+                    <div class="pay-filters">
+                        @if (Tab == PayTab.Division)
+                        {
+                            <label>Status @StatusSelect(DivisionStatus, value => DivisionStatus = value)</label>
+                            <label>
+                                Min Employees
+                                <input type="number" min="0" placeholder="e.g. 20" value="@MinEmployees"
+                                       @oninput="args => MinEmployees = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                        }
+                        else
+                        {
+                            <label>
+                                Division
+                                <select value="@FilterDivision" @onchange="args => FilterDivision = args.Value?.ToString() ?? string.Empty">
+                                    <option value="">All Divisions</option>
+                                    @foreach (var group in workspace.DepartmentGroups)
+                                    {
+                                        <option @key="group.DivisionCode" value="@group.DivisionCode">@group.DivisionName</option>
+                                    }
+                                </select>
+                            </label>
+                            <label>
+                                Department
+                                <select value="@FilterDepartment" @onchange="args => FilterDepartment = args.Value?.ToString() ?? string.Empty">
+                                    <option value="">All Departments</option>
+                                    @foreach (var department in workspace.DepartmentGroups.SelectMany(group => group.Departments).DistinctBy(row => row.DepartmentCode))
+                                    {
+                                        <option @key="department.DepartmentCode" value="@department.DepartmentCode">@department.DepartmentName</option>
+                                    }
+                                </select>
+                            </label>
+                            <label>Status @StatusSelect(FilterStatus, value => FilterStatus = value, Tab == PayTab.Individual)</label>
+                            @if (Tab == PayTab.Individual)
+                            {
+                                <label>
+                                    Shift
+                                    <select value="@FilterShift" @onchange="args => FilterShift = args.Value?.ToString() ?? string.Empty">
+                                        <option value="">All Shifts</option>
+                                        @foreach (var shift in workspace.Employees.Select(row => row.ShiftCode).OfType<string>().Distinct().Order())
+                                        {
+                                            <option @key="shift" value="@shift">@shift</option>
+                                        }
+                                    </select>
+                                </label>
+                            }
+                        }
+                        @if (ShowSearch)
+                        {
+                            <label>
+                                Search
+                                <input type="search" placeholder="Name, number or department" value="@Search"
+                                       @oninput="args => Search = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                        }
+                    </div>
+                    <div class="pay-tools">
+                        <button class="pay-icon" type="button" title="Refresh" disabled="@IsLoading" @onclick="LoadAsync">⟳</button>
+                        <button class="pay-icon @(ShowSearch ? "on" : null)" type="button" title="Search" @onclick="() => ShowSearch = !ShowSearch">🔍</button>
+                        <button class="pay-btn outline" type="button" @onclick="ExportAsync">⬇ Export</button>
+                        <button class="pay-btn outline" type="button" @onclick="PrintAsync">🖨 Print</button>
+                    </div>
+                </div>
+
+                <div id="pay-print-area" class="pay-table-scroll">
+                    @if (IsLoading)
+                    {
+                        <p class="hr-empty">Loading payroll…</p>
+                    }
+                    else if (Tab == PayTab.Division)
+                    {
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Division</th><th>Employees</th><th>Departments</th><th>Basic</th><th>HRA</th><th>Allowances</th>
+                                    <th>Gross</th><th>Deductions</th><th>Net Payable</th><th>Status</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in VisibleDivisions)
+                                {
+                                    <tr @key="row.DivisionCode">
+                                        <td class="strong">@row.DivisionName</td>
+                                        <td>@row.EmployeeCount</td>
+                                        <td>@row.DepartmentCount</td>
+                                        <td>@Rupees(row.Totals.Basic)</td>
+                                        <td>@Rupees(row.Totals.Hra)</td>
+                                        <td>@Rupees(row.Totals.Conveyance + row.Totals.OtherAllowances)</td>
+                                        <td>@Rupees(row.Totals.Gross)</td>
+                                        <td class="pay-minus">@Rupees(row.Totals.Deductions)</td>
+                                        <td class="pay-net">@Rupees(row.Totals.NetPayable)</td>
+                                        <td>@StatusPill(row.Status)</td>
+                                        <td>@RowGenerate(workspace.Employees.Where(employee => Same(employee.DivisionCode, row.DivisionCode)))</td>
+                                    </tr>
+                                }
+                                @if (VisibleDivisions.Count == 0)
+                                {
+                                    <tr><td colspan="11" class="pay-empty">No division matches these filters.</td></tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="pay-total">
+                                    <td>Grand Total</td><td></td><td></td>
+                                    <td>@Rupees(VisibleDivisionTotal.Basic)</td>
+                                    <td>@Rupees(VisibleDivisionTotal.Hra)</td>
+                                    <td>@Rupees(VisibleDivisionTotal.Conveyance + VisibleDivisionTotal.OtherAllowances)</td>
+                                    <td>@Rupees(VisibleDivisionTotal.Gross)</td>
+                                    <td class="pay-minus">@Rupees(VisibleDivisionTotal.Deductions)</td>
+                                    <td class="pay-net">@Rupees(VisibleDivisionTotal.NetPayable)</td>
+                                    <td></td><td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    }
+                    else if (Tab == PayTab.Department)
+                    {
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Department</th><th>Division</th><th>Employees</th><th>Basic</th><th>HRA</th><th>Conv.</th><th>Other</th>
+                                    <th>Gross</th><th>PF</th><th>ESI</th><th>TDS</th><th title="Professional tax, loan and advance recovery, and other deductions">PT/Other</th>
+                                    <th>Net Payable</th><th>Status</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in VisibleDepartmentGroups)
+                                {
+                                    <tr class="pay-group" @key="group.DivisionCode"><td colspan="15">🏢 @group.DivisionName</td></tr>
+                                    @foreach (var row in group.Departments)
+                                    {
+                                        <tr @key="group.DivisionCode + '|' + row.DepartmentCode">
+                                            <td class="strong">@row.DepartmentName</td>
+                                            <td>@row.DivisionName</td>
+                                            <td>@row.EmployeeCount</td>
+                                            @AmountCells(row.Totals)
+                                            <td>@StatusPill(row.Status)</td>
+                                            <td>@RowGenerate(workspace.Employees.Where(employee => Same(employee.DivisionCode, row.DivisionCode) && Same(employee.DepartmentCode, row.DepartmentCode)))</td>
+                                        </tr>
+                                    }
+                                    <tr class="pay-subtotal">
+                                        <td>🏢 @group.DivisionName</td><td></td><td></td>
+                                        @AmountCells(group.Subtotal, deductionsInRed: true)
+                                        <td></td><td></td>
+                                    </tr>
+                                }
+                                @if (VisibleDepartmentGroups.Count == 0)
+                                {
+                                    <tr><td colspan="15" class="pay-empty">No department matches these filters.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th><th>Division</th><th>Department</th><th>Designation</th><th>Shift</th><th>Work Days</th>
+                                    <th>Basic</th><th>HRA</th><th>Conv.</th><th>Other</th><th>Gross</th><th>PF</th><th>ESI</th><th>TDS</th>
+                                    <th title="Professional tax, loan and advance recovery, and other deductions">PT/Other</th><th>Net</th><th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in VisibleEmployees)
+                                {
+                                    <tr @key="row.EmployeeId">
+                                        <td>
+                                            <span class="pay-person">
+                                                <span class="pay-avatar c@(AvatarTone(row.DisplayName))">@Initials(row.DisplayName)</span>
+                                                <span><strong>@row.DisplayName</strong><small>@row.EmployeeNumber</small></span>
+                                            </span>
+                                        </td>
+                                        <td>@row.DivisionName</td>
+                                        <td>@row.DepartmentName</td>
+                                        <td>@row.Designation</td>
+                                        <td>@(row.ShiftCode ?? "—")</td>
+                                        <td>
+                                            <span class="pay-days @(row.WorkedDays < row.ExpectedDays ? "short" : null)">
+                                                @row.WorkedDays/@row.ExpectedDays
+                                                <i style="width:@(row.ExpectedDays == 0 ? 0 : row.WorkedDays * 100 / row.ExpectedDays)%"></i>
+                                            </span>
+                                        </td>
+                                        @if (row.PendingReason is { } reason)
+                                        {
+                                            <td colspan="10"><span class="hr-tag tone-warning">Cannot generate</span> <small class="hr-hint">@reason</small></td>
+                                        }
+                                        else
+                                        {
+                                            <td>@Rupees(row.Amounts.Basic)</td>
+                                            <td>@Rupees(row.Amounts.Hra)</td>
+                                            <td>@Rupees(row.Amounts.Conveyance)</td>
+                                            <td>@Rupees(row.Amounts.OtherAllowances)</td>
+                                            <td>@Rupees(row.Amounts.Gross)</td>
+                                            <td>@Rupees(row.Amounts.Pf)</td>
+                                            <td>@Rupees(row.Amounts.Esi)</td>
+                                            <td>@Rupees(row.Amounts.Tds)</td>
+                                            <td>@Rupees(row.Amounts.OtherDeductions)</td>
+                                            <td class="pay-net">@Rupees(row.Amounts.NetPayable)</td>
+                                        }
+                                        <td>@StatusPill(row.Status)</td>
+                                    </tr>
+                                }
+                                @if (VisibleEmployees.Count == 0)
+                                {
+                                    <tr><td colspan="17" class="pay-empty">No employee matches these filters.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div class="pay-footer">
+                    @if (Tab == PayTab.Division)
+                    {
+                        <span>@DepartmentCount Departments</span>
+                        <button class="pay-btn primary" type="button" disabled="@(!CanGenerate || IsBusy)" @onclick="() => GenerateAsync(Array.Empty<string>())">📊 Generate All</button>
+                    }
+                    else if (Tab == PayTab.Department)
+                    {
+                        <span>@VisibleDepartmentGroups.Sum(group => group.Departments.Count) Departments</span>
+                        <button class="pay-btn primary" type="button" disabled="@(!CanGenerate || IsBusy)" @onclick="() => GenerateAsync(Array.Empty<string>())">📊 Generate All</button>
+                    }
+                    else
+                    {
+                        <span>@VisibleEmployees.Count Employees</span>
+                        <span class="pay-footer-actions">
+                            <button class="pay-btn primary" type="button" disabled="@(!CanGenerate || IsBusy || workspace.Summary.Pending == 0)"
+                                    @onclick="() => GenerateAsync(Array.Empty<string>())">📊 Generate Pending</button>
+                            <button class="pay-btn amber" type="button" disabled="@(!CanTransfer)" title="@(CanTransfer ? null : "Needs PAYROLL.TRANSFER")"
+                                    @onclick="() => OpenModal(PayModal.Transfer)">🏦 Transfer to Bank</button>
+                            <button class="pay-btn green" type="button" disabled="@(!CanManage)" title="@(CanManage ? null : "Needs PAYROLL.MANAGE")"
+                                    @onclick="() => OpenModal(PayModal.MarkPaid)">✅ Mark as Paid</button>
+                        </span>
+                    }
+                </div>
+            </section>
+
+            @switch (Modal)
+            {
+                case PayModal.Preview:
+                    <PayrollPreviewModal Workspace="workspace" CanApprove="CanApprove" IsBusy="IsBusy" Error="@ModalError"
+                                         OnClose="CloseModal" OnApprove="ApproveAsync" OnPrint="PrintPreviewAsync" OnExport="ExportPreviewAsync" />
+                    break;
+                case PayModal.MarkPaid:
+                    <PayrollMarkPaidModal Workspace="workspace" IsBusy="IsBusy" Error="@ModalError"
+                                          OnClose="CloseModal" OnConfirm="MarkPaidAsync" />
+                    break;
+                case PayModal.Transfer:
+                    <PayrollTransferModal Workspace="workspace" IsBusy="IsBusy" Error="@ModalError"
+                                          OnClose="CloseModal" OnExecute="ExecuteTransferAsync" OnAdvice="DownloadAdviceAsync" />
+                    break;
+            }
+        }
+        else if (IsLoading)
+        {
+            <p class="hr-empty">Loading payroll…</p>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private enum PayTab { Division, Department, Individual }
+    private enum PayModal { None, Preview, MarkPaid, Transfer }
+
+    private static readonly CultureInfo India = CultureInfo.GetCultureInfo("en-IN");
+
+    private PayTab Tab = PayTab.Division;
+    private PayModal Modal = PayModal.None;
+
+    private int Month = DateTime.Today.Month;
+    private int Year = DateTime.Today.Year;
+    private string DivisionCode = string.Empty;
+    private string DepartmentCode = string.Empty;
+
+    private IReadOnlyList<MasterOptionDto> DivisionOptions = [];
+    private IReadOnlyList<MasterOptionDto> DepartmentOptions = [];
+    private PayrollWorkspaceDto? Workspace;
+
+    private bool IsLoading = true;
+    private bool IsBusy;
+    private bool CanManage;
+    private bool CanApprove;
+    private bool CanTransfer;
+    private string? LoadError;
+    private string? ActionError;
+    private string? ModalError;
+    private string? Notice;
+
+    // Table-level filters: they narrow what is shown, never what is generated.
+    private string DivisionStatus = string.Empty;
+    private string MinEmployees = string.Empty;
+    private string FilterDivision = string.Empty;
+    private string FilterDepartment = string.Empty;
+    private string FilterStatus = string.Empty;
+    private string FilterShift = string.Empty;
+    private string Search = string.Empty;
+    private bool ShowSearch;
+
+    private bool CanGenerate => CanManage && Workspace?.Run.IsApproved != true;
+
+    private int DepartmentCount => Workspace?.DepartmentGroups.Sum(group => group.Departments.Count) ?? 0;
+
+    private IReadOnlyList<DivisionPayrollRowDto> VisibleDivisions =>
+        (Workspace?.Divisions ?? [])
+            .Where(row => DivisionStatus.Length == 0 || Same(row.Status, DivisionStatus))
+            .Where(row => !int.TryParse(MinEmployees, out var minimum) || row.EmployeeCount >= minimum)
+            .Where(row => !ShowSearch || Contains(row.DivisionName))
+            .ToList();
+
+    private PayrollAmountsDto VisibleDivisionTotal => PayrollAmountsDto.Sum(VisibleDivisions.Select(row => row.Totals));
+
+    private IReadOnlyList<DivisionPayrollGroupDto> VisibleDepartmentGroups =>
+        (Workspace?.DepartmentGroups ?? [])
+            .Where(group => FilterDivision.Length == 0 || Same(group.DivisionCode, FilterDivision))
+            .Select(group =>
+            {
+                var departments = group.Departments
+                    .Where(row => FilterDepartment.Length == 0 || Same(row.DepartmentCode, FilterDepartment))
+                    .Where(row => FilterStatus.Length == 0 || Same(row.Status, FilterStatus))
+                    .Where(row => !ShowSearch || Contains(row.DepartmentName) || Contains(row.DivisionName))
+                    .ToList();
+
+                return group with { Departments = departments, Subtotal = PayrollAmountsDto.Sum(departments.Select(row => row.Totals)) };
+            })
+            .Where(group => group.Departments.Count > 0)
+            .ToList();
+
+    private IReadOnlyList<EmployeePayrollRowDto> VisibleEmployees =>
+        (Workspace?.Employees ?? [])
+            .Where(row => FilterDivision.Length == 0 || Same(row.DivisionCode, FilterDivision))
+            .Where(row => FilterDepartment.Length == 0 || Same(row.DepartmentCode, FilterDepartment))
+            .Where(row => FilterStatus.Length == 0 || Same(row.Status, FilterStatus))
+            .Where(row => FilterShift.Length == 0 || Same(row.ShiftCode, FilterShift))
+            .Where(row => !ShowSearch || Contains(row.DisplayName) || Contains(row.EmployeeNumber) || Contains(row.DepartmentName))
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanManage = await PortalCaller.HasAsync("PAYROLL.MANAGE");
+            CanApprove = await PortalCaller.HasAsync("PAYROLL.APPROVE");
+            CanTransfer = await PortalCaller.HasAsync("PAYROLL.TRANSFER");
+
+            var options = await Masters.GetAllAsync(caller.TenantKey);
+            DivisionOptions = ActiveOptions(options, MasterCategories.Division);
+            DepartmentOptions = ActiveOptions(options, MasterCategories.Department);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private PayrollScopeQuery Scope() => new()
+    {
+        Month = Month,
+        Year = Year,
+        SalaryType = PayrollSalaryTypes.Monthly,
+        DivisionCode = DivisionCode.Length == 0 ? null : DivisionCode,
+        DepartmentCode = DepartmentCode.Length == 0 ? null : DepartmentCode
+    };
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Workspace = await Payroll.GetWorkspaceAsync(caller, Scope());
+            LoadError = null;
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Workspace = null;
+            LoadError = $"This account does not hold {denied.Permission}, so payroll cannot be shown.";
+        }
+        catch (MobileValidationException invalid)
+        {
+            ActionError = invalid.Message;
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>The controls bar is the page's scope: any change refreshes every tile and tab.</summary>
+    private async Task ChangeScopeAsync(Action change)
+    {
+        change();
+        Notice = null;
+        ActionError = null;
+        await LoadAsync();
+    }
+
+    private Task GenerateAsync(IEnumerable<string> employeeIds)
+    {
+        var ids = employeeIds.ToList();
+        return RunAsync(async caller =>
+        {
+            var result = await Payroll.GenerateAsync(caller, new GeneratePayrollRequest { Scope = Scope(), EmployeeIds = ids });
+            var message = $"Generated {result.Generated} salar{(result.Generated == 1 ? "y" : "ies")} for {Workspace?.MonthLabel}.";
+
+            return result.Skipped == 0
+                ? message
+                : $"{message} Skipped {result.Skipped}: {string.Join("; ", result.SkippedReasons.Take(3))}{(result.Skipped > 3 ? "; …" : string.Empty)}";
+        }, inModal: false);
+    }
+
+    private Task ApproveAsync() => RunAsync(async caller =>
+    {
+        await Payroll.ApproveAsync(caller, Scope());
+        return $"Approved {Workspace?.MonthLabel} payroll. The month is now locked against regeneration.";
+    });
+
+    private Task MarkPaidAsync(MarkSalaryPaidRequest request) => RunAsync(async caller =>
+    {
+        request.Scope = Scope();
+        var result = await Payroll.MarkPaidAsync(caller, request);
+        return $"Marked {result.EmployeesUpdated} salar{(result.EmployeesUpdated == 1 ? "y" : "ies")} as paid ({Rupees(result.TotalAmount)}).";
+    });
+
+    private Task ExecuteTransferAsync(ExecuteBankTransferRequest request) => RunAsync(async caller =>
+    {
+        request.Scope = Scope();
+        var result = await Payroll.ExecuteTransferAsync(caller, request);
+        return $"Recorded bank transfer {result.ReferenceNo}: {result.EmployeesTransferred} employee(s), {Rupees(result.TotalAmount)}.";
+    });
+
+    private async Task DownloadAdviceAsync(ExecuteBankTransferRequest request)
+    {
+        IsBusy = true;
+        ModalError = null;
+
+        try
+        {
+            request.Scope = Scope();
+            var caller = await PortalCaller.GetAsync();
+            var advice = await Payroll.BuildAdviceAsync(caller, request);
+            await JS.InvokeVoidAsync("hrPayroll.downloadBase64", advice.FileName, Convert.ToBase64String(advice.Content), advice.ContentType);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            ModalError = $"This needs {denied.Permission}.";
+        }
+        catch (Exception ex) when (ex is MobileValidationException or MobileNotFoundException)
+        {
+            ModalError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ModalError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>One write path: run it, close the modal, reload, and say what happened.</summary>
+    private async Task RunAsync(Func<MobileCallerContext, Task<string>> write, bool inModal = true)
+    {
+        IsBusy = true;
+        ModalError = null;
+        ActionError = null;
+        Notice = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var message = await write(caller);
+
+            Modal = PayModal.None;
+            Notice = message;
+            await LoadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            SetError($"This needs {denied.Permission}.", inModal);
+        }
+        catch (Exception ex) when (ex is MobileValidationException or MobileNotFoundException)
+        {
+            SetError(ex.Message, inModal);
+        }
+        catch (Exception ex)
+        {
+            SetError(ex.Message, inModal);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SetError(string message, bool inModal)
+    {
+        if (inModal)
+        {
+            ModalError = message;
+        }
+        else
+        {
+            ActionError = message;
+        }
+    }
+
+    private void OpenPreview() => OpenModal(PayModal.Preview);
+
+    private void OpenModal(PayModal modal)
+    {
+        ModalError = null;
+        Modal = modal;
+    }
+
+    private void CloseModal()
+    {
+        ModalError = null;
+        Modal = PayModal.None;
+    }
+
+    private async Task ExportAsync()
+    {
+        if (Workspace is null)
+        {
+            return;
+        }
+
+        var subtitle = $"{Workspace.TenantDisplayName} · {Workspace.SalaryType} · generated {DateTime.Now:dd MMM yyyy, h:mm tt}";
+        ExcelSheet sheet;
+
+        switch (Tab)
+        {
+            case PayTab.Division:
+            {
+                var rows = VisibleDivisions.ToList();
+                var total = PayrollAmountsDto.Sum(rows.Select(row => row.Totals));
+                sheet = new ExcelSheet("Division-wise", $"Payroll by division — {Workspace.MonthLabel}", subtitle,
+                    [
+                        new("Division"), new("Employees", ExcelFormat.Integer), new("Departments", ExcelFormat.Integer),
+                        new("Basic", ExcelFormat.Money), new("HRA", ExcelFormat.Money), new("Allowances", ExcelFormat.Money),
+                        new("Gross", ExcelFormat.Money), new("Deductions", ExcelFormat.Money), new("Net Payable", ExcelFormat.Money), new("Status")
+                    ],
+                    rows.Select(row => ExcelDownload.Row(row.DivisionName, row.EmployeeCount, row.DepartmentCount, row.Totals.Basic, row.Totals.Hra,
+                        row.Totals.Conveyance + row.Totals.OtherAllowances, row.Totals.Gross, row.Totals.Deductions, row.Totals.NetPayable, row.Status)).ToList(),
+                    ExcelDownload.Row("Total", rows.Sum(row => row.EmployeeCount), rows.Sum(row => row.DepartmentCount), total.Basic, total.Hra,
+                        total.Conveyance + total.OtherAllowances, total.Gross, total.Deductions, total.NetPayable, null));
+                break;
+            }
+
+            case PayTab.Department:
+            {
+                var rows = VisibleDepartmentGroups.SelectMany(group => group.Departments).ToList();
+                var total = PayrollAmountsDto.Sum(rows.Select(row => row.Totals));
+                sheet = new ExcelSheet("Department-wise", $"Payroll by department — {Workspace.MonthLabel}", subtitle,
+                    [
+                        new("Department"), new("Division"), new("Employees", ExcelFormat.Integer),
+                        new("Basic", ExcelFormat.Money), new("HRA", ExcelFormat.Money), new("Conv.", ExcelFormat.Money), new("Other", ExcelFormat.Money),
+                        new("Gross", ExcelFormat.Money), new("PF", ExcelFormat.Money), new("ESI", ExcelFormat.Money), new("TDS", ExcelFormat.Money),
+                        new("PT/Other", ExcelFormat.Money), new("Net Payable", ExcelFormat.Money), new("Status")
+                    ],
+                    rows.Select(row =>
+                    {
+                        var t = row.Totals;
+                        return ExcelDownload.Row(row.DepartmentName, row.DivisionName, row.EmployeeCount, t.Basic, t.Hra, t.Conveyance, t.OtherAllowances,
+                            t.Gross, t.Pf, t.Esi, t.Tds, t.OtherDeductions, t.NetPayable, row.Status);
+                    }).ToList(),
+                    ExcelDownload.Row("Total", null, rows.Sum(row => row.EmployeeCount), total.Basic, total.Hra, total.Conveyance, total.OtherAllowances,
+                        total.Gross, total.Pf, total.Esi, total.Tds, total.OtherDeductions, total.NetPayable, null));
+                break;
+            }
+
+            default:
+            {
+                var rows = VisibleEmployees.ToList();
+                var total = PayrollAmountsDto.Sum(rows.Select(row => row.Amounts));
+                sheet = new ExcelSheet("Individual", $"Payroll by employee — {Workspace.MonthLabel}", subtitle,
+                    [
+                        new("Employee"), new("Number"), new("Division"), new("Department"), new("Designation"), new("Shift"),
+                        new("Work Days", ExcelFormat.Integer), new("Expected Days", ExcelFormat.Integer),
+                        new("Basic", ExcelFormat.Money), new("HRA", ExcelFormat.Money), new("Conv.", ExcelFormat.Money), new("Other", ExcelFormat.Money),
+                        new("Gross", ExcelFormat.Money), new("PF", ExcelFormat.Money), new("ESI", ExcelFormat.Money), new("TDS", ExcelFormat.Money),
+                        new("PT/Other", ExcelFormat.Money), new("Net", ExcelFormat.Money), new("Status")
+                    ],
+                    rows.Select(row =>
+                    {
+                        var t = row.Amounts;
+                        return ExcelDownload.Row(row.DisplayName, row.EmployeeNumber, row.DivisionName, row.DepartmentName, row.Designation, row.ShiftCode,
+                            row.WorkedDays, row.ExpectedDays, t.Basic, t.Hra, t.Conveyance, t.OtherAllowances, t.Gross, t.Pf, t.Esi, t.Tds,
+                            t.OtherDeductions, t.NetPayable, row.Status);
+                    }).ToList(),
+                    ExcelDownload.Row($"Total ({rows.Count})", null, null, null, null, null, null, null, total.Basic, total.Hra, total.Conveyance,
+                        total.OtherAllowances, total.Gross, total.Pf, total.Esi, total.Tds, total.OtherDeductions, total.NetPayable, null));
+                break;
+            }
+        }
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"payroll-{Tab.ToString().ToLowerInvariant()}-{Year}-{Month:00}.xlsx", sheet);
+    }
+
+    private async Task ExportPreviewAsync()
+    {
+        if (Workspace is null)
+        {
+            return;
+        }
+
+        var employees = Workspace.Employees;
+        var total = PayrollAmountsDto.Sum(employees.Select(row => row.Amounts));
+
+        // The division summary and the employee detail travel together as two sheets of one workbook.
+        var divisions = new ExcelSheet("Division summary", $"Payroll preview — {Workspace.MonthLabel}", Workspace.TenantDisplayName,
+            [
+                new("Division"), new("Employees", ExcelFormat.Integer), new("Gross", ExcelFormat.Money),
+                new("Deductions", ExcelFormat.Money), new("Net Payable", ExcelFormat.Money), new("Status")
+            ],
+            Workspace.Divisions.Select(row => ExcelDownload.Row(row.DivisionName, row.EmployeeCount, row.Totals.Gross, row.Totals.Deductions,
+                row.Totals.NetPayable, row.Status)).ToList(),
+            ExcelDownload.Row("Grand total", Workspace.Divisions.Sum(row => row.EmployeeCount), Workspace.GrandTotal.Gross,
+                Workspace.GrandTotal.Deductions, Workspace.GrandTotal.NetPayable, null));
+
+        var detail = new ExcelSheet("Employees", $"Payroll preview — {Workspace.MonthLabel}", Workspace.TenantDisplayName,
+            [
+                new("Employee"), new("Number"), new("Department"), new("Division"), new("Work Days", ExcelFormat.Integer),
+                new("Expected Days", ExcelFormat.Integer), new("Basic", ExcelFormat.Money), new("Gross", ExcelFormat.Money),
+                new("Deductions", ExcelFormat.Money), new("Net Payable", ExcelFormat.Money), new("Status")
+            ],
+            employees.Select(row => ExcelDownload.Row(row.DisplayName, row.EmployeeNumber, row.DepartmentName, row.DivisionName, row.WorkedDays,
+                row.ExpectedDays, row.Amounts.Basic, row.Amounts.Gross, row.Amounts.Deductions, row.Amounts.NetPayable, row.Status)).ToList(),
+            ExcelDownload.Row($"Total ({employees.Count})", null, null, null, null, null, total.Basic, total.Gross, total.Deductions, total.NetPayable, null));
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"payroll-preview-{Year}-{Month:00}.xlsx", divisions, detail);
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#pay-print-area");
+
+    private async Task PrintPreviewAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#pay-preview-document");
+
+    // ---- Rendering helpers --------------------------------------------------
+
+    private RenderFragment StatusSelect(string current, Action<string> set, bool includePayment = false) => __builder =>
+    {
+        <select value="@current" @onchange="args => set(args.Value?.ToString() ?? string.Empty)">
+            <option value="">All Status</option>
+            <option value="@PayrollLineStatuses.Generated">Generated</option>
+            <option value="@PayrollLineStatuses.Pending">Pending</option>
+            @if (includePayment)
+            {
+                <option value="@PayrollLineStatuses.Paid">Paid</option>
+                <option value="@PayrollLineStatuses.Transferred">Transferred</option>
+            }
+        </select>
+    };
+
+    private static RenderFragment StatusPill(string status) => __builder =>
+    {
+        <span class="pay-status @status.ToLowerInvariant()">● @status</span>
+    };
+
+    private static RenderFragment AmountCells(PayrollAmountsDto amounts, bool deductionsInRed = false) => __builder =>
+    {
+        <td>@Rupees(amounts.Basic)</td>
+        <td>@Rupees(amounts.Hra)</td>
+        <td>@Rupees(amounts.Conveyance)</td>
+        <td>@Rupees(amounts.OtherAllowances)</td>
+        <td>@Rupees(amounts.Gross)</td>
+        <td class="@(deductionsInRed ? "pay-minus" : null)">@Rupees(amounts.Pf)</td>
+        <td class="@(deductionsInRed ? "pay-minus" : null)">@Rupees(amounts.Esi)</td>
+        <td class="@(deductionsInRed ? "pay-minus" : null)">@Rupees(amounts.Tds)</td>
+        <td class="@(deductionsInRed ? "pay-minus" : null)">@Rupees(amounts.OtherDeductions)</td>
+        <td class="pay-net">@Rupees(amounts.NetPayable)</td>
+    };
+
+    /// <summary>A row's Generate: everyone in the row who is pending or only generated.</summary>
+    private RenderFragment RowGenerate(IEnumerable<EmployeePayrollRowDto> members) => __builder =>
+    {
+        var ids = members
+            .Where(member => member.Status is PayrollLineStatuses.Pending or PayrollLineStatuses.Generated && member.PendingReason is null)
+            .Select(member => member.EmployeeId)
+            .ToList();
+
+        <button class="pay-btn outline small" type="button" disabled="@(!CanGenerate || IsBusy || ids.Count == 0)"
+                title="Generate or regenerate this row's salaries" @onclick="() => GenerateAsync(ids)">📄 Generate</button>
+    };
+
+    private string? GenerateHint() =>
+        !CanManage ? "Needs PAYROLL.MANAGE"
+        : Workspace?.Run.IsApproved == true ? "This month is approved and locked"
+        : null;
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+
+    private bool Contains(string? value) =>
+        string.IsNullOrWhiteSpace(Search) || (value?.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private static bool Same(string? left, string? right) =>
+        string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    public static string Rupees(decimal amount) => string.Format(India, "₹{0:N0}", amount);
+
+    /// <summary>The tile's compact figure: ₹42.6L, ₹1.2Cr.</summary>
+    private static string Lakhs(decimal amount) => amount switch
+    {
+        >= 10_000_000m => $"₹{amount / 10_000_000m:0.##}Cr",
+        >= 100_000m => $"₹{amount / 100_000m:0.#}L",
+        _ => Rupees(amount)
+    };
+
+    public static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+
+    public static int AvatarTone(string name) => Math.Abs(name.Aggregate(17, (hash, character) => hash * 31 + character)) % 6;
+
+    private static IReadOnlyList<MasterOptionDto> ActiveOptions(IReadOnlyList<MasterOptionDto> options, string category) =>
+        options.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name)
+            .ToList();
+}

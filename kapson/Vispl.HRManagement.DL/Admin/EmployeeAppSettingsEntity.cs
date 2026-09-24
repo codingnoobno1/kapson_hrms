@@ -1,0 +1,19 @@
+namespace Vispl.HRManagement.DL.Admin;
+
+public sealed class EmployeeAppSettingsEntity
+{
+    public long Id { get; set; }
+    public string TenantKey { get; set; } = string.Empty;
+    public bool AllowAppPunch { get; set; } = true;
+    public bool RequireLocationForPunch { get; set; }
+    public bool AllowGatePassRequests { get; set; } = true;
+    public bool AllowAttendanceCorrections { get; set; } = true;
+    public bool ShowSalaryDetails { get; set; } = true;
+    public bool ShowBankDetails { get; set; } = true;
+    public bool ShowOnboarding { get; set; } = true;
+    public bool AllowProfileChangeRequests { get; set; } = true;
+    public int AttendanceTargetPercent { get; set; } = 85;
+    public DateTimeOffset UpdatedUtc { get; set; }
+    public string? UpdatedBy { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}

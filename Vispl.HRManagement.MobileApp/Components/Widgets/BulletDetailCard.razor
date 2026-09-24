@@ -1,0 +1,17 @@
+@* RW-21 BulletDetailCard. Bold lead line, then dash-prefixed items. *@
+<section class="card">
+    @foreach (var group in Groups)
+    {
+        <p class="bullet-lead">@group.Lead</p>
+        <ul class="dash-list">
+            @foreach (var item in group.Items)
+            {
+                <li>@item</li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BulletGroup> Groups { get; set; } = [];
+}

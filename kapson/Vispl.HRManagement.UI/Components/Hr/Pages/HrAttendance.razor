@@ -1,0 +1,441 @@
+@page "/hr/attendance"
+@page "/hr/{TenantKey}/attendance"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IHrDashboardService Dashboard
+@inject IWorkforceReportService Reports
+@inject IMovementService MovementService
+@inject IGatePassService GatePassService
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Attendance | HR Portal</PageTitle>
+
+@*
+    The client-locked W08 page (scopedocs/web-portal/references/W08): Miss Punch Employees List and
+    Gate Pass Approval List side by side, the month's Employee Attendance Overview, then late arrivals
+    and who is off site. The sidebar's Last Coming, Miss Punch, Going Out and Gate Pass links land on
+    the sections below by id. Gate pass decisions call the same IGatePassService.DecideAsync as the
+    employee app's approvals sheet.
+*@
+
+<HrSettingsPage TenantKey="@TenantKey" Title="Attendance" Crumb="Attendance" CrumbPath="attendance" Error="@LoadError">
+    <section class="hr-panel att-filters">
+        <label>
+            <span>MONTH</span>
+            <input type="month" value="@Month" @onchange="ChangeMonth" />
+        </label>
+        <label>
+            <span>AS OF</span>
+            <input type="date" value="@AsOf?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" @onchange="ChangeAsOf" />
+        </label>
+        <button type="button" class="att-button solid" @onclick="LoadAsync" disabled="@IsBusy">
+            <HrIcon Name="sliders" Size="15" /> @(IsBusy ? "Loading…" : "Apply Filter")
+        </button>
+    </section>
+
+    @if (Notice is not null)
+    {
+        <div class="hr-alert success compact">@Notice</div>
+    }
+    @if (TableError is not null)
+    {
+        <div class="hr-alert error compact">@TableError</div>
+    }
+
+    <div class="w08-row">
+        <section class="hr-panel w08-card" id="miss-punch">
+            <h2><HrIcon Name="alert" Size="17" StrokeWidth="2.2" /> Miss Punch Employees List</h2>
+            <div class="w08-scroll">
+                <table class="w08-table">
+                    <thead>
+                        <tr>
+                            <th>Employee Name</th><th>Department</th><th>Designation</th><th>Date</th>
+                            <th>Punch Time</th><th>Expected Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (MissPunches is null || MissPunches.Rows.Items.Count == 0)
+                        {
+                            <tr class="w08-empty"><td colspan="6">@(IsBusy ? "Loading…" : "Every day is complete.")</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in MissPunches.Rows.Items)
+                            {
+                                <tr @key="row.ExceptionId">
+                                    <td>@row.DisplayName</td>
+                                    <td>@DepartmentName(row.DepartmentCode)</td>
+                                    <td>@(row.Designation ?? "—")</td>
+                                    <td>@row.Date.ToString("MMM dd, yyyy", CultureInfo.InvariantCulture)</td>
+                                    <td>@(row.PunchTime?.ToString("hh:mm tt", CultureInfo.InvariantCulture) ?? "—")</td>
+                                    <td>
+                                        <span class="w08-pill @(row.MissingSide == "CheckIn" ? "check-in" : "check-out")"
+                                              title="@(row.ExpectedTime is { } due ? $"Due {due.ToString("hh:mm tt", CultureInfo.InvariantCulture)}" : null)">
+                                            @(row.MissingSide == "CheckIn" ? "CHECK-IN" : "CHECK-OUT")
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="hr-panel w08-card" id="gate-pass">
+            <h2><HrIcon Name="id-card" Size="17" StrokeWidth="2" /> Gate Pass Approval List</h2>
+            <div class="w08-scroll">
+                <table class="w08-table">
+                    <thead>
+                        <tr>
+                            <th>Employee Name</th><th>Department</th><th>Designation</th><th>Pass Type</th><th>Purpose</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (PassRows().Count == 0)
+                        {
+                            <tr class="w08-empty"><td colspan="6">@(IsBusy ? "Loading…" : "No gate passes in this window.")</td></tr>
+                        }
+                        @foreach (var pass in PassRows())
+                        {
+                            <tr @key="pass.Id">
+                                <td>@pass.DisplayName</td>
+                                <td>@DepartmentName(pass.DepartmentCode)</td>
+                                <td>@(pass.Designation ?? "—")</td>
+                                <td>
+                                    <span class="w08-pill @(pass.PassType == "MultiDayPass" ? "multi-day" : "day-pass")">
+                                        @(pass.PassType == "MultiDayPass" ? "MULTI-DAY PASS" : "DAY PASS")
+                                    </span>
+                                </td>
+                                <td>@pass.Purpose</td>
+                                <td class="w08-actions">
+                                    @if (pass.Status.Code == "Pending" && CanApprovePasses)
+                                    {
+                                        <button type="button" class="w08-approve" disabled="@(DecidingId == pass.Id)"
+                                                title="Approve" aria-label="Approve @pass.DisplayName's pass"
+                                                @onclick="() => DecidePassAsync(pass, true)">
+                                            <HrIcon Name="check" Size="14" StrokeWidth="2.6" />
+                                        </button>
+                                        <button type="button" class="w08-reject" disabled="@(DecidingId == pass.Id)"
+                                                title="Reject" aria-label="Reject @pass.DisplayName's pass"
+                                                @onclick="() => DecidePassAsync(pass, false)">
+                                            <HrIcon Name="x" Size="14" StrokeWidth="2.6" />
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="hr-tag tone-@pass.Status.Tone">@pass.Status.Name</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <section class="hr-panel w08-card">
+        <h2><HrIcon Name="users" Size="17" StrokeWidth="2" /> Employee Attendance Overview (Current Month)</h2>
+        <div class="w08-scroll">
+            <table class="w08-table">
+                <thead>
+                    <tr>
+                        <th>Employee Name</th><th>Department</th><th>Designation</th>
+                        <th>Present</th><th>Absent</th><th>On Leave</th><th class="w08-percent-col">Attendance %</th><th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Overview is null || Overview.Rows.Items.Count == 0)
+                    {
+                        <tr class="w08-empty"><td colspan="8">@(IsBusy ? "Loading…" : "No attendance has been recorded this month.")</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in Overview.Rows.Items)
+                        {
+                            <tr @key="row.EmployeeId">
+                                <td>@row.DisplayName</td>
+                                <td>@DepartmentName(row.DepartmentCode)</td>
+                                <td>@(row.Designation ?? "—")</td>
+                                <td>@row.PresentDays</td>
+                                <td>@row.AbsentDays</td>
+                                <td>@row.LeaveDays.ToString("0.#", CultureInfo.InvariantCulture)</td>
+                                <td>
+                                    <div class="w08-percent">
+                                        <small>@row.AttendancePercent.ToString("0.#", CultureInfo.InvariantCulture)%</small>
+                                        <div class="w08-bar"><div style="width:@Math.Clamp(row.AttendancePercent, 0, 100).ToString("0.#", CultureInfo.InvariantCulture)%"></div></div>
+                                    </div>
+                                </td>
+                                <td><span class="w08-status"><i class="@DotClass(row.StatusTone)"></i> @row.StatusBand</span></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="hr-panel w08-card" id="late">
+        <h2><HrIcon Name="clock" Size="17" StrokeWidth="2" /> Last Coming <small>@LateMeta()</small></h2>
+        <div class="w08-scroll">
+            <table class="w08-table">
+                <thead>
+                    <tr>
+                        <th>Employee Name</th><th>Department</th><th>Shift</th><th>Expected</th><th>Arrived</th>
+                        <th>Late By</th><th>This Week</th><th>This Month</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (LateArrivals is null || LateArrivals.Rows.Items.Count == 0)
+                    {
+                        <tr class="w08-empty"><td colspan="8">@(IsBusy ? "Loading…" : "Nobody arrived late.")</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in LateArrivals.Rows.Items)
+                        {
+                            <tr>
+                                <td>@row.DisplayName</td>
+                                <td>@DepartmentName(row.DepartmentCode)</td>
+                                <td>@(row.ShiftCode ?? "—")</td>
+                                <td>@row.ExpectedTime.ToString("HH\\:mm")</td>
+                                <td>@row.ArrivalTime.ToString("HH\\:mm")</td>
+                                <td><span class="w08-pill check-in">@Duration(row.DelayMinutes)</span></td>
+                                <td>@Duration(row.LateMinutesThisWeek)</td>
+                                <td>@Duration(row.LateMinutesThisMonth)</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (LateArrivals?.Caveat is { } caveat)
+        {
+            <p class="hr-hint">@caveat</p>
+        }
+    </section>
+
+    <section class="hr-panel w08-card" id="movement">
+        <h2><HrIcon Name="user-out" Size="17" StrokeWidth="2" /> Going Out <small>@AsOf?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)</small></h2>
+        <div class="w08-scroll">
+            <table class="w08-table">
+                <thead>
+                    <tr>
+                        <th>Employee Name</th><th>Department</th><th>Out</th><th>Expected Back</th><th>Reason</th><th>Away</th><th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (OffSite().Count == 0)
+                    {
+                        <tr class="w08-empty"><td colspan="7">@(IsBusy ? "Loading…" : "Nobody is out.")</td></tr>
+                    }
+                    @foreach (var row in OffSite())
+                    {
+                        <tr @key="row.Id">
+                            <td>@row.DisplayName</td>
+                            <td>@DepartmentName(row.DepartmentCode)</td>
+                            <td>@row.GoingOutUtc.ToLocalTime().ToString("HH\\:mm")</td>
+                            <td>@row.ExpectedReturnUtc.ToLocalTime().ToString("HH\\:mm")</td>
+                            <td>@row.Detail</td>
+                            <td>@Duration(row.MinutesOut)</td>
+                            <td>
+                                @if (row.IsOverdue)
+                                {
+                                    <span class="w08-pill check-in">OVERDUE</span>
+                                }
+                                else if (row.ActualReturnUtc is not null)
+                                {
+                                    <span class="w08-pill multi-day">BACK</span>
+                                }
+                                else
+                                {
+                                    <span class="w08-pill day-pass">OUT</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</HrSettingsPage>
+
+@code {
+    /// <summary>Presentational only; the data is always the signed-in account's client.</summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private LateArrivalReportDto? LateArrivals;
+    private MissPunchReportDto? MissPunches;
+    private AttendanceOverviewDto? Overview;
+    private MovementBoardDto? Movement;
+    private GatePassBoardDto? GatePasses;
+    private Dictionary<string, string> DepartmentNames = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Null until the first load answers: which day is "today" belongs to the client's own clock,
+    /// not the server's, and the service is where that is decided.
+    /// </summary>
+    private DateOnly? AsOf;
+
+    private string? Month;
+    private string? LoadError;
+    private string? TableError;
+    private string? Notice;
+    private string? DecidingId;
+    private bool IsBusy = true;
+    private bool CanApprovePasses;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CanApprovePasses = await PortalCaller.HasAsync("GATEPASS.APPROVE");
+        await LoadAsync();
+    }
+
+    private void ChangeAsOf(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), CultureInfo.InvariantCulture, out var parsed))
+        {
+            AsOf = parsed;
+        }
+    }
+
+    private void ChangeMonth(ChangeEventArgs args)
+    {
+        var value = args.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            Month = value;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        TableError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            DepartmentNames = (await Masters.GetAllAsync(caller.TenantKey))
+                .Where(option => option.Category == MasterCategories.Department)
+                .GroupBy(option => option.Code, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+
+            var reportQuery = new WorkforceReportQuery { AsOf = AsOf, PageSize = 25 };
+
+            LateArrivals = await Reports.GetLateArrivalsAsync(caller, reportQuery, CancellationToken.None);
+
+            // The service resolved the client's today; every panel below is asked for that same date.
+            AsOf ??= LateArrivals.Scope.AsOf;
+            Month ??= AsOf.Value.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+
+            MissPunches = await Reports.GetMissingPunchesAsync(caller, reportQuery, CancellationToken.None);
+
+            Overview = await Dashboard.GetAttendanceOverviewAsync(caller, new AttendanceOverviewQuery
+            {
+                AsOf = AsOf,
+                Month = Month,
+                PageSize = 25
+            }, CancellationToken.None);
+
+            Movement = await MovementService.GetBoardAsync(caller, new MovementQuery { Date = AsOf }, CancellationToken.None);
+            GatePasses = await GatePassService.GetBoardAsync(caller, new GatePassQuery { PageSize = 25 }, CancellationToken.None);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account does not hold {denied.Permission}, so attendance cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            TableError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>Approve or reject from the list — the same service call as the app's approvals sheet.</summary>
+    private async Task DecidePassAsync(GatePassRowDto pass, bool approve)
+    {
+        DecidingId = pass.Id;
+        Notice = null;
+        TableError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            await GatePassService.DecideAsync(caller, pass.Id, new GatePassDecisionRequest
+            {
+                Decision = approve ? "approve" : "reject",
+                Comment = approve ? null : "Rejected from the HR portal."
+            }, CancellationToken.None);
+
+            await LoadAsync();
+            Notice = approve
+                ? $"Approved {pass.DisplayName}'s {(pass.PassType == "MultiDayPass" ? "multi-day" : "day")} pass."
+                : $"Rejected {pass.DisplayName}'s pass.";
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            TableError = $"Deciding a gate pass needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            TableError = ex.Message;
+        }
+        finally
+        {
+            DecidingId = null;
+        }
+    }
+
+    /// <summary>Waiting ones first — this is an approval list — then the rest of the window.</summary>
+    private IReadOnlyList<GatePassRowDto> PassRows() =>
+        GatePasses is null
+            ? []
+            : GatePasses.Rows.Items
+                .OrderByDescending(row => row.Status.Code == "Pending")
+                .ThenBy(row => row.FromDate)
+                .ToList();
+
+    private IReadOnlyList<MovementRowDto> OffSite() =>
+        Movement is null
+            ? []
+            : Movement.Personal.Concat(Movement.Official)
+                .OrderByDescending(row => row.IsOverdue)
+                .ThenBy(row => row.GoingOutUtc)
+                .ToList();
+
+    private string DepartmentName(string? departmentCode) =>
+        string.IsNullOrWhiteSpace(departmentCode) ? "—" : DepartmentNames.GetValueOrDefault(departmentCode, departmentCode);
+
+    private static string DotClass(string tone) => tone switch
+    {
+        "success" => "good",
+        "warning" or "info" => "fair",
+        "danger" => "poor",
+        _ => "muted"
+    };
+
+    private string LateMeta() =>
+        LateArrivals is null
+            ? string.Empty
+            : $"Grace {LateArrivals.GraceMinutes} minutes · {AsOf?.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}";
+
+    /// <summary>Minutes as hours and minutes, matching how the dashboard reads.</summary>
+    private static string Duration(int minutes) =>
+        minutes <= 0 ? "-"
+        : minutes < 60 ? $"{minutes} min"
+        : $"{minutes / 60} hr {minutes % 60:00} min";
+}

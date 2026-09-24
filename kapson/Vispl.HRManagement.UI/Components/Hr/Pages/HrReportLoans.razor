@@ -1,0 +1,507 @@
+@page "/hr/reports/loans"
+@page "/hr/{TenantKey}/reports/loans"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using System.Text.Json
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject ILoanService Loans
+@inject IExcelExporter Excel
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
+
+<PageTitle>Loan and Advance Report | HR Portal</PageTitle>
+
+@*
+    The client-locked Loan and Advance Report: a Company / Report Type fact pair, six KPI tiles,
+    an Advanced Filters bar (Json / CSV / Apply / Clear), three tabs (Loan Details, Advance Details,
+    Summary Report) and an Advance Payment Ledger popup. Every figure comes from ILoanService —
+    the same service HrLoans.razor writes through — so nothing here is a second copy of the rule.
+*@
+
+<HrSettingsPage TenantKey="@TenantKey" Title="Loan and Advance Report" Error="@LoadError">
+    @if (Workspace is { } workspace)
+    {
+        <div class="org-tiles" style="grid-template-columns:repeat(2,minmax(220px,1fr));margin-bottom:16px">
+            <div><span>Company</span><strong style="font-size:1.05rem">@TenantName</strong></div>
+            <div><span>Report Type</span><strong style="font-size:1.05rem">Loan &amp; Advance</strong></div>
+        </div>
+
+        <section class="loan-kpis">
+            <div class="loan-kpi blue"><span>Total Loan Amount</span><strong>@PayrollFormat.Rupees(workspace.Summary.TotalLoanAmount)</strong></div>
+            <div class="loan-kpi pink"><span>Outstanding Loan</span><strong>@PayrollFormat.Rupees(workspace.Summary.OutstandingLoan)</strong></div>
+            <div class="loan-kpi green"><span>Loan Recovered</span><strong>@PayrollFormat.Rupees(workspace.Summary.LoanRecovered)</strong></div>
+            <div class="loan-kpi amber"><span>Total Advanced Given</span><strong>@PayrollFormat.Rupees(workspace.Summary.TotalAdvanceGiven)</strong></div>
+            <div class="loan-kpi pink"><span>Pending Advanced</span><strong>@PayrollFormat.Rupees(workspace.Summary.PendingAdvance)</strong></div>
+            <div class="loan-kpi blue"><span>Employees With Loan</span><strong>@workspace.Summary.EmployeesWithLoan</strong></div>
+        </section>
+    }
+
+    <section class="hr-panel loan-filters">
+        <h3>Advanced Filters</h3>
+        <div class="hr-form-grid">
+            <label>
+                Employee Name
+                <input type="text" placeholder="Enter Name…" value="@Search" @onchange="args => ChangeAsync(() => Search = Text(args))" />
+            </label>
+            <label>
+                Employee ID
+                <input type="text" placeholder="Enter ID…" value="@EmployeeNumber" @onchange="args => ChangeAsync(() => EmployeeNumber = Text(args))" />
+            </label>
+            <label>
+                Department
+                <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
+                    <option value="">All Department</option>
+                    @foreach (var option in Options(MasterCategories.Department))
+                    {
+                        <option @key="option.Code" value="@option.Code">@option.Name</option>
+                    }
+                </select>
+            </label>
+            <label>
+                Designation
+                <input type="text" placeholder="All Designations" value="@DesignationName" @onchange="args => ChangeAsync(() => DesignationName = Text(args))" />
+            </label>
+            <label>
+                Loan Status
+                <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                    <option value="">All Status</option>
+                    <option value="@LoanStatuses.Active">Active</option>
+                    <option value="@LoanStatuses.Pending">Pending</option>
+                    <option value="@LoanStatuses.Closed">Closed</option>
+                    <option value="@LoanStatuses.Rejected">Rejected</option>
+                    <option value="@LoanStatuses.Cancelled">Cancelled</option>
+                </select>
+            </label>
+            <label>
+                Amount Range
+                <select value="@AmountRange" @onchange="args => ChangeAsync(() => AmountRange = Text(args))">
+                    <option value="">All Amounts</option>
+                    <option value="0-10000">Below ₹10,000</option>
+                    <option value="10000-25000">₹10,000 – ₹25,000</option>
+                    <option value="25000-50000">₹25,000 – ₹50,000</option>
+                    <option value="50000-">₹50,000 and above</option>
+                </select>
+            </label>
+            <label>
+                Date Range
+                <span class="date-range">
+                    <input type="date" value="@RequestedFrom?.ToString("yyyy-MM-dd")" @onchange="args => ChangeAsync(() => RequestedFrom = ParseDate(Text(args)))" />
+                    <span>to</span>
+                    <input type="date" value="@RequestedTo?.ToString("yyyy-MM-dd")" @onchange="args => ChangeAsync(() => RequestedTo = ParseDate(Text(args)))" />
+                </span>
+            </label>
+        </div>
+        <div class="loan-filter-actions">
+            <button class="hr-button small ghost" type="button" @onclick="DownloadJsonAsync" disabled="@(Rows.Count == 0)">{ } Json</button>
+            <button class="hr-button small ghost" type="button" @onclick="DownloadCsvAsync" disabled="@(Rows.Count == 0)">⬇ CSV</button>
+            <button class="hr-button small" type="button" @onclick="LoadAsync" disabled="@IsLoading">🔍 @(IsLoading ? "Loading…" : "Apply Filters")</button>
+            <button class="hr-button small ghost" type="button" @onclick="ClearAllAsync">⟲ Clear All</button>
+        </div>
+    </section>
+
+    @if (LoadError is null)
+    {
+        <div class="loan-tabs" role="tablist">
+            <button type="button" role="tab" class="@(Tab == LoanTab.LoanDetails ? "active" : null)" aria-selected="@(Tab == LoanTab.LoanDetails)" @onclick="() => Tab = LoanTab.LoanDetails">📄 Loan Details</button>
+            <button type="button" role="tab" class="@(Tab == LoanTab.AdvanceDetails ? "active" : null)" aria-selected="@(Tab == LoanTab.AdvanceDetails)" @onclick="() => Tab = LoanTab.AdvanceDetails">💳 Advance Details</button>
+            <button type="button" role="tab" class="@(Tab == LoanTab.Summary ? "active" : null)" aria-selected="@(Tab == LoanTab.Summary)" @onclick="() => Tab = LoanTab.Summary">📊 Summary Report</button>
+        </div>
+
+        <section class="hr-panel">
+            <div class="loan-search">
+                <input type="search" placeholder="Quick Search By Name, Id, Department" value="@QuickSearch" @oninput="args => QuickSearch = args.Value?.ToString() ?? string.Empty" />
+                <button class="hr-button small" type="button">🔍 Search</button>
+            </div>
+
+            @if (IsLoading)
+            {
+                <p class="hr-empty">Loading…</p>
+            }
+            else if (Tab == LoanTab.LoanDetails)
+            {
+                var rows = QuickFilter(Rows.Where(row => row.Type == LoanTypes.Loan)).ToList();
+
+                @if (rows.Count == 0)
+                {
+                    <p class="hr-empty">No loan vouchers match these filters.</p>
+                }
+                else
+                {
+                    <div id="rep-print-area" class="pay-table-scroll">
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Emp ID</th><th>Employee Name</th><th>Department</th><th>Total Loan</th><th>Loan Outstanding</th>
+                                    <th>Monthly Instalment</th><th>Instalments</th><th>Recovered</th><th>Loan Status</th><th>Requested On</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in rows)
+                                {
+                                    <tr @key="row.Id">
+                                        <td>@row.EmployeeNumber</td>
+                                        <td class="strong">@row.DisplayName</td>
+                                        <td>@row.DepartmentName</td>
+                                        <td>@PayrollFormat.Rupees(row.Principal)</td>
+                                        <td class="@(row.Outstanding > 0 ? "pay-amber" : null)">@PayrollFormat.Rupees(row.Outstanding)</td>
+                                        <td>@PayrollFormat.Rupees(row.MonthlyInstallment)</td>
+                                        <td>@row.InstallmentsRecovered/@row.Installments</td>
+                                        <td class="pay-net">@PayrollFormat.Rupees(row.Recovered)</td>
+                                        <td><span class="loan-status @row.Status.ToLowerInvariant()">● @row.Status</span></td>
+                                        <td>@row.RequestedOn.ToString("dd MMM yyyy")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            else if (Tab == LoanTab.AdvanceDetails)
+            {
+                var rows = QuickFilter(Rows.Where(row => row.Type == LoanTypes.Advance)).ToList();
+
+                @if (rows.Count == 0)
+                {
+                    <p class="hr-empty">No advance vouchers match these filters.</p>
+                }
+                else
+                {
+                    <div id="rep-print-area" class="pay-table-scroll">
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Emp ID</th><th>Employee Name</th><th>Department</th><th>Advance Amount</th><th>Advance Date</th>
+                                    <th>Monthly Ded</th><th>Pending</th><th>Recovered</th><th>Total Deduction</th><th>Loan Status</th><th>Advance Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in rows)
+                                {
+                                    <tr @key="row.Id" class="loan-row-link" title="Open the Advance Payment Ledger" @onclick="() => OpenLedgerAsync(row)">
+                                        <td>@row.EmployeeNumber</td>
+                                        <td class="strong">@row.DisplayName</td>
+                                        <td>@row.DepartmentName</td>
+                                        <td>@PayrollFormat.Rupees(row.Principal)</td>
+                                        <td>@row.RequestedOn.ToString("dd MMM yyyy")</td>
+                                        <td>@PayrollFormat.Rupees(row.MonthlyInstallment)</td>
+                                        <td class="@(row.Outstanding > 0 ? "pay-amber" : null)">@PayrollFormat.Rupees(row.Outstanding)</td>
+                                        <td class="pay-net">@PayrollFormat.Rupees(row.Recovered)</td>
+                                        <td class="pay-net">@PayrollFormat.Rupees(row.Recovered)</td>
+                                        <td><span class="loan-status @row.Status.ToLowerInvariant()">● @row.Status</span></td>
+                                        <td><span class="hr-tag">@(row.AdvanceTypeName ?? "Other")</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="hr-hint">Click a row to open its Advance Payment Ledger.</p>
+                }
+            }
+            else
+            {
+                var rows = QuickFilterSummary(Workspace?.SummaryRows ?? []).ToList();
+
+                @if (rows.Count == 0)
+                {
+                    <p class="hr-empty">Nobody in scope holds a loan or an advance.</p>
+                }
+                else
+                {
+                    <div id="rep-print-area" class="pay-table-scroll">
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Emp ID</th><th>Employee Name</th><th>Department</th><th>Total Loan</th><th>Loan Outstanding</th>
+                                    <th>Advance Pending</th><th>Total Deduction</th><th>Loan Status</th><th>Advance Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in rows)
+                                {
+                                    <tr @key="row.EmployeeId">
+                                        <td>@row.EmployeeNumber</td>
+                                        <td class="strong">@row.DisplayName</td>
+                                        <td>@row.DepartmentName</td>
+                                        <td>@PayrollFormat.Rupees(row.TotalLoan)</td>
+                                        <td class="@(row.LoanOutstanding > 0 ? "pay-amber" : null)">@PayrollFormat.Rupees(row.LoanOutstanding)</td>
+                                        <td class="@(row.AdvancePending > 0 ? "pay-amber" : null)">@PayrollFormat.Rupees(row.AdvancePending)</td>
+                                        <td>@PayrollFormat.Rupees(row.TotalDeduction)</td>
+                                        <td>@StatusTag(row.LoanStatus)</td>
+                                        <td>@StatusTag(row.AdvanceStatus)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </section>
+    }
+</HrSettingsPage>
+
+@if (Ledger is { } ledger)
+{
+    <div class="hr-modal-backdrop" @onclick="() => Ledger = null"></div>
+    <div class="pay-modal wide" role="dialog" aria-modal="true" aria-label="Advance Ledger">
+        <div class="pay-modal-head blue">
+            <h2>Advance Ledger</h2>
+            <button type="button" class="pay-modal-close" aria-label="Close" @onclick="() => Ledger = null">✕</button>
+        </div>
+        <div class="pay-modal-body">
+            <div class="loan-filter-actions" style="margin-bottom:12px">
+                <button class="hr-button small ghost" type="button" @onclick="ExportLedgerAsync">⬇ Export to Excel</button>
+                <button class="hr-button small ghost" type="button" @onclick="PrintLedgerAsync">🖨 Print</button>
+            </div>
+
+            <div id="ledger-print-area">
+                <div class="org-tiles" style="grid-template-columns:repeat(3,minmax(160px,1fr));margin-bottom:14px">
+                    <div><span>Employee</span><strong>@ledger.Loan.DisplayName</strong><small>@ledger.Loan.EmployeeNumber</small></div>
+                    <div><span>Department &amp; Designation</span><strong>@ledger.Loan.DepartmentName</strong><small>@(ledger.DesignationName ?? "—")</small></div>
+                    <div><span>Advance Type</span><strong>@(ledger.Loan.AdvanceTypeName ?? "Other")</strong></div>
+                </div>
+
+                <div class="pay-mini-tiles four">
+                    <div><span>Total Advance Amount</span><strong>@PayrollFormat.Rupees(ledger.Loan.Principal)</strong></div>
+                    <div><span>Recovered</span><strong class="pay-net">@PayrollFormat.Rupees(ledger.Loan.Recovered)</strong></div>
+                    <div><span>Pending Amount</span><strong>@PayrollFormat.Rupees(ledger.Loan.Outstanding)</strong></div>
+                    <div><span>Monthly Deduction</span><strong>@PayrollFormat.Rupees(ledger.Loan.MonthlyInstallment)</strong></div>
+                </div>
+
+                <h3 class="pay-section-title">Advance Payment Ledger</h3>
+                <div class="pay-table-scroll">
+                    <table class="pay-table">
+                        <thead>
+                            <tr><th>#</th><th>Month</th><th>Opening Balance</th><th>Monthly Deduction</th><th>Amount Paid</th><th>Closing Balance</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in ledger.Rows)
+                            {
+                                <tr @key="row.Number">
+                                    <td>@row.Number</td>
+                                    <td>@row.MonthLabel</td>
+                                    <td>@PayrollFormat.Rupees(row.OpeningBalance)</td>
+                                    <td>@PayrollFormat.Rupees(row.MonthlyDeduction)</td>
+                                    <td class="pay-net">@PayrollFormat.Rupees(row.AmountPaid)</td>
+                                    <td>@PayrollFormat.Rupees(row.ClosingBalance)</td>
+                                    <td>@StatusTag(row.Status)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private enum LoanTab { LoanDetails, AdvanceDetails, Summary }
+
+    private LoanWorkspaceDto? Workspace;
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private string TenantName = string.Empty;
+
+    private string Status = string.Empty;
+    private string DepartmentCode = string.Empty;
+    private string DesignationName = string.Empty;
+    private string EmployeeNumber = string.Empty;
+    private string Search = string.Empty;
+    private string AmountRange = string.Empty;
+    private DateOnly? RequestedFrom;
+    private DateOnly? RequestedTo;
+    private string QuickSearch = string.Empty;
+
+    private LoanTab Tab = LoanTab.LoanDetails;
+    private LoanLedgerDto? Ledger;
+
+    private bool IsLoading = true;
+    private string? LoadError;
+
+    private IReadOnlyList<LoanListItemDto> Rows => Workspace?.Loans ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+            TenantName = caller.TenantKey;
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var (min, max) = SplitAmountRange(AmountRange);
+
+            Workspace = await Loans.GetWorkspaceAsync(caller, new LoanQuery
+            {
+                Status = Status,
+                DepartmentCode = DepartmentCode,
+                DesignationName = DesignationName,
+                EmployeeNumber = EmployeeNumber,
+                Search = Search,
+                AmountMin = min,
+                AmountMax = max,
+                RequestedFrom = RequestedFrom,
+                RequestedTo = RequestedTo
+            });
+            LoadError = null;
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Workspace = null;
+            LoadError = $"This account does not hold {denied.Permission}, so the report cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ChangeAsync(Action change)
+    {
+        change();
+        await LoadAsync();
+    }
+
+    private async Task ClearAllAsync()
+    {
+        Status = DepartmentCode = DesignationName = EmployeeNumber = Search = AmountRange = QuickSearch = string.Empty;
+        RequestedFrom = RequestedTo = null;
+        await LoadAsync();
+    }
+
+    private IEnumerable<LoanListItemDto> QuickFilter(IEnumerable<LoanListItemDto> rows)
+    {
+        if (string.IsNullOrWhiteSpace(QuickSearch))
+        {
+            return rows;
+        }
+
+        var term = QuickSearch.Trim();
+        return rows.Where(row =>
+            row.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            row.EmployeeNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            row.DepartmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<LoanSummaryRowDto> QuickFilterSummary(IEnumerable<LoanSummaryRowDto> rows)
+    {
+        if (string.IsNullOrWhiteSpace(QuickSearch))
+        {
+            return rows;
+        }
+
+        var term = QuickSearch.Trim();
+        return rows.Where(row =>
+            row.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            row.EmployeeNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            row.DepartmentName.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task OpenLedgerAsync(LoanListItemDto row)
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Ledger = await Loans.GetLedgerAsync(caller, row.Id);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task PrintLedgerAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#ledger-print-area");
+
+    private async Task ExportLedgerAsync()
+    {
+        if (Ledger is not { } ledger)
+        {
+            return;
+        }
+
+        var sheet = new ExcelSheet("Advance Ledger", $"Advance Ledger — {ledger.Loan.VoucherNo}",
+            $"{ledger.Loan.DisplayName} ({ledger.Loan.EmployeeNumber}) · {ledger.Loan.DepartmentName}",
+            [
+                new("#", ExcelFormat.Integer), new("Month"), new("Opening Balance", ExcelFormat.Money),
+                new("Monthly Deduction", ExcelFormat.Money), new("Amount Paid", ExcelFormat.Money),
+                new("Closing Balance", ExcelFormat.Money), new("Status")
+            ],
+            ledger.Rows.Select(row => ExcelDownload.Row(row.Number, row.MonthLabel, row.OpeningBalance, row.MonthlyDeduction, row.AmountPaid, row.ClosingBalance, row.Status)).ToList());
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"advance-ledger-{ledger.Loan.VoucherNo}.xlsx", sheet);
+    }
+
+    private async Task DownloadJsonAsync()
+    {
+        var json = JsonSerializer.Serialize(Rows, new JsonSerializerOptions { WriteIndented = true });
+        await JS.InvokeVoidAsync("hrPayroll.download", $"loan-advance-report-{DateTime.Today:yyyy-MM-dd}.json", json, "application/json;charset=utf-8");
+    }
+
+    private async Task DownloadCsvAsync()
+    {
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Voucher,Employee Number,Name,Department,Type,Principal,Outstanding,Recovered,Status,Requested On");
+        foreach (var row in Rows)
+        {
+            csv.AppendLine(string.Join(',', ReportCsvField(row.VoucherNo), ReportCsvField(row.EmployeeNumber), ReportCsvField(row.DisplayName),
+                ReportCsvField(row.DepartmentName), ReportCsvField(row.Type), row.Principal, row.Outstanding, row.Recovered,
+                ReportCsvField(row.Status), row.RequestedOn.ToString("yyyy-MM-dd")));
+        }
+
+        await JS.InvokeVoidAsync("hrPayroll.download", $"loan-advance-report-{DateTime.Today:yyyy-MM-dd}.csv", csv.ToString(), "text/csv;charset=utf-8");
+    }
+
+    private static string ReportCsvField(string value) =>
+        value.IndexOfAny([',', '"', '\n']) >= 0 ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
+
+    private static (decimal? Min, decimal? Max) SplitAmountRange(string range)
+    {
+        if (string.IsNullOrWhiteSpace(range))
+        {
+            return (null, null);
+        }
+
+        var parts = range.Split('-', 2);
+        decimal? min = decimal.TryParse(parts[0], out var minValue) && minValue > 0 ? minValue : null;
+        decimal? max = parts.Length > 1 && decimal.TryParse(parts[1], out var maxValue) ? maxValue : null;
+        return (min, max);
+    }
+
+    private static DateOnly? ParseDate(string text) => DateOnly.TryParse(text, out var parsed) ? parsed : null;
+
+    // Status is always a server-known word (LoanStatuses.*), never user text, so building the
+    // markup directly here is safe.
+    private static MarkupString StatusTag(string status) =>
+        new($"<span class=\"loan-status {status.ToLowerInvariant()}\">● {status}</span>");
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+}

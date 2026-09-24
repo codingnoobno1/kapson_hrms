@@ -1,0 +1,39 @@
+@page "/modules"
+
+<PageTitle>Modules</PageTitle>
+
+<h1 class="page-title">Modules</h1>
+<p class="page-subtitle">Every mobile route registered by the server, grouped by area.</p>
+
+@foreach (var group in ApiCatalog.Groups)
+{
+    <h2 class="section-title">@group.Name</h2>
+    <div class="list">
+        @foreach (var module in group.Modules)
+        {
+            <a class="list-item" href="@Href(module)">
+                <span class="list-item-glyph"><AppIcon Name="@module.Icon" Size="20" /></span>
+                <div class="list-item-main">
+                    <span class="list-item-title">@module.Name</span>
+                    <span class="list-item-meta">@module.Path</span>
+                    @if (module.Permission is not null)
+                    {
+                        <span class="list-item-meta">Requires @module.Permission</span>
+                    }
+                </div>
+                <span class="status-dot @(module.IsImplemented ? "status-live" : "status-pending")">
+                    @(module.IsImplemented ? "Live" : "Pending")
+                </span>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private static string Href(ApiModule module) => module.Key switch
+    {
+        "jobs" => "/jobs",
+        "masters" => "/masters",
+        _ => $"/modules/{module.Key}"
+    };
+}

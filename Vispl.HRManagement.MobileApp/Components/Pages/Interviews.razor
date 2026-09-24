@@ -1,0 +1,138 @@
+@page "/interviews"
+@inject ScreenData Data
+
+@* REF-04 Interview Schedule. The screen title sits on the page ground; the
+   header carries no title of its own. *@
+<PageTitle>Interview Schedule</PageTitle>
+
+<div class="page-enter">
+    <h1 class="page-title">Interview Schedule</h1>
+    @if (interviews is { Count: > 0 })
+    {
+        <p class="page-subtitle">@Summary</p>
+    }
+</div>
+
+@if (message is { } note)
+{
+    <p class="card-note">@note</p>
+}
+
+@if (error is { } problem)
+{
+    <p class="inline-error">@problem</p>
+}
+
+@if (isLoading)
+{
+    <SkeletonList Count="4" Label="Loading interviews" />
+}
+else if (interviews is { Count: > 0 })
+{
+    @* Grouped by day so a schedule reads as a schedule rather than a flat list. *@
+    @foreach (var day in Grouped)
+    {
+        <SectionHeader Title="@DayLabel(day.Key)" Icon="calendar" />
+        <div class="stagger">
+            @foreach (var interview in day)
+            {
+                var scheduled = interview;
+                <InterviewCard Interview="scheduled"
+                               IsBusy="cancelling == scheduled.Id"
+                               OnCancel="() => CancelAsync(scheduled)" />
+            }
+        </div>
+    }
+}
+else if (interviews is not null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="calendar" Size="40" StrokeWidth="1.4" /></div>
+        <h2>No interviews</h2>
+        <p>Nothing is scheduled.</p>
+    </div>
+}
+else if (result is not null)
+{
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@code {
+    private ScreenResult<IReadOnlyList<InterviewModel>>? result;
+    private IReadOnlyList<InterviewModel>? interviews;
+    private bool isLoading = true;
+    private string? cancelling;
+    private string? message;
+    private string? error;
+
+    private IEnumerable<IGrouping<DateOnly, InterviewModel>> Grouped =>
+        (interviews ?? [])
+            .OrderBy(item => item.Date)
+            .ThenBy(item => item.Time)
+            .GroupBy(item => item.Date);
+
+    private string Summary
+    {
+        get
+        {
+            var count = interviews?.Count ?? 0;
+            var days = Grouped.Count();
+            return $"{count} interview{(count == 1 ? "" : "s")} across {days} day{(days == 1 ? "" : "s")}";
+        }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        result = await Data.GetInterviewsAsync();
+        interviews = result.Data;
+        isLoading = false;
+    }
+
+    private async Task CancelAsync(InterviewModel interview)
+    {
+        cancelling = interview.Id;
+        error = null;
+        message = null;
+
+        // Cancelled from a phone is almost always a scheduling clash; the comment says where
+        // it came from so the audit trail is not a bare reason code.
+        var cancelled = await Data.CancelInterviewAsync(
+            interview.Id, "SCHEDULE_CONFLICT", "Cancelled from the HR app.");
+
+        cancelling = null;
+
+        if (!cancelled.IsSuccess)
+        {
+            error = cancelled.Problem?.Title ?? "That interview could not be cancelled.";
+            return;
+        }
+
+        message = $"{interview.CandidateName}'s interview was cancelled.";
+        await LoadAsync();
+    }
+
+    private static string DayLabel(DateOnly day)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        if (day == today)
+        {
+            return "Today";
+        }
+
+        if (day == today.AddDays(1))
+        {
+            return "Tomorrow";
+        }
+
+        if (day == today.AddDays(-1))
+        {
+            return "Yesterday";
+        }
+
+        return day.ToString("dddd, d MMM yyyy");
+    }
+}

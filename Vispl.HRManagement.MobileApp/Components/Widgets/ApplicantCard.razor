@@ -1,0 +1,58 @@
+@* RW-38 ApplicantCard with RW-39 ApplicantActionRow. Cyan carries dark text. *@
+<article class="card applicant-card">
+    <div class="applicant-head">
+        <AvatarView Small="true" />
+        <div class="applicant-identity">
+            <span class="list-item-title">@Applicant.Name</span>
+            <span class="list-item-meta">@Applicant.RoleAndDepartment</span>
+        </div>
+        <StatusPill Label="@StateStyles.Label(Applicant.State)" State="@StateKey" />
+    </div>
+
+    <div class="contact-row">
+        @if (!string.IsNullOrWhiteSpace(Applicant.Email))
+        {
+            <ContactChip Kind="email" Text="@Applicant.Email" />
+        }
+        @if (!string.IsNullOrWhiteSpace(Applicant.Phone))
+        {
+            <ContactChip Kind="phone" Text="@Applicant.Phone" />
+        }
+    </div>
+
+    @if (Applicant.Rating.HasValue)
+    {
+        <RatingStars Value="Applicant.Rating.Value" />
+    }
+
+    <div class="applicant-actions">
+        <button class="btn-primary" type="button" @onclick="OnViewDetails"><AppIcon Name="eye" Size="16" /> View Details</button>
+
+        @* Offered only where the server's own stage machine allows Shortlisted -> Interviewing.
+           A button that is always shown and sometimes refused teaches people to distrust it. *@
+        @if (CanInvite)
+        {
+            <button class="btn-cyan" type="button" disabled="@IsBusy" @onclick="OnInvite">
+                @(IsBusy ? "Moving…" : "Invite Interview")
+            </button>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ApplicantModel Applicant { get; set; } = default!;
+    [Parameter] public EventCallback OnViewDetails { get; set; }
+    [Parameter] public EventCallback OnInvite { get; set; }
+
+    /// <summary>Whether moving this applicant to Interviewing is a legal transition.</summary>
+    [Parameter] public bool CanInvite { get; set; }
+
+    [Parameter] public bool IsBusy { get; set; }
+
+    private string StateKey => Applicant.State switch
+    {
+        ApplicantState.Shortlisted => "shortlisted",
+        ApplicantState.PendingReview => "pending",
+        _ => "rejected"
+    };
+}

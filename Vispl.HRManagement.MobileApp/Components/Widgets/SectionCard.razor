@@ -1,0 +1,17 @@
+@* RW-18 SectionCard *@
+<section class="card">
+    @if (!string.IsNullOrWhiteSpace(Title) || Trailing is not null)
+    {
+        <div class="card-head">
+            <h2>@Title</h2>
+            @Trailing
+        </div>
+    }
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? Trailing { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

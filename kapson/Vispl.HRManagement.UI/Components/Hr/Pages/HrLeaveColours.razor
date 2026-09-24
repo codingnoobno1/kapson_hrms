@@ -1,0 +1,181 @@
+@page "/hr/settings/masters/leave-colours"
+@page "/hr/{TenantKey}/settings/masters/leave-colours"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+@inject ILeaveConfigurationService LeaveConfiguration
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Leave Type Colours | HR Portal</PageTitle>
+
+@*
+    Phase C, decision Q2: HR chooses the colour family and icon of every leave type. The employee
+    app draws the approval card's header strip, avatar and employee number in that colour, and the
+    history row with that icon. Saved through the same leave policy service the admin editor uses.
+*@
+
+<HrSettingsPage TenantKey="@TenantKey" Title="Leave Type Colours" Error="@PageError">
+    <section class="hr-panel hr-crud-card">
+        <div class="hr-crud-head">
+            <h2>Leave Type Colours</h2>
+            <div class="hr-crud-tools">
+                <button class="hr-icon-button" type="button" title="Refresh" aria-label="Refresh"
+                        @onclick="LoadAsync" disabled="@IsBusy"><HrIcon Name="refresh" /></button>
+                @if (CanManage)
+                {
+                    <button class="hr-button small" type="button" @onclick="SaveAsync" disabled="@(IsBusy || !HasChanges)">
+                        @(IsBusy ? "Saving…" : "Save changes")
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (Notice is not null)
+        {
+            <div class="hr-alert success compact">@Notice</div>
+        }
+        @if (ListError is not null)
+        {
+            <div class="hr-alert error compact">@ListError</div>
+        }
+
+        <div class="hr-table-scroll">
+            <table class="hr-table hr-crud-table">
+                <thead>
+                    <tr>
+                        <th class="hr-col-narrow">S.No.</th>
+                        <th>Leave Type</th>
+                        <th>Code</th>
+                        <th>Colour</th>
+                        <th>Icon</th>
+                        <th>In the app</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Policies.Count == 0)
+                    {
+                        <tr class="hr-crud-empty-row"><td colspan="7">@(IsBusy ? "Loading…" : "No leave policies yet.")</td></tr>
+                    }
+                    @for (var index = 0; index < Policies.Count; index++)
+                    {
+                        var policy = Policies[index];
+
+                        <tr>
+                            <td class="hr-col-narrow">@(index + 1)</td>
+                            <td>@policy.Name</td>
+                            <td>@policy.Code</td>
+                            <td>
+                                <select value="@policy.ToneKey" disabled="@(!CanManage)"
+                                        @onchange="args => policy.ToneKey = LeaveTones.Normalize(args.Value?.ToString())">
+                                    @foreach (var tone in LeaveTones.All)
+                                    {
+                                        <option value="@tone">@ToneLabel(tone)</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <input value="@policy.Emoji" maxlength="8" style="width:64px" disabled="@(!CanManage)"
+                                       @onchange="args => policy.Emoji = args.Value?.ToString()?.Trim() ?? string.Empty" />
+                            </td>
+                            <td>
+                                <span style="@LeaveTonePalette.TagStyle(policy.ToneKey)">
+                                    @policy.Emoji @policy.Name
+                                </span>
+                            </td>
+                            <td>
+                                <span class="hr-status-pill @(policy.IsActive ? "active" : "inactive")">@(policy.IsActive ? "ACTIVE" : "INACTIVE")</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (!CanManage && Policies.Count > 0)
+        {
+            <p class="hr-crud-hint" style="margin-top:10px">Read-only — changing leave types needs LEAVE.CONFIGURE.</p>
+        }
+    </section>
+</HrSettingsPage>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private List<LeavePolicyAdminDto> Policies = [];
+    private Dictionary<long, (string Tone, string Emoji)> Saved = [];
+    private bool CanManage;
+    private bool IsBusy = true;
+    private string? PageError;
+    private string? ListError;
+    private string? Notice;
+
+    private bool HasChanges => Policies.Any(IsChanged);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        ListError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanManage = await PortalCaller.HasAsync("LEAVE.CONFIGURE");
+            Policies = (await LeaveConfiguration.GetPoliciesAsync(caller.TenantKey)).ToList();
+            Saved = Policies.ToDictionary(item => item.Id, item => (item.ToneKey, item.Emoji));
+        }
+        catch (InvalidOperationException ex) when (Policies.Count == 0)
+        {
+            PageError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        IsBusy = true;
+        ListError = null;
+        Notice = null;
+
+        try
+        {
+            if (!await PortalCaller.HasAsync("LEAVE.CONFIGURE"))
+            {
+                ListError = "Changing leave types needs LEAVE.CONFIGURE.";
+                return;
+            }
+
+            var changed = Policies.Where(IsChanged).ToList();
+            foreach (var policy in changed)
+            {
+                await LeaveConfiguration.SavePolicyAsync(policy);
+            }
+
+            Notice = $"Saved {changed.Count} leave type{(changed.Count == 1 ? "" : "s")}. The app shows the new colours the next time it loads leave.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool IsChanged(LeavePolicyAdminDto policy) =>
+        !Saved.TryGetValue(policy.Id, out var saved) || saved.Tone != policy.ToneKey || saved.Emoji != policy.Emoji;
+
+    private static string ToneLabel(string tone) => char.ToUpperInvariant(tone[0]) + tone[1..];
+}

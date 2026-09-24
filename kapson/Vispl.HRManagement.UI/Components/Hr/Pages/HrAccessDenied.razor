@@ -1,0 +1,21 @@
+@page "/hr/access-denied"
+@attribute [AllowAnonymous]
+
+<PageTitle>Not available | HR Portal</PageTitle>
+
+<div class="hr-login">
+    <section class="hr-login-panel">
+        <span class="hr-kicker">HR PORTAL</span>
+        <h1>This account cannot open the HR portal</h1>
+        <p>
+            The HR portal is for HR accounts. Platform administration is a separate account at
+            <a href="/admin">/admin</a>, and employees use the mobile app.
+        </p>
+        <p>If you believe this is wrong, ask an administrator to check the portal on your account.</p>
+
+        <form method="post" action="/identity/hr/logout">
+            <AntiforgeryToken />
+            <button class="hr-button" type="submit">Sign out</button>
+        </form>
+    </section>
+</div>

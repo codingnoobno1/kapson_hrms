@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="Vispl.HRManagement.Mobile.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    FlyoutBehavior="Flyout"
+    FlyoutBackgroundColor="White"
+    Shell.BackgroundColor="White"
+    Shell.ForegroundColor="{StaticResource Navy800}"
+    Shell.NavBarIsVisible="False"
+    Shell.TabBarBackgroundColor="White"
+    Shell.TabBarForegroundColor="{StaticResource Primary600}"
+    Shell.TabBarTitleColor="{StaticResource Primary600}"
+    Shell.TabBarUnselectedColor="{StaticResource Ink500}">
+    <Shell.FlyoutHeader>
+        <Grid Padding="24,44,24,24" RowDefinitions="Auto,Auto,Auto" BackgroundColor="{StaticResource Navy800}">
+            <Border WidthRequest="60" HeightRequest="60" BackgroundColor="{StaticResource Primary500}" StrokeThickness="0" HorizontalOptions="Start">
+                <Border.StrokeShape><RoundRectangle CornerRadius="22" /></Border.StrokeShape>
+                <Label Text="HR" TextColor="White" FontSize="20" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+            </Border>
+            <Label Grid.Row="1" Margin="0,14,0,0" Text="Michael Brown" TextColor="White" FontSize="20" FontAttributes="Bold" />
+            <VerticalStackLayout Grid.Row="2" Spacing="2">
+                <Label Text="HR Administrator" TextColor="#C7D5F1" FontSize="13" />
+                <Label Text="Kapsons · HR workspace" TextColor="#8EA7D3" FontSize="12" />
+            </VerticalStackLayout>
+        </Grid>
+    </Shell.FlyoutHeader>
+</Shell>

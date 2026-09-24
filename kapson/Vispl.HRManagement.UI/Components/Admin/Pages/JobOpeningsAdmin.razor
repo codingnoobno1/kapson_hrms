@@ -1,0 +1,101 @@
+@page "/admin/jobs"
+@attribute [Authorize(Policy = "AdminPortal")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject IJobOpeningService JobOpeningService
+@inject ITenantService TenantService
+@inject IMasterDataService MasterDataService
+
+<PageTitle>Job Openings | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav />
+    <main class="admin-page">
+        <div class="admin-page-heading"><div><span class="admin-kicker">RECRUITMENT</span><h1>Job openings</h1><p>Create tenant-specific opportunities using the controlled values from Recruitment Masters.</p></div><button class="admin-button primary" type="button" @onclick="NewOpening">New opening</button></div>
+        <div class="admin-context-bar"><label>Client<select value="@TenantKey" @onchange="ChangeTenant">@foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }</select></label><a href="/admin/masters?tenant=@TenantKey">Edit master values →</a></div>
+        @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="admin-alert @StatusClass">@StatusMessage</div> }
+
+        <div class="admin-jobs-layout">
+            <section class="admin-panel admin-job-list-panel">
+                <div class="admin-section-title"><div><span>@Openings.Count</span><h2>All openings</h2></div></div>
+                <div class="admin-job-list">
+                    @foreach (var job in Openings)
+                    {
+                        <button type="button" class="admin-job-item @(EditorModel?.Id == job.Id ? "active" : null)" @onclick="() => EditOpening(job)"><span class="admin-publish-dot @(job.IsPublished ? "published" : null)"></span><span><strong>@job.Title</strong><small>@job.Department · @job.Location</small></span><em>@(job.IsPublished ? "Published" : "Draft")</em></button>
+                    }
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                @if (EditorModel is null || EditContext is null) { <div class="admin-empty-state"><h2>Select an opening</h2><p>Choose an opening to edit or create a new one.</p></div> }
+                else
+                {
+                    <div class="admin-section-title"><div><span>@(EditorModel.Id == 0 ? "NEW" : EditorModel.Id)</span><h2>@(EditorModel.Id == 0 ? "New opening" : "Edit opening")</h2></div></div>
+                    <EditForm EditContext="EditContext" OnValidSubmit="SaveOpeningAsync" FormName="job-opening-editor">
+                        <DataAnnotationsValidator /><ValidationSummary class="admin-validation" />
+                        <div class="admin-form-grid">
+                            <label class="span-two">Job title<InputText @bind-Value="EditorModel.Title" /></label><label class="span-two">URL slug<InputText @bind-Value="EditorModel.Slug" /></label>
+                            <label>Department<InputSelect @bind-Value="EditorModel.Department">@MasterOptions(MasterCategories.Department)</InputSelect></label>
+                            <label>Location<InputSelect @bind-Value="EditorModel.Location">@MasterOptions(MasterCategories.Location)</InputSelect></label>
+                            <label>Job type<InputSelect @bind-Value="EditorModel.EmploymentType">@MasterOptions(MasterCategories.JobType)</InputSelect></label>
+                            <label>Work mode<InputSelect @bind-Value="EditorModel.WorkMode">@MasterOptions(MasterCategories.WorkMode)</InputSelect></label>
+                            <label>Experience<InputSelect @bind-Value="EditorModel.Experience">@MasterOptions(MasterCategories.Experience)</InputSelect></label>
+                            <label class="span-two">Summary<InputTextArea @bind-Value="EditorModel.Summary" /></label><label class="span-two">Responsibilities (one per line)<InputTextArea class="tall-input" @bind-Value="ResponsibilitiesText" /></label><label class="span-two">Requirements (one per line)<InputTextArea class="tall-input" @bind-Value="RequirementsText" /></label>
+                            <label class="admin-check span-two"><InputCheckbox @bind-Value="EditorModel.IsPublished" /><span>Publish this opening on the candidate site</span></label>
+                        </div>
+                        <div class="admin-form-actions"><button class="admin-button primary" type="submit" disabled="@IsSaving">Save opening</button></div>
+                    </EditForm>
+                }
+            </section>
+        </div>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tenant")] public string? RequestedTenant { get; set; }
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<MasterOptionDto> Masters { get; set; } = [];
+    private IReadOnlyList<JobOpeningDto> Openings { get; set; } = [];
+    private string TenantKey { get; set; } = "kapson";
+    private JobOpeningDto? EditorModel { get; set; }
+    private EditContext? EditContext { get; set; }
+    private string ResponsibilitiesText { get; set; } = string.Empty;
+    private string RequirementsText { get; set; } = string.Empty;
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+    private bool IsSaving { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = Tenants.Any(item => item.TenantKey == RequestedTenant) ? RequestedTenant! : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await LoadTenantAsync();
+    }
+    private async Task ChangeTenant(ChangeEventArgs args) { TenantKey = args.Value?.ToString() ?? TenantKey; StatusMessage = null; await LoadTenantAsync(); }
+    private async Task LoadTenantAsync() { Masters = await MasterDataService.GetAllAsync(TenantKey); await RefreshAsync(); if (Openings.Count > 0) EditOpening(Openings[0]); else NewOpening(); }
+    private RenderFragment MasterOptions(string category) => builder =>
+    {
+        var sequence = 0;
+        builder.OpenElement(sequence++, "option"); builder.AddAttribute(sequence++, "value", ""); builder.AddContent(sequence++, "Select a value"); builder.CloseElement();
+        foreach (var item in Masters.Where(item => item.Category == category && item.IsActive).OrderBy(item => item.SortOrder))
+        {
+            builder.OpenElement(sequence++, "option"); builder.AddAttribute(sequence++, "value", item.Name); builder.AddContent(sequence++, item.Name); builder.CloseElement();
+        }
+    };
+    private string FirstMaster(string category, string fallback) => Masters.Where(item => item.Category == category && item.IsActive).OrderBy(item => item.SortOrder).Select(item => item.Name).FirstOrDefault() ?? fallback;
+    private void NewOpening() => SetEditor(new JobOpeningDto { TenantKey = TenantKey, Department = FirstMaster(MasterCategories.Department, ""), Location = FirstMaster(MasterCategories.Location, ""), EmploymentType = FirstMaster(MasterCategories.JobType, "Full Time"), WorkMode = FirstMaster(MasterCategories.WorkMode, "On-site"), Experience = FirstMaster(MasterCategories.Experience, ""), IsPublished = false });
+    private void EditOpening(JobOpeningDto job) => SetEditor(new JobOpeningDto { Id = job.Id, TenantKey = job.TenantKey, Slug = job.Slug, Title = job.Title, Department = job.Department, Location = job.Location, EmploymentType = job.EmploymentType, WorkMode = job.WorkMode, Experience = job.Experience, Summary = job.Summary, Responsibilities = [.. job.Responsibilities], Requirements = [.. job.Requirements], IsPublished = job.IsPublished, PublishedUtc = job.PublishedUtc, UpdatedUtc = job.UpdatedUtc });
+    private void SetEditor(JobOpeningDto model) { EditorModel = model; ResponsibilitiesText = string.Join(Environment.NewLine, model.Responsibilities); RequirementsText = string.Join(Environment.NewLine, model.Requirements); EditContext = new EditContext(model); }
+    private async Task SaveOpeningAsync()
+    {
+        if (EditorModel is null) return;
+        try
+        {
+            IsSaving = true; EditorModel.Responsibilities = ParseLines(ResponsibilitiesText); EditorModel.Requirements = ParseLines(RequirementsText);
+            var id = await JobOpeningService.SaveAsync(EditorModel); await RefreshAsync(); var saved = Openings.Single(item => item.Id == id); EditOpening(saved);
+            StatusClass = "success"; StatusMessage = saved.IsPublished ? "Opening saved and published." : "Opening saved as a draft.";
+        }
+        catch (Exception exception) { StatusClass = "error"; StatusMessage = exception.Message; }
+        finally { IsSaving = false; }
+    }
+    private async Task RefreshAsync() => Openings = await JobOpeningService.GetAllAsync(TenantKey);
+    private static List<string> ParseLines(string value) => value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

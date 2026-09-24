@@ -1,0 +1,100 @@
+@*
+    Donut or pie, drawn as inline SVG.
+
+    No charting library: the portal is server-rendered and must work offline, and a dependency
+    that fetches from a CDN would simply fail behind a corporate proxy.
+*@
+
+@if (Slices.Count == 0 || Total <= 0)
+{
+    <p class="hr-empty">@EmptyMessage</p>
+}
+else
+{
+    <div class="hr-chart-row">
+        <svg class="hr-donut" viewBox="0 0 200 200" role="img" aria-label="@AriaLabel">
+            @{
+                var angle = -90m;
+            }
+            @foreach (var (slice, index) in Slices.Select((slice, index) => (slice, index)))
+            {
+                var sweep = Total <= 0 ? 0m : slice.Value * 360m / Total;
+
+                @if (sweep > 0)
+                {
+                    <path d="@Arc(angle, sweep)" fill="@Colour(slice, index)">
+                        <title>@slice.Label: @Format(slice.Value)</title>
+                    </path>
+                }
+
+                angle += sweep;
+            }
+
+            @if (InnerRadius > 0)
+            {
+                <circle cx="100" cy="100" r="@InnerRadius" fill="#fff" />
+                <svg:text x="100" y="96" text-anchor="middle" class="hr-donut-total">@Format(Total)</svg:text>
+                <svg:text x="100" y="114" text-anchor="middle" class="hr-donut-caption">@CentreCaption</svg:text>
+            }
+        </svg>
+
+        <ul class="hr-chart-legend">
+            @foreach (var (slice, index) in Slices.Select((slice, index) => (slice, index)))
+            {
+                <li>
+                    <span class="hr-legend-swatch" style="background:@Colour(slice, index)"></span>
+                    <span class="hr-legend-label">@slice.Label</span>
+                    <span class="hr-legend-value">@Format(slice.Value)</span>
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    public sealed record Slice(string Label, decimal Value, string? Colour = null);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Slice> Slices { get; set; } = [];
+    [Parameter] public string AriaLabel { get; set; } = "Distribution";
+    [Parameter] public string EmptyMessage { get; set; } = "Nothing recorded in this period.";
+    [Parameter] public string CentreCaption { get; set; } = "total";
+
+    /// <summary>Zero draws a pie; the default draws a donut.</summary>
+    [Parameter] public int InnerRadius { get; set; } = 55;
+
+    private decimal Total => Slices.Sum(slice => slice.Value);
+
+    private static string Colour(Slice slice, int index) =>
+        slice.Colour ?? HrChartPalette.For(index);
+
+    private static string Format(decimal value) =>
+        value == Math.Truncate(value)
+            ? value.ToString("0")
+            : value.ToString("0.#");
+
+    /// <summary>
+    /// One pie wedge as an SVG path. A full circle cannot be drawn as a single arc — the start
+    /// and end points would coincide — so a lone slice is drawn as two half arcs.
+    /// </summary>
+    private static string Arc(decimal startDegrees, decimal sweepDegrees)
+    {
+        if (sweepDegrees >= 359.99m)
+        {
+            return "M 100 10 A 90 90 0 1 1 99.99 10 Z";
+        }
+
+        var (startX, startY) = Point(startDegrees);
+        var (endX, endY) = Point(startDegrees + sweepDegrees);
+        var largeArc = sweepDegrees > 180 ? 1 : 0;
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"M 100 100 L {startX:0.##} {startY:0.##} A 90 90 0 {largeArc} 1 {endX:0.##} {endY:0.##} Z");
+    }
+
+    private static (double X, double Y) Point(decimal degrees)
+    {
+        var radians = (double)degrees * Math.PI / 180d;
+        return (100 + (90 * Math.Cos(radians)), 100 + (90 * Math.Sin(radians)));
+    }
+}

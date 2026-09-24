@@ -1,0 +1,27 @@
+@* RW-14/RW-15 FilterChipGroup. Leading label then a scrollable chip run. *@
+<div class="filter-row">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <span class="filter-label">@Label</span>
+    }
+    @foreach (var chip in Chips)
+    {
+        <button type="button"
+                class="chip @(chip.Key == Selected ? "chip-active" : "")"
+                @onclick="() => SelectAsync(chip.Key)">
+            @chip.Label
+        </button>
+    }
+</div>
+
+@code {
+    public sealed record Chip(string Key, string Label);
+
+    [Parameter] public string Label { get; set; } = "Filter:";
+    [Parameter, EditorRequired] public IReadOnlyList<Chip> Chips { get; set; } = [];
+    [Parameter] public string Selected { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SelectedChanged { get; set; }
+
+    private Task SelectAsync(string key) =>
+        key == Selected ? Task.CompletedTask : SelectedChanged.InvokeAsync(key);
+}

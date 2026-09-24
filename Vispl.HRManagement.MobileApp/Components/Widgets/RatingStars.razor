@@ -1,0 +1,13 @@
+@* RW-30 RatingStars. One filled star plus a numeral, as the references show.
+   Deliberately not a five-star strip. *@
+<span class="rating" aria-label="@($"Rated {Display} out of {Outof}")">
+    <AppIcon Name="star" Size="14" Class="rating-star" />
+    <span class="rating-text">@Display/@Outof Rating</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public decimal Value { get; set; }
+    [Parameter] public int Outof { get; set; } = 5;
+
+    private string Display => Value.ToString("0.0");
+}

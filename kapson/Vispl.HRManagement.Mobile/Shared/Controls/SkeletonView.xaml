@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentView
+    x:Class="Vispl.HRManagement.Mobile.Shared.Controls.SkeletonView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    InputTransparent="True">
+    <Border x:Name="Plate" BackgroundColor="{StaticResource Line}" StrokeThickness="0">
+        <Border.StrokeShape><RoundRectangle x:Name="PlateShape" CornerRadius="12" /></Border.StrokeShape>
+    </Border>
+</ContentView>

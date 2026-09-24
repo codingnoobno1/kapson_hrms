@@ -1,0 +1,12 @@
+[
+  { "tenantKey": "kapson", "code": "SM", "name": "Store Manager", "gradeCode": "MANAGER", "departmentCode": "RETAIL", "description": "Runs day-to-day store operations and leads the floor team", "sortOrder": 1, "isActive": true },
+  { "tenantKey": "kapson", "code": "SE", "name": "Sales Executive", "gradeCode": "EXECUTIVE", "departmentCode": "RETAIL", "description": "Serves customers and drives in-store sales", "sortOrder": 2, "isActive": true },
+  { "tenantKey": "kapson", "code": "VM", "name": "Visual Merchandiser", "gradeCode": "SPECIALIST", "departmentCode": "BRAND", "description": "Designs window and floor displays", "sortOrder": 3, "isActive": true },
+  { "tenantKey": "kapson", "code": "HRM", "name": "HR Manager", "gradeCode": "MANAGER", "departmentCode": "HR", "description": "Manages human resources functions", "sortOrder": 4, "isActive": true },
+  { "tenantKey": "kapson", "code": "HRE", "name": "HR Executive", "gradeCode": "EXECUTIVE", "departmentCode": "HR", "description": "Handles recruitment, onboarding and employee records", "sortOrder": 5, "isActive": true },
+  { "tenantKey": "kapson", "code": "AE", "name": "Accounts Executive", "gradeCode": "EXECUTIVE", "departmentCode": "FINOPS", "description": "Handles accounting and financial records", "sortOrder": 6, "isActive": true },
+  { "tenantKey": "kapson", "code": "FA", "name": "Financial Analyst", "gradeCode": "SPECIALIST", "departmentCode": "FINOPS", "description": "Analyses budgets, costs and financial performance", "sortOrder": 7, "isActive": true },
+  { "tenantKey": "kapson", "code": "ECL", "name": "E-commerce Category Lead", "gradeCode": "LEAD", "departmentCode": "DIGITAL", "description": "Owns online category planning and performance", "sortOrder": 8, "isActive": true },
+  { "tenantKey": "kapson", "code": "SWE", "name": "Software Engineer", "gradeCode": "SPECIALIST", "departmentCode": "DIGITAL", "description": "Develops and maintains software applications", "sortOrder": 9, "isActive": true },
+  { "tenantKey": "kapson", "code": "SSE", "name": "Senior Software Engineer", "gradeCode": "SENIOR", "departmentCode": "DIGITAL", "description": "Leads software development projects", "sortOrder": 10, "isActive": true }
+]

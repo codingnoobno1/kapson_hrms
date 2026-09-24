@@ -1,0 +1,362 @@
+@page "/hr/employees/new"
+@page "/hr/{TenantKey}/employees/new"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Text.RegularExpressions
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.Contracts.Mobile.Employee
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IMobileEmployeeService Employees
+@inject IEmployeeReportService Reports
+@inject IDesignationService Designations
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Add New Employee | HR Portal</PageTitle>
+
+@*
+    No reference layout exists for this destination (scopedocs/web-portal/10 §1): the form follows
+    the portal's existing form language and asks only for what the platform actually stores.
+*@
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="EMPLOYEE" Title="Add New Employee"
+             Subtitle="Create the employee record. Placement uses the masters, so payroll, reports and the organisation chart can read it."
+             Error="@LoadError">
+    <ChildContent>
+        @if (IsLoading)
+        {
+            <p class="hr-empty">Loading…</p>
+        }
+        else if (!CanCreate)
+        {
+            <div class="hr-alert warning">Adding employees needs EMPLOYEES.CREATE. Ask an administrator for the permission.</div>
+        }
+        else if (Created is { } created)
+        {
+            <section class="hr-panel emp-done">
+                <h2>✅ @created.Name added</h2>
+                <p>Employee number <strong>@created.Number</strong>. No sign-in account has been sent yet.</p>
+                <div class="emp-done-actions">
+                    <a class="hr-button small" href="@Href("people")">Open People</a>
+                    <a class="hr-button small ghost" href="@Href("payroll/bank-accounts")">Add salary bank account</a>
+                    <a class="hr-button small ghost" href="@Href("employees/hierarchy")">View organisation</a>
+                    <button class="hr-button small ghost" type="button" @onclick="StartAnother">Add another employee</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <EditForm Model="Form" OnValidSubmit="SubmitAsync" FormName="add-employee" class="emp-form">
+                <DataAnnotationsValidator />
+
+                @if (SaveError is not null)
+                {
+                    <div class="hr-alert error compact">@SaveError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <section class="hr-panel emp-section">
+                    <h2>👤 Personal details</h2>
+                    <div class="hr-form-grid">
+                        <label class="hr-form-wide">
+                            Legal name <em>*</em>
+                            <InputText @bind-Value="Form.LegalName" placeholder="First middle last" />
+                        </label>
+                        <label>
+                            Work email <em>*</em>
+                            <InputText @bind-Value="Form.Email" type="email" placeholder="name@kapsons.com" />
+                        </label>
+                        <label>
+                            Phone
+                            <InputText @bind-Value="Form.Phone" inputmode="tel" placeholder="+91 98765 43210" />
+                        </label>
+                        <label>
+                            Gender
+                            <InputSelect @bind-Value="Form.GenderCode">
+                                <option value="">Not recorded</option>
+                                @foreach (var option in Options(MasterCategories.Gender))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Date of birth
+                            <InputDate @bind-Value="Form.DateOfBirth" />
+                        </label>
+                    </div>
+                </section>
+
+                <section class="hr-panel emp-section">
+                    <h2>💼 Employment</h2>
+                    <div class="hr-form-grid">
+                        <label>
+                            Employee number <em>*</em>
+                            <InputText @bind-Value="Form.EmployeeNumber" />
+                            <small class="hr-hint">Suggested from the highest number in use.</small>
+                        </label>
+                        <label>
+                            Joining date <em>*</em>
+                            <InputDate @bind-Value="Form.JoinedOn" />
+                        </label>
+                        <label>
+                            Designation
+                            <select value="@DesignationCode" @onchange="ChooseDesignation">
+                                <option value="">Not set</option>
+                                @foreach (var designation in DesignationList)
+                                {
+                                    <option @key="designation.Code" value="@designation.Code">@designation.Name</option>
+                                }
+                            </select>
+                            <small class="hr-hint">Fills grade and department from the Designation master.</small>
+                        </label>
+                        <label>
+                            Employment type
+                            <InputSelect @bind-Value="Form.EmploymentType">
+                                <option value="FULL_TIME">Full time</option>
+                                <option value="PART_TIME">Part time</option>
+                                <option value="CONTRACT">Contract</option>
+                                <option value="INTERN">Intern</option>
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Probation ends on
+                            <InputDate @bind-Value="Form.ProbationEndsOn" />
+                            <small class="hr-hint">Leave empty if there is no probation.</small>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="hr-panel emp-section">
+                    <h2>🏢 Placement</h2>
+                    <div class="hr-form-grid">
+                        <label>
+                            Division
+                            <InputSelect @bind-Value="Form.DivisionCode">
+                                <option value="">Not assigned</option>
+                                @foreach (var option in Options(MasterCategories.Division))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Department <em>*</em>
+                            <InputSelect @bind-Value="Form.DepartmentCode">
+                                <option value="">Choose a department</option>
+                                @foreach (var option in Options(MasterCategories.Department))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Location <em>*</em>
+                            <InputSelect @bind-Value="Form.LocationCode">
+                                <option value="">Choose a location</option>
+                                @foreach (var option in Options(MasterCategories.Location))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Grade
+                            <InputSelect @bind-Value="Form.GradeCode">
+                                <option value="">Not assigned — cannot be paid</option>
+                                @foreach (var option in Options(MasterCategories.Grade))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label class="hr-form-wide">
+                            Reports to
+                            <InputSelect @bind-Value="Form.ManagerEmployeeId">
+                                <option value="">Nobody recorded</option>
+                                @foreach (var person in Managers)
+                                {
+                                    <option @key="person.EmployeeId" value="@person.EmployeeId">@person.DisplayName (@person.EmployeeNumber)@(person.JobTitle is { } title ? " · " + title : null)</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    </div>
+                </section>
+
+                @if (Duplicates.Count > 0)
+                {
+                    <section class="hr-panel emp-duplicates">
+                        <h2>⚠️ Possible duplicates</h2>
+                        <p>These existing records share the email or employee number. Check before creating another record.</p>
+                        <ul>
+                            @foreach (var match in Duplicates)
+                            {
+                                <li @key="match.Id"><strong>@match.DisplayName</strong> · @match.EmployeeNumber · @match.Department</li>
+                            }
+                        </ul>
+                    </section>
+                }
+
+                <div class="emp-actions">
+                    <a class="hr-button small ghost" href="@Href("people")">Cancel</a>
+                    <button class="hr-button small" type="submit" disabled="@IsSaving">
+                        @(IsSaving ? "Saving…" : Duplicates.Count > 0 ? "Create anyway" : "Create employee")
+                    </button>
+                </div>
+            </EditForm>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private sealed record CreatedEmployee(string Name, string Number);
+
+    private CreateEmployeeRequest Form = new();
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private IReadOnlyList<DesignationDto> DesignationList = [];
+    private IReadOnlyList<EmployeeDirectoryRowDto> Directory = [];
+    private IReadOnlyList<EmployeeListItemDto> Duplicates = [];
+    private string DesignationCode = string.Empty;
+
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private bool CanCreate;
+    private bool DuplicatesAcknowledged;
+    private string? LoadError;
+    private string? SaveError;
+    private CreatedEmployee? Created;
+
+    private IEnumerable<EmployeeDirectoryRowDto> Managers => Directory.Where(row => row.IsActive);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanCreate = await PortalCaller.HasAsync("EMPLOYEES.CREATE");
+
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+            DesignationList = (await Designations.GetAllAsync(caller.TenantKey)).Where(item => item.IsActive).ToList();
+
+            if (await PortalCaller.HasAsync("EMPLOYEES.VIEW"))
+            {
+                Directory = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery());
+            }
+
+            ResetForm();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        Form = new CreateEmployeeRequest
+        {
+            EmployeeNumber = SuggestNumber(),
+            JoinedOn = DateOnly.FromDateTime(DateTime.Today),
+            EmploymentType = "FULL_TIME"
+        };
+        DesignationCode = string.Empty;
+        Duplicates = [];
+        DuplicatesAcknowledged = false;
+        SaveError = null;
+    }
+
+    private void StartAnother()
+    {
+        Created = null;
+        ResetForm();
+    }
+
+    private void ChooseDesignation(ChangeEventArgs args)
+    {
+        DesignationCode = args.Value?.ToString() ?? string.Empty;
+        var designation = DesignationList.FirstOrDefault(item => item.Code == DesignationCode);
+
+        Form.JobTitle = designation?.Name;
+        if (designation is not null)
+        {
+            Form.GradeCode = designation.GradeCode;
+            Form.DepartmentCode = designation.DepartmentCode;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        IsSaving = true;
+        SaveError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            // Show likely duplicates once; a second submit is the explicit "create anyway".
+            if (!DuplicatesAcknowledged)
+            {
+                Duplicates = await Employees.CheckDuplicateAsync(caller, Form, CancellationToken.None);
+                if (Duplicates.Count > 0)
+                {
+                    DuplicatesAcknowledged = true;
+                    return;
+                }
+            }
+
+            var name = Form.LegalName.Trim();
+            var number = Form.EmployeeNumber.Trim();
+            Form.ManagerEmployeeId = string.IsNullOrWhiteSpace(Form.ManagerEmployeeId) ? null : Form.ManagerEmployeeId;
+
+            await Employees.CreateAsync(caller, Form, CancellationToken.None);
+            Created = new CreatedEmployee(name, number);
+
+            Directory = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery());
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            SaveError = $"This needs {denied.Permission}.";
+        }
+        catch (Exception ex) when (ex is MobileValidationException or MobileNotFoundException)
+        {
+            SaveError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    /// <summary>The next number after the highest "PREFIX-digits" in use, keeping the prefix and width.</summary>
+    private string SuggestNumber()
+    {
+        var best = Directory
+            .Select(row => Regex.Match(row.EmployeeNumber, @"^([A-Za-z]+-)(\d+)$"))
+            .Where(match => match.Success)
+            .Select(match => (Prefix: match.Groups[1].Value, Digits: match.Groups[2].Value, Value: long.Parse(match.Groups[2].Value)))
+            .OrderByDescending(item => item.Value)
+            .FirstOrDefault();
+
+        return best.Prefix is null
+            ? "EMP-0001"
+            : best.Prefix + (best.Value + 1).ToString().PadLeft(best.Digits.Length, '0');
+    }
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

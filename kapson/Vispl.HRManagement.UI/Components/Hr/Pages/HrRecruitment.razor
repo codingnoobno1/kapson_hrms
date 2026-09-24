@@ -1,0 +1,338 @@
+@page "/hr/recruitment"
+@page "/hr/{TenantKey}/recruitment"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Recruitment
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.Contracts.Recruitment
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IWorkforceReportService Reports
+@inject IApplicationService Applications
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Recruitment | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="recruitment" TenantKey="@TenantKey"
+             Kicker="HIRING" Title="Recruitment"
+             Subtitle="Open positions, who has applied to them, and what happens next."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Stage
+            <select value="@Stage" @onchange="ChangeStage">
+                <option value="">Every stage</option>
+                @foreach (var stage in ApplicationStages.All)
+                {
+                    <option value="@stage">@Spaced(stage)</option>
+                }
+            </select>
+        </label>
+
+        <label>
+            Search
+            <input type="search" placeholder="Candidate or position"
+                   value="@Search" @onchange="ChangeSearch" @onkeydown="SearchKey" />
+        </label>
+
+        <button class="hr-button small" type="button" @onclick="LoadAsync" disabled="@IsBusy">
+            @(IsBusy ? "Loading…" : "Apply")
+        </button>
+    </Filters>
+
+    <ChildContent>
+        <HrDataTable TRow="OpeningPipelineRowDto"
+                     Title="Open positions"
+                     Meta="@OpeningsMeta()"
+                     Total="Pipeline?.Openings.Count"
+                     Error="@PipelineError"
+                     IsLoading="IsBusy"
+                     EmptyMessage="No vacancies are open."
+                     Rows="Pipeline?.Openings">
+            <Header>
+                <th>Position</th><th>Department</th><th>Location</th>
+                <th class="numeric">Applied</th><th class="numeric">New</th>
+                <th class="numeric">In progress</th><th class="numeric">Hired</th>
+                <th class="numeric">Rejected</th><th>Latest</th>
+            </Header>
+            <Row Context="opening">
+                <td class="strong">
+                    @opening.Title
+                    @if (!opening.IsPublished)
+                    {
+                        <span class="hr-tag">DRAFT</span>
+                    }
+                </td>
+                <td>@opening.Department</td>
+                <td>@opening.Location</td>
+                <td class="numeric strong">@opening.TotalApplicants</td>
+                <td class="numeric">
+                    @if (opening.NewApplicants > 0)
+                    {
+                        <span class="hr-tag tone-info">@opening.NewApplicants</span>
+                    }
+                    else
+                    {
+                        <text>0</text>
+                    }
+                </td>
+                <td class="numeric">@opening.InProgress</td>
+                <td class="numeric">@opening.Hired</td>
+                <td class="numeric">@opening.Rejected</td>
+                <td>
+                    @if (opening.LatestApplicationUtc is { } latest)
+                    {
+                        <text>@latest.ToLocalTime().ToString("dd MMM")</text>
+                    }
+                    else
+                    {
+                        <span class="hr-tag tone-warning">Nobody yet</span>
+                    }
+                </td>
+            </Row>
+        </HrDataTable>
+
+        @if (ActionMessage is { } message)
+        {
+            <div class="hr-alert success">@message</div>
+        }
+
+        <HrDataTable TRow="ApplicationListItemDto"
+                     Title="Applications"
+                     Meta="@ApplicationsMeta()"
+                     Total="Applicants?.Count"
+                     Error="@ApplicationsError"
+                     IsLoading="IsBusy"
+                     EmptyMessage="No applications match those filters."
+                     Rows="Applicants">
+            <Header>
+                <th>Candidate</th><th>Applied for</th><th>Department</th>
+                <th>Contact</th><th>Applied</th><th>Stage</th><th>Move to</th>
+            </Header>
+            <Row Context="application">
+                <td class="strong">@application.CandidateName</td>
+                <td>@application.JobTitle</td>
+                <td>@application.Department</td>
+                <td>
+                    @application.Email
+                    @if (application.Phone is { } phone)
+                    {
+                        <small class="hr-hint">@phone</small>
+                    }
+                </td>
+                <td>@application.AppliedUtc.ToLocalTime().ToString("dd MMM yyyy")</td>
+                <td><span class="hr-tag tone-@application.StageTone">@Spaced(application.Stage)</span></td>
+                <td>
+                    @{ var next = NextStages(application.Stage); }
+                    @if (next.Count == 0)
+                    {
+                        <small class="hr-hint">@WhyStuck(application.Stage)</small>
+                    }
+                    else
+                    {
+                        <span class="hr-action-row">
+                            @foreach (var stage in next)
+                            {
+                                var target = stage;
+                                <button class="hr-button small @(ApplicationStages.IsRejection(target) ? "ghost" : "")"
+                                        type="button"
+                                        disabled="@(MovingId == application.Id)"
+                                        @onclick="() => MoveAsync(application, target)">
+                                    @Spaced(target)
+                                </button>
+                            }
+                        </span>
+                    }
+                </td>
+            </Row>
+        </HrDataTable>
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    /// <summary>Presentational only; the data is always the signed-in account's client.</summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private OpeningPipelineDto? Pipeline;
+    private IReadOnlyList<ApplicationListItemDto>? Applicants;
+
+    private string Stage = string.Empty;
+    private string Search = string.Empty;
+
+    private string? LoadError;
+    private string? PipelineError;
+    private string? ApplicationsError;
+    private string? ActionMessage;
+    private bool IsBusy = true;
+    private long? MovingId;
+
+    private bool CanManage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Making an offer needs the stronger permission, so the button is only offered to
+        // somebody who holds it rather than shown and then refused.
+        CanManage = await PortalCaller.HasAsync("RECRUITMENT.MANAGE");
+        await LoadAsync();
+    }
+
+    private void ChangeStage(ChangeEventArgs args) => Stage = args.Value?.ToString() ?? string.Empty;
+
+    private void ChangeSearch(ChangeEventArgs args) => Search = args.Value?.ToString() ?? string.Empty;
+
+    private async Task SearchKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        PipelineError = null;
+        ApplicationsError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            // Two panels, two failures. A recruiter who may read applications but not the
+            // board should still get the applications.
+            try
+            {
+                Pipeline = await Reports.GetOpeningPipelineAsync(
+                    caller, new DashboardScopeQuery(), CancellationToken.None);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                PipelineError = $"The openings board needs {denied.Permission}.";
+            }
+
+            try
+            {
+                Applicants = await Applications.GetSummariesAsync(
+                    caller.TenantKey,
+                    string.IsNullOrWhiteSpace(Stage) ? null : Stage,
+                    string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
+                    CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                ApplicationsError = ex.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task MoveAsync(ApplicationListItemDto application, string toStage)
+    {
+        MovingId = application.Id;
+        ActionMessage = null;
+        ApplicationsError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            await Applications.ChangeStageAsync(
+                caller.TenantKey,
+                application.Id,
+                new ChangeStageRequest { ToStage = toStage, Reason = $"Moved from the HR portal." },
+                caller.UserId,
+                CanManage,
+                CancellationToken.None);
+
+            ActionMessage = ApplicationStages.IsRejection(toStage)
+                ? $"{application.CandidateName} was rejected for {application.JobTitle}."
+                : $"{application.CandidateName} moved to {Spaced(toStage)}.";
+
+            await LoadAsync();
+        }
+        catch (ApplicationRejectedException rejected)
+        {
+            ApplicationsError = rejected.Message;
+        }
+        catch (Exception ex)
+        {
+            ApplicationsError = ex.Message;
+        }
+        finally
+        {
+            MovingId = null;
+        }
+    }
+
+    /// <summary>
+    /// What HR may do next, from the same table the service enforces — so a button never
+    /// appears for a move that would be refused. Offering is filtered out for an account that
+    /// lacks RECRUITMENT.MANAGE.
+    /// </summary>
+    private IReadOnlyList<string> NextStages(string from) =>
+        ApplicationStages.All
+            .Where(stage => ApplicationStages.IsHrTransitionAllowed(from, stage))
+            .Where(stage => CanManage || !ApplicationStages.RequiresManagePermission(stage))
+            .ToList();
+
+    /// <summary>
+    /// A row with no buttons needs to say why, or it reads as broken. Two different reasons
+    /// land here and conflating them is what makes the pipeline feel stuck.
+    /// </summary>
+    private string WhyStuck(string stage) => stage switch
+    {
+        ApplicationStages.Offered =>
+            "Waiting on the candidate to accept or decline.",
+        ApplicationStages.OfferAccepted or ApplicationStages.Onboarding =>
+            "Onboarding is in progress; it finishes on the checklist.",
+        ApplicationStages.Hired => "Hired.",
+        ApplicationStages.Rejected or ApplicationStages.OfferDeclined or ApplicationStages.Withdrawn =>
+            "Closed.",
+        ApplicationStages.Interviewing when !CanManage =>
+            "Making an offer needs RECRUITMENT.MANAGE.",
+        _ => "No move available from here."
+    };
+
+    private string OpeningsMeta()
+    {
+        if (Pipeline is null)
+        {
+            return "Loading";
+        }
+
+        return Pipeline.OpeningsWithNoApplicants > 0
+            ? $"{Pipeline.TotalApplicants} applicants · {Pipeline.OpeningsWithNoApplicants} with nobody applied"
+            : $"{Pipeline.TotalApplicants} applicants";
+    }
+
+    private string ApplicationsMeta()
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(Stage))
+        {
+            parts.Add(Spaced(Stage));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Search))
+        {
+            parts.Add("matching " + Search.Trim());
+        }
+
+        return parts.Count == 0 ? "Every application" : string.Join(", ", parts);
+    }
+
+    /// <summary>`OfferAccepted` is a contract value; nobody should have to read camel case.</summary>
+    private static string Spaced(string stage) => stage switch
+    {
+        ApplicationStages.OfferAccepted => "Offer accepted",
+        ApplicationStages.OfferDeclined => "Offer declined",
+        _ => stage
+    };
+}

@@ -1,0 +1,168 @@
+@page "/jobs"
+@inject ScreenData Data
+
+@* REF-02 Manage Jobs, with the REF-03 detail sheet. *@
+<PageTitle>Manage Jobs</PageTitle>
+
+<SegmentedTabBar Segments="Tabs" Selected="@tab" SelectedChanged="OnTabChanged" />
+
+@if (tab == "jobs")
+{
+    <div class="toolbar-right">
+        <button class="header-circle-btn" type="button" aria-label="Export"><AppIcon Name="file-text" Size="20" /></button>
+    </div>
+
+    <SearchField Placeholder="Search job title" Value="@search" ValueChanged="OnSearchChanged" />
+
+    @if (isLoading)
+    {
+        <SkeletonList Count="4" Tall="true" Label="Loading job openings" />
+    }
+    else if (jobs is not null && jobs.Count > 0)
+    {
+        <div class="stagger">
+            @foreach (var job in jobs)
+            {
+                <JobCard Job="job" OnView="() => OpenAsync(job.Id)" />
+            }
+        </div>
+    }
+    else if (jobs is not null)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><AppIcon Name="folder" Size="40" StrokeWidth="1.4" /></div>
+            <h2>No job openings</h2>
+            <p>Nothing matches the current search.</p>
+        </div>
+    }
+    else if (result is not null)
+    {
+        <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+    }
+}
+else
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="alert-circle" Size="40" StrokeWidth="1.4" /></div>
+        <h2>@(tab == "applicants" ? "Applicants" : "Shortlisted")</h2>
+        <p>This tab reuses the applicant list. Open it from Menu → Stall Applicants.</p>
+        <a class="btn-primary" href="/applicants">Go to applicants</a>
+    </div>
+}
+
+@if (sheetOpen)
+{
+    <BottomSheet Title="View Application Details" Icon="eye" OnClose="CloseSheet">
+        @if (detail is not null)
+        {
+            <div class="sheet-summary">
+                <div class="sheet-summary-head">
+                    <div>
+                        <div class="list-item-title">@detail.Title</div>
+                        <div class="list-item-meta">@detail.Department</div>
+                    </div>
+                    <StatusPill Label="@StateStyles.Label(detail.State)"
+                                State="@StateStyles.Label(detail.State).ToLowerInvariant()" />
+                </div>
+                @if (detail.PostedOn.HasValue)
+                {
+                    <div class="list-item-meta">Posted: @detail.PostedOn.Value.ToString("yyyy-MM-dd")</div>
+                }
+            </div>
+
+            <SectionHeader Title="Job Summary" Icon="briefcase" />
+            <KeyValueCard Rows="SummaryRows(detail)" />
+
+            <SectionHeader Title="Job Description" Icon="file-text" />
+            <DescriptionCard Text="@detail.Description" />
+
+            @if (detail.Responsibilities.Count > 0)
+            {
+                <SectionHeader Title="Key Responsibilities" Icon="check" />
+                <BulletDetailCard Groups="detail.Responsibilities" />
+            }
+
+            @if (detail.Qualifications.Count > 0)
+            {
+                <SectionHeader Title="Required Qualifications" Icon="award" />
+                <BulletDetailCard Groups="detail.Qualifications" />
+            }
+        }
+        else if (detailResult is not null)
+        {
+            <ProblemView Outcome="detailResult.Outcome" Problem="detailResult.Problem" />
+        }
+        else
+        {
+            <LoadingView Text="Loading job…" />
+        }
+    </BottomSheet>
+}
+
+@code {
+    private static readonly SegmentedTabBar.Segment[] Tabs =
+    [
+        new("jobs", "Jobs", "file-text"),
+        new("applicants", "Applicants", "users"),
+        new("shortlisted", "Shortlisted", "check")
+    ];
+
+    private string tab = "jobs";
+    private string search = string.Empty;
+    private bool isLoading = true;
+    private bool sheetOpen;
+
+    private ScreenResult<IReadOnlyList<JobCardModel>>? result;
+    private IReadOnlyList<JobCardModel>? jobs;
+
+    private ScreenResult<JobDetailModel>? detailResult;
+    private JobDetailModel? detail;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task OnTabChanged(string key)
+    {
+        tab = key;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnSearchChanged(string value)
+    {
+        search = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        result = await Data.GetJobsAsync(string.IsNullOrWhiteSpace(search) ? null : search.Trim());
+        jobs = result.Data;
+        isLoading = false;
+    }
+
+    private async Task OpenAsync(long id)
+    {
+        sheetOpen = true;
+        detail = null;
+        detailResult = null;
+        StateHasChanged();
+
+        detailResult = await Data.GetJobAsync(id);
+        detail = detailResult.Data;
+    }
+
+    private void CloseSheet()
+    {
+        sheetOpen = false;
+        detail = null;
+        detailResult = null;
+    }
+
+    private static IReadOnlyList<(string, string)> SummaryRows(JobDetailModel job) =>
+    [
+        ("Location", job.Location),
+        ("Job Type", job.EmploymentType),
+        ("Experience", job.ExperienceBand),
+        ("Salary", string.IsNullOrWhiteSpace(job.SalaryRange) ? "—" : job.SalaryRange!)
+    ];
+}

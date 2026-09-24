@@ -1,0 +1,285 @@
+@page "/hr/employees/hierarchy"
+@page "/hr/{TenantKey}/employees/hierarchy"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IEmployeeReportService Reports
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Organisation Hierarchy | HR Portal</PageTitle>
+
+@*
+    No reference layout exists for this destination (scopedocs/web-portal/10 §1). Two views of the
+    same people: who reports to whom, and where each person sits by division and department.
+*@
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="EMPLOYEE" Title="Organisation Hierarchy"
+             Subtitle="Reporting lines and placement, from the employee records."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Division
+            <select value="@DivisionCode" @onchange="args => ChangeAsync(() => DivisionCode = Text(args))">
+                <option value="">All divisions</option>
+                @foreach (var option in Options(MasterCategories.Division))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Department
+            <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
+                <option value="">All departments</option>
+                @foreach (var option in Options(MasterCategories.Department))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Status
+            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="">Everyone</option>
+            </select>
+        </label>
+        <label>
+            Search
+            <input type="search" placeholder="Name, number or title" value="@Search"
+                   @onchange="args => ChangeAsync(() => Search = Text(args))" />
+        </label>
+        <a class="hr-button small" href="@Href("employees/new")">+ Add New Employee</a>
+    </Filters>
+
+    <ChildContent>
+        @if (IsLoading)
+        {
+            <p class="hr-empty">Loading organisation…</p>
+        }
+        else if (Hierarchy is { } org)
+        {
+            <section class="org-tiles">
+                <div><span>Employees</span><strong>@org.TotalEmployees</strong></div>
+                <div><span>Managers</span><strong>@org.ManagerCount</strong><small>with direct reports</small></div>
+                <div class="@(org.WithoutManager > 0 ? "warn" : null)"><span>No manager recorded</span><strong>@org.WithoutManager</strong></div>
+                <div><span>Reporting levels</span><strong>@org.MaxDepth</strong></div>
+            </section>
+
+            @if (org.TotalEmployees > 0 && org.ManagerCount == 0)
+            {
+                <div class="hr-alert warning compact">
+                    No reporting lines are recorded yet, so everyone appears at the top level. Set "Reports to" on each person from People.
+                </div>
+            }
+
+            <div class="pay-tabs" role="tablist">
+                <button type="button" role="tab" class="@(View == OrgView.Reporting ? "active" : null)" @onclick="() => View = OrgView.Reporting">
+                    🧭 Reporting lines <span>@org.ReportingRoots.Count</span>
+                </button>
+                <button type="button" role="tab" class="@(View == OrgView.Divisions ? "active" : null)" @onclick="() => View = OrgView.Divisions">
+                    🏢 By division <span>@org.Divisions.Count</span>
+                </button>
+            </div>
+
+            <section class="hr-panel org-panel">
+                @if (org.TotalEmployees == 0)
+                {
+                    <p class="hr-empty">Nobody matches these filters.</p>
+                }
+                else if (View == OrgView.Reporting)
+                {
+                    <div class="org-tree-tools">
+                        <button class="hr-button small ghost" type="button" @onclick="ExpandAll">Expand all</button>
+                        <button class="hr-button small ghost" type="button" @onclick="() => CollapseAll(org)">Collapse all</button>
+                    </div>
+                    <ul class="org-tree">
+                        @foreach (var root in org.ReportingRoots)
+                        {
+                            @NodeView(root)
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="org-divisions">
+                        @foreach (var division in org.Divisions)
+                        {
+                            <article class="org-division" @key="division.DivisionCode">
+                                <header>
+                                    <h3>🏢 @division.DivisionName</h3>
+                                    <span>@division.EmployeeCount</span>
+                                </header>
+                                @foreach (var department in division.Departments)
+                                {
+                                    <div class="org-department" @key="division.DivisionCode + department.DepartmentCode">
+                                        <h4>📁 @department.DepartmentName <small>@department.Employees.Count</small></h4>
+                                        <ul>
+                                            @foreach (var person in department.Employees)
+                                            {
+                                                <li @key="person.EmployeeId">
+                                                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(person.DisplayName))">@PayrollFormat.Initials(person.DisplayName)</span>
+                                                    <span class="org-person">
+                                                        <strong>@person.DisplayName</strong>
+                                                        <small>@person.EmployeeNumber · @(person.JobTitle ?? "No designation")@(person.ManagerName is { } manager ? " · reports to " + manager : null)</small>
+                                                    </span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private enum OrgView { Reporting, Divisions }
+
+    private OrgView View = OrgView.Reporting;
+    private OrgHierarchyDto? Hierarchy;
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private readonly HashSet<string> Collapsed = [];
+
+    private string DivisionCode = string.Empty;
+    private string DepartmentCode = string.Empty;
+    private string Status = "Active";
+    private string Search = string.Empty;
+
+    private bool IsLoading = true;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Hierarchy = await Reports.GetHierarchyAsync(caller, new EmployeeReportQuery
+            {
+                DivisionCode = DivisionCode,
+                DepartmentCode = DepartmentCode,
+                Status = Status,
+                Search = Search
+            });
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Hierarchy = null;
+            LoadError = $"This account does not hold {denied.Permission}, so the organisation cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ChangeAsync(Action change)
+    {
+        change();
+        await LoadAsync();
+    }
+
+    private void Toggle(string employeeId)
+    {
+        if (!Collapsed.Remove(employeeId))
+        {
+            Collapsed.Add(employeeId);
+        }
+    }
+
+    private void ExpandAll() => Collapsed.Clear();
+
+    private void CollapseAll(OrgHierarchyDto org)
+    {
+        Collapsed.Clear();
+        foreach (var root in org.ReportingRoots.Where(root => root.Reports.Count > 0))
+        {
+            Collapsed.Add(root.Employee.EmployeeId);
+        }
+    }
+
+    private RenderFragment NodeView(OrgHierarchyNodeDto node) => __builder =>
+    {
+        var person = node.Employee;
+        var hasReports = node.Reports.Count > 0;
+        var isOpen = hasReports && !Collapsed.Contains(person.EmployeeId);
+
+        <li @key="person.EmployeeId">
+            <div class="org-node @(person.IsActive ? null : "inactive")">
+                @if (hasReports)
+                {
+                    <button class="org-toggle" type="button" aria-expanded="@isOpen"
+                            aria-label="@(isOpen ? "Collapse" : "Expand") @person.DisplayName's team"
+                            @onclick="() => Toggle(person.EmployeeId)">@(isOpen ? "▾" : "▸")</button>
+                }
+                else
+                {
+                    <span class="org-toggle-spacer"></span>
+                }
+                <span class="pay-avatar c@(PayrollFormat.AvatarTone(person.DisplayName))">@PayrollFormat.Initials(person.DisplayName)</span>
+                <span class="org-person">
+                    <strong>@person.DisplayName</strong>
+                    <small>@person.EmployeeNumber · @(person.JobTitle ?? "No designation")</small>
+                    <small>@person.DepartmentName · @person.DivisionName@(person.GradeName is { } grade ? " · " + grade : null)</small>
+                </span>
+                @if (hasReports)
+                {
+                    <span class="org-team" title="Everyone in this person's reporting line">👥 @node.TeamSize</span>
+                }
+                @if (!person.IsActive)
+                {
+                    <span class="hr-tag tone-neutral">Inactive</span>
+                }
+            </div>
+            @if (isOpen)
+            {
+                <ul>
+                    @foreach (var child in node.Reports)
+                    {
+                        @NodeView(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

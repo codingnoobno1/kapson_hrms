@@ -1,0 +1,23 @@
+@* RW-23 AddressCard. Free-text line, then a three-column strip. *@
+<section class="card">
+    <p class="address-label">Local Address</p>
+    <p class="address-line">@Address.Line</p>
+    <div class="address-grid">
+        <div>
+            <span class="address-col-label">City</span>
+            <span class="address-col-value">@Address.City</span>
+        </div>
+        <div>
+            <span class="address-col-label">State</span>
+            <span class="address-col-value">@Address.State</span>
+        </div>
+        <div>
+            <span class="address-col-label">Pincode</span>
+            <span class="address-col-value">@Address.Pincode</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AddressModel Address { get; set; } = default!;
+}

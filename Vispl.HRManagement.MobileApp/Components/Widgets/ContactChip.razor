@@ -1,0 +1,16 @@
+@* RW-31 ContactChip. Tapping launches mail or the dialler. *@
+<a class="contact-chip" href="@Href">
+    <AppIcon Name="@Icon" Size="14" />
+    <span>@Text</span>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+
+    /// <summary>"email" or "phone".</summary>
+    [Parameter] public string Kind { get; set; } = "email";
+
+    private bool IsEmail => string.Equals(Kind, "email", StringComparison.OrdinalIgnoreCase);
+    private string Icon => IsEmail ? "mail" : "phone";
+    private string Href => IsEmail ? $"mailto:{Text}" : $"tel:{Text}";
+}

@@ -1,0 +1,110 @@
+@page "/masters"
+@inject MastersApi MastersClient
+@using Vispl.HRManagement.Contracts.Mobile.Configuration
+
+<PageTitle>Master Data</PageTitle>
+
+<h1 class="page-title">Master Data</h1>
+
+@if (isLoading)
+{
+    <LoadingView Text="Loading master data…" />
+}
+else if (LoadFailed)
+{
+    <ProblemView Outcome="result!.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+else if (bundle is not null)
+{
+    <p class="page-subtitle">
+        @bundle.Categories.Count categories · @TotalOptions values · version @bundle.Version
+    </p>
+
+    <div class="chip-scroller">
+        @foreach (var category in Categories)
+        {
+            <button type="button"
+                    class="chip @(selected == category ? "chip-active" : "")"
+                    @onclick="() => selected = category">
+                @category
+                <span class="chip-count">@bundle.Categories[category].Count</span>
+            </button>
+        }
+    </div>
+
+    <input class="input"
+           type="search"
+           placeholder="Filter values"
+           @bind="filter"
+           @bind:event="oninput" />
+
+    <div class="list">
+        @foreach (var option in VisibleOptions)
+        {
+            <div class="list-item">
+                <div class="list-item-main">
+                    <span class="list-item-title">@option.Name</span>
+                    <span class="list-item-meta">@option.Code</span>
+                </div>
+                <span class="list-item-index">@option.SortOrder</span>
+            </div>
+        }
+    </div>
+
+    @if (VisibleOptions.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><AppIcon Name="search" Size="40" StrokeWidth="1.4" /></div>
+            <h2>No values</h2>
+            <p>Nothing in @selected matches “@filter”.</p>
+        </div>
+    }
+}
+
+@code {
+    private ApiResult<MasterDataBundleDto>? result;
+    private MasterDataBundleDto? bundle;
+    private bool isLoading = true;
+    private string? selected;
+    private string filter = string.Empty;
+
+    private bool LoadFailed => result is not null && !result.IsSuccess;
+
+    private IReadOnlyList<string> Categories =>
+        bundle is null ? [] : bundle.Categories.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private int TotalOptions => bundle?.Categories.Sum(pair => pair.Value.Count) ?? 0;
+
+    private IReadOnlyList<MasterOptionMobileDto> VisibleOptions
+    {
+        get
+        {
+            if (bundle is null || selected is null || !bundle.Categories.TryGetValue(selected, out var options))
+            {
+                return [];
+            }
+
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                return options;
+            }
+
+            return options
+                .Where(option =>
+                    option.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    option.Code.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        result = await MastersClient.GetAsync();
+        bundle = result.Data;
+        selected = Categories.FirstOrDefault();
+        isLoading = false;
+    }
+}

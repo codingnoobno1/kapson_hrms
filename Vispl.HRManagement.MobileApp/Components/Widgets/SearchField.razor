@@ -1,0 +1,19 @@
+@* RW-16 SearchField. 16px input text so iOS does not zoom on focus. *@
+<div class="search-field">
+    <AppIcon Name="search" Size="18" Class="search-field-icon" />
+    <input class="input input-search"
+           type="search"
+           placeholder="@Placeholder"
+           aria-label="@Placeholder"
+           value="@Value"
+           @oninput="OnInput" />
+</div>
+
+@code {
+    [Parameter] public string Placeholder { get; set; } = "Search";
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private Task OnInput(ChangeEventArgs args) =>
+        ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+}

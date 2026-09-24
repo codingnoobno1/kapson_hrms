@@ -1,0 +1,29 @@
+@* RW-13 SegmentedTabBar. Switches between peer views only — never used to
+   filter a list. Two or three segments. *@
+<div class="segmented" role="tablist">
+    @foreach (var segment in Segments)
+    {
+        <button type="button"
+                role="tab"
+                class="segment @(segment.Key == Selected ? "active" : "")"
+                aria-selected="@(segment.Key == Selected)"
+                @onclick="() => SelectAsync(segment.Key)">
+            @if (!string.IsNullOrWhiteSpace(segment.Icon))
+            {
+                <AppIcon Name="@segment.Icon" Size="16" />
+            }
+            <span>@segment.Label</span>
+        </button>
+    }
+</div>
+
+@code {
+    public sealed record Segment(string Key, string Label, string? Icon = null);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Segment> Segments { get; set; } = [];
+    [Parameter, EditorRequired] public string Selected { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SelectedChanged { get; set; }
+
+    private Task SelectAsync(string key) =>
+        key == Selected ? Task.CompletedTask : SelectedChanged.InvokeAsync(key);
+}

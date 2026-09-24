@@ -1,0 +1,321 @@
+@page "/kapson/careers/{Slug}/apply"
+@page "/career/{TenantKey}/careers/{Slug}/apply"
+@using Microsoft.AspNetCore.Components.Forms
+@using Vispl.HRManagement.BM.ITF.Recruitment
+@using Vispl.HRManagement.Contracts.Recruitment
+@inject ICareerSiteService CareerSiteService
+@inject IApplicationService ApplicationService
+@inject IThemeTemplateService ThemeTemplateService
+@inject Vispl.HRManagement.BM.ITF.Candidate.ICandidateInvitation Invitation
+@rendermode @(new Microsoft.AspNetCore.Components.Web.InteractiveServerRenderMode(prerender: false))
+
+@if (Site is null || Opening is null)
+{
+    <PageTitle>Position not available</PageTitle>
+    @if (Site is not null)
+    {
+        <PublicHeader Site="Site" />
+    }
+    <main class="not-found-page">
+        <h1>This position is not accepting applications</h1>
+        <p>It may have closed since you last looked.</p>
+        <a class="button button-dark" href="@CareersUrl">View all positions</a>
+    </main>
+}
+else
+{
+    <PageTitle>Apply — @Opening.Title | @Site.CompanyName</PageTitle>
+    <div class="public-site template-@Site.TemplateKey" style="@ThemeStyle">
+        <PublicHeader Site="Site" />
+        <main>
+            <section class="job-detail-hero">
+                <div class="public-container narrow-container">
+                    <a class="back-link" href="@JobUrl">← Back to the role</a>
+                    <span class="eyebrow eyebrow-light">@Opening.Department</span>
+                    <h1>Apply: @Opening.Title</h1>
+                    <div class="detail-meta">
+                        <span>@Opening.Location</span>
+                        <span>@Opening.EmploymentType</span>
+                        <span>@Opening.Experience</span>
+                        @if (Opening.ExpiresOn.HasValue)
+                        {
+                            <span>Closes @Opening.ExpiresOn.Value.ToString("d MMM yyyy")</span>
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="job-detail-content">
+                <div class="public-container narrow-container">
+                    @if (result is not null)
+                    {
+                        <div class="apply-result">
+                            <h2>Application received</h2>
+                            <p>
+                                Your reference is <strong>@result.Reference</strong>.
+                                @(result.WasUpdate
+                                    ? "We have replaced your earlier submission for this role."
+                                    : "Our talent team will be in touch.")
+                            </p>
+
+                            @*
+                                Said here because this is the one moment the candidate is
+                                certainly still reading. The link is what makes the rest of the
+                                pipeline reachable — an offer can only be accepted signed in —
+                                so leaving it to be discovered in an inbox is how people fall
+                                out of the process.
+                            *@
+                            <p class="apply-next">
+                                We have emailed <strong>@form.Email</strong> a link to set a
+                                password. Use it to track this application and complete your
+                                joining formalities. If it does not arrive, you can ask for
+                                another from the tracking page.
+                            </p>
+
+                            <div class="apply-result-actions">
+                                <a class="button button-dark" href="@OnboardingUrl">Track my application</a>
+                                <a class="button button-small" href="@CareersUrl">View other positions</a>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <form class="apply-form" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                            <h2>About you</h2>
+
+                            <label>
+                                Full name
+                                <input class="apply-input" @bind="form.FullName" required maxlength="160" />
+                            </label>
+
+                            <div class="apply-grid">
+                                <label>
+                                    Email
+                                    <input class="apply-input" type="email" @bind="form.Email" required maxlength="256" />
+                                </label>
+                                <label>
+                                    Phone
+                                    <input class="apply-input" type="tel" @bind="form.Phone" required maxlength="20" />
+                                </label>
+                            </div>
+
+                            <div class="apply-grid">
+                                <label>
+                                    Total experience (years)
+                                    <input class="apply-input" type="number" step="0.5" min="0" max="60"
+                                           @bind="form.TotalExperienceYears" />
+                                </label>
+                                <label>
+                                    Current location
+                                    <input class="apply-input" @bind="form.CurrentLocation" maxlength="180" />
+                                </label>
+                            </div>
+
+                            <div class="apply-grid">
+                                <label>
+                                    Notice period (days)
+                                    <input class="apply-input" type="number" min="0" max="365" @bind="form.NoticePeriodDays" />
+                                </label>
+                                <label>
+                                    Expected annual salary
+                                    <input class="apply-input" type="number" min="0" @bind="form.ExpectedCtc" />
+                                </label>
+                            </div>
+
+                            @if (Opening.ScreeningQuestions.Count > 0)
+                            {
+                                <h2>A few questions</h2>
+                                @foreach (var question in Opening.ScreeningQuestions)
+                                {
+                                    <label>
+                                        @question.Prompt
+                                        @if (question.Options.Count > 0)
+                                        {
+                                            <select class="apply-input" @onchange="args => SetAnswer(question.Key, args)">
+                                                <option value="">Select…</option>
+                                                @foreach (var option in question.Options)
+                                                {
+                                                    <option value="@option">@option</option>
+                                                }
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            <input class="apply-input" @onchange="args => SetAnswer(question.Key, args)" maxlength="500" />
+                                        }
+                                    </label>
+                                }
+                            }
+
+                            <h2>Documents</h2>
+                            <p class="apply-note">PDF, DOC, DOCX, PNG or JPEG. Up to 10 MB per file.</p>
+
+                            <label class="apply-file">
+                                Résumé (required)
+                                <InputFile OnChange="args => OnFileSelected(ResumeCategory, args)" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+                                @if (selected.TryGetValue(ResumeCategory, out var resume))
+                                {
+                                    <span class="apply-file-name">@resume.Name</span>
+                                }
+                            </label>
+
+                            @foreach (var required in Opening.RequiredDocuments)
+                            {
+                                <label class="apply-file">
+                                    @required.DisplayName (required)
+                                    <InputFile OnChange="args => OnFileSelected(required.CategoryCode, args)" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+                                    @if (selected.TryGetValue(required.CategoryCode, out var picked))
+                                    {
+                                        <span class="apply-file-name">@picked.Name</span>
+                                    }
+                                </label>
+                            }
+
+                            <label class="apply-consent">
+                                <input type="checkbox" @bind="form.ConsentGranted" />
+                                <span>
+                                    I agree that @Site.CompanyName may store and process the information and documents
+                                    I have provided for the purpose of this application.
+                                </span>
+                            </label>
+
+                            @if (error is not null)
+                            {
+                                <p class="apply-error" role="alert">@error</p>
+                            }
+
+                            <button class="button button-gold button-full" type="submit" disabled="@isBusy">
+                                @(isBusy ? "Submitting…" : "Submit application")
+                            </button>
+                        </form>
+                    }
+                </div>
+            </section>
+        </main>
+        <PublicFooter Site="Site" />
+    </div>
+}
+
+@code {
+    private const string ResumeCategory = ApplicationDocumentRules.ResumeCategory;
+
+    [Parameter] public string TenantKey { get; set; } = "kapson";
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    private CareerSiteConfigurationDto? Site { get; set; }
+    private PublicOpeningDto? Opening { get; set; }
+    private ThemeTemplateDto? Theme { get; set; }
+
+    private readonly SubmitApplicationRequest form = new();
+    private readonly Dictionary<string, IBrowserFile> selected = new(StringComparer.OrdinalIgnoreCase);
+    private SubmitApplicationResultDto? result;
+    private string? error;
+    private bool isBusy;
+
+    private string CareersUrl => TenantKey == "kapson" ? "/kapson/careers" : $"/career/{TenantKey}/careers";
+
+    /// <summary>
+    /// The tracking page, with the client already chosen. A candidate should never have to
+    /// know or type our tenant key — they arrived from this company's own careers site.
+    /// </summary>
+    private string OnboardingUrl => $"/onboarding?tenant={Uri.EscapeDataString(TenantKey ?? "kapson")}";
+    private string JobUrl => TenantKey == "kapson" ? $"/kapson/careers/{Slug}" : $"/career/{TenantKey}/careers/{Slug}";
+
+    private string ThemeStyle => Site is null
+        ? string.Empty
+        : $"--ink:{Site.PrimaryColor};--ink-soft:{Site.PrimaryColor};--gold:{Site.AccentColor};--cream:{Site.SurfaceColor};--body-font:{Theme?.FontFamily ?? "Inter, sans-serif"};--heading-font:{Theme?.HeadingFontFamily ?? "Georgia, serif"};--site-radius:{Theme?.BorderRadius ?? 20}px;";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        TenantKey = string.IsNullOrWhiteSpace(TenantKey) ? "kapson" : TenantKey.ToLowerInvariant();
+        Site = await CareerSiteService.GetPublishedAsync(TenantKey);
+        Opening = await ApplicationService.GetPublicOpeningAsync(TenantKey, Slug);
+        Theme = Site is null ? null : await ThemeTemplateService.GetByKeyAsync(Site.TemplateKey);
+    }
+
+    private void SetAnswer(string key, ChangeEventArgs args) =>
+        form.Answers[key] = args.Value?.ToString() ?? string.Empty;
+
+    private void OnFileSelected(string category, InputFileChangeEventArgs args)
+    {
+        error = null;
+        var file = args.FileCount > 0 ? args.File : null;
+
+        if (file is null)
+        {
+            selected.Remove(category);
+            return;
+        }
+
+        if (file.Size > ApplicationDocumentRules.MaximumFileBytes)
+        {
+            error = $"{file.Name} is larger than 10 MB.";
+            selected.Remove(category);
+            return;
+        }
+
+        selected[category] = file;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (isBusy || Opening is null)
+        {
+            return;
+        }
+
+        error = null;
+
+        if (!selected.ContainsKey(ResumeCategory))
+        {
+            error = "Attach your résumé before submitting.";
+            return;
+        }
+
+        isBusy = true;
+
+        // Streams stay open until the service has read them, then are disposed here.
+        var streams = new List<Stream>();
+        try
+        {
+            var files = new List<UploadedFile>();
+            foreach (var (category, file) in selected)
+            {
+                var stream = file.OpenReadStream(ApplicationDocumentRules.MaximumFileBytes);
+
+                // The validator needs to seek, and a browser stream cannot, so buffer it.
+                var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                await stream.DisposeAsync();
+                buffer.Position = 0;
+
+                streams.Add(buffer);
+                files.Add(new UploadedFile(category, file.Name, file.ContentType, buffer.Length, buffer));
+            }
+
+            result = await ApplicationService.SubmitAsync(TenantKey, Slug, form, files);
+
+            // The same invitation the public API sends. Without this call the page told
+            // people an email was on its way and none ever left — the orchestration lived in
+            // the API controller, and this page is the other caller.
+            await Invitation.InviteAsync(TenantKey, form.Email, form.FullName);
+        }
+        catch (ApplicationRejectedException rejected)
+        {
+            error = rejected.Message;
+        }
+        catch (Exception)
+        {
+            error = "Something went wrong submitting your application. Please try again.";
+        }
+        finally
+        {
+            foreach (var stream in streams)
+            {
+                await stream.DisposeAsync();
+            }
+
+            isBusy = false;
+        }
+    }
+}

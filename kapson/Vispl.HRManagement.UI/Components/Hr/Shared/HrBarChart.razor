@@ -1,0 +1,164 @@
+@*
+    Grouped or stacked vertical bars, drawn as inline SVG.
+
+    One component serves both: a group with a single series stacks trivially, and the difference
+    is only whether bars sit beside each other or on top. Keeping them together means the axis,
+    gridlines and empty state are written once.
+*@
+
+@if (Groups.Count == 0 || Maximum <= 0)
+{
+    <p class="hr-empty">@EmptyMessage</p>
+}
+else
+{
+    <svg class="hr-bar-chart" viewBox="0 0 @Width @Height" role="img" aria-label="@AriaLabel"
+         preserveAspectRatio="xMidYMid meet">
+
+        @* Gridlines and value axis. *@
+        @foreach (var tick in Ticks)
+        {
+            var y = YFor(tick);
+            <line x1="@PadLeft" y1="@y" x2="@(Width - PadRight)" y2="@y"
+                  stroke="@HrChartPalette.Grid" stroke-width="1" />
+            <svg:text x="@(PadLeft - 8)" y="@(y + 4)" text-anchor="end" class="hr-chart-tick">@Format(tick)</svg:text>
+        }
+
+        @foreach (var (group, groupIndex) in Groups.Select((group, index) => (group, index)))
+        {
+            var groupX = PadLeft + (groupIndex * GroupWidth);
+
+            @if (Stacked)
+            {
+                var runningTop = 0m;
+
+                @foreach (var (value, seriesIndex) in group.Values.Select((value, index) => (value, index)))
+                {
+                    @if (value > 0)
+                    {
+                        var barHeight = (double)(value / Maximum) * PlotHeight;
+                        var y = YFor(runningTop + value);
+
+                        <rect x="@(groupX + BarGap)" y="@y"
+                              width="@(GroupWidth - (BarGap * 2))" height="@barHeight"
+                              fill="@HrChartPalette.For(seriesIndex)">
+                            <title>@group.Label — @SeriesNames[seriesIndex]: @Format(value)</title>
+                        </rect>
+                    }
+
+                    runningTop += value;
+                }
+            }
+            else
+            {
+                var barWidth = (GroupWidth - (BarGap * 2)) / Math.Max(SeriesNames.Count, 1);
+
+                @foreach (var (value, seriesIndex) in group.Values.Select((value, index) => (value, index)))
+                {
+                    var barHeight = (double)(value / Maximum) * PlotHeight;
+
+                    <rect x="@(groupX + BarGap + (seriesIndex * barWidth))"
+                          y="@YFor(value)" width="@(barWidth - 2)" height="@barHeight"
+                          fill="@SeriesColour(seriesIndex)">
+                        <title>@group.Label — @SeriesNames[seriesIndex]: @Format(value)</title>
+                    </rect>
+                }
+            }
+
+            @if (ShowGroupLabels)
+            {
+                <svg:text x="@(groupX + (GroupWidth / 2))" y="@(Height - 12)"
+                      text-anchor="middle" class="hr-chart-label">@group.Label</svg:text>
+            }
+        }
+
+        <line x1="@PadLeft" y1="@(Height - PadBottom)" x2="@(Width - PadRight)" y2="@(Height - PadBottom)"
+              stroke="@HrChartPalette.Axis" stroke-width="1" />
+    </svg>
+
+    <ul class="hr-chart-legend horizontal">
+        @foreach (var (name, index) in SeriesNames.Select((name, index) => (name, index)))
+        {
+            <li>
+                <span class="hr-legend-swatch" style="background:@SeriesColour(index)"></span>
+                <span class="hr-legend-label">@name</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    public sealed record BarGroup(string Label, IReadOnlyList<decimal> Values);
+
+    [Parameter, EditorRequired] public IReadOnlyList<BarGroup> Groups { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> SeriesNames { get; set; } = [];
+    [Parameter] public IReadOnlyList<string>? SeriesColours { get; set; }
+    [Parameter] public bool Stacked { get; set; }
+    [Parameter] public bool ShowGroupLabels { get; set; } = true;
+    [Parameter] public string AriaLabel { get; set; } = "Bar chart";
+    [Parameter] public string EmptyMessage { get; set; } = "Nothing recorded in this period.";
+
+    private const int Height = 260;
+    private const int PadLeft = 44;
+    private const int PadRight = 12;
+    private const int PadTop = 14;
+    private const int PadBottom = 34;
+    private const int BarGap = 5;
+
+    private int Width => Math.Max(PadLeft + PadRight + (Groups.Count * 46), 360);
+    private double GroupWidth => Groups.Count == 0 ? 0 : (double)(Width - PadLeft - PadRight) / Groups.Count;
+    private double PlotHeight => Height - PadTop - PadBottom;
+
+    /// <summary>
+    /// The tallest column. For a stacked chart that is the sum of a group, not its largest
+    /// member — otherwise the tallest stack would run off the top of the plot.
+    /// </summary>
+    private decimal Maximum
+    {
+        get
+        {
+            if (Groups.Count == 0)
+            {
+                return 0;
+            }
+
+            var peak = Stacked
+                ? Groups.Max(group => group.Values.Sum())
+                : Groups.Max(group => group.Values.DefaultIfEmpty(0).Max());
+
+            return peak <= 0 ? 0 : RoundUp(peak);
+        }
+    }
+
+    /// <summary>A round axis maximum, so ticks read 0/25/50 rather than 0/23.4/46.8.</summary>
+    private static decimal RoundUp(decimal peak)
+    {
+        var magnitude = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)peak)));
+        return Math.Ceiling(peak / magnitude) * magnitude;
+    }
+
+    private IEnumerable<decimal> Ticks
+    {
+        get
+        {
+            var max = Maximum;
+            if (max <= 0) { yield break; }
+
+            for (var step = 0; step <= 4; step++)
+            {
+                yield return max * step / 4;
+            }
+        }
+    }
+
+    private double YFor(decimal value) =>
+        Maximum <= 0 ? Height - PadBottom : Height - PadBottom - ((double)(value / Maximum) * PlotHeight);
+
+    private string SeriesColour(int index) =>
+        SeriesColours is not null && index < SeriesColours.Count
+            ? SeriesColours[index]
+            : HrChartPalette.For(index);
+
+    private static string Format(decimal value) =>
+        value == Math.Truncate(value) ? value.ToString("0") : value.ToString("0.#");
+}

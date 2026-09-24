@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vispl.HRManagement.UIVM\Vispl.HRManagement.UIVM.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.BM.ITF\Vispl.HRManagement.BM.ITF.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Contracts\Vispl.HRManagement.Contracts.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.VO\Vispl.HRManagement.VO.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Resx\Vispl.HRManagement.Resx.csproj" />
+  </ItemGroup>
+
+</Project>

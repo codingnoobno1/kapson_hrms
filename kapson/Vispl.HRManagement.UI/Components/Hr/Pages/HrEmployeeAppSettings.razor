@@ -1,0 +1,218 @@
+@page "/hr/settings/employee-app"
+@page "/hr/{TenantKey}/settings/employee-app"
+@page "/hr/settings/masters/employee-app"
+@page "/hr/{TenantKey}/settings/masters/employee-app"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IEmployeeAppSettingsService AppSettings
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Employee App Controls | HR Portal</PageTitle>
+
+@*
+    employee-app-build-plan.md §5: what HR controls in the employee app. Each switch is enforced by
+    the API as well as hidden in the app, so an old app build cannot get round it.
+*@
+
+<HrPageShell ActivePage="settings" TenantKey="@TenantKey"
+             Kicker="SYSTEM SETTINGS" Title="Employee App Controls"
+             Subtitle="What employees can do and see in the Kapsons employee app. Changes apply the next time the app loads a screen."
+             Error="@LoadError">
+    <ChildContent>
+        @if (Notice is not null)
+        {
+            <div class="hr-alert success compact">@Notice</div>
+        }
+        @if (SaveError is not null)
+        {
+            <div class="hr-alert error compact">@SaveError</div>
+        }
+        @if (!CanManage && Settings is not null)
+        {
+            <div class="hr-alert compact">You can view these settings. Changing them needs MASTERS.MANAGE.</div>
+        }
+
+        @if (Settings is { } settings)
+        {
+            @foreach (var group in Groups)
+            {
+                <section class="hr-panel hr-master-section">
+                    <div class="hr-panel-head">
+                        <h2>@group.Heading</h2>
+                    </div>
+                    <div class="hr-form-grid">
+                        @foreach (var toggle in group.Items)
+                        {
+                            <label class="hr-check hr-form-wide" style="align-items:flex-start">
+                                <input type="checkbox" checked="@toggle.Get(settings)" disabled="@(!CanManage || IsSaving)"
+                                       @onchange="args => toggle.Set(settings, args.Value is true)" />
+                                <span>
+                                    <strong>@toggle.Title</strong><br />
+                                    <small class="hr-hint">@toggle.Description</small>
+                                    @if (toggle.Note is not null)
+                                    {
+                                        <br /><span class="hr-tag tone-muted">@toggle.Note</span>
+                                    }
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </section>
+            }
+
+            <section class="hr-panel hr-master-section">
+                <div class="hr-panel-head">
+                    <h2>Attendance analytics</h2>
+                </div>
+                <label style="display:flex;flex-direction:column;gap:6px;max-width:360px">
+                    <strong>Attendance target %</strong>
+                    <input type="number" min="50" max="100" step="any" value="@settings.AttendanceTargetPercent"
+                           disabled="@(!CanManage || IsSaving)"
+                           @onchange="args => SetTarget(settings, args.Value?.ToString())" />
+                    <small class="hr-hint">Employees see this in Attendance Analytics ("Target Status"). Between 50 and 100.</small>
+                </label>
+            </section>
+
+            <div class="hr-action-row" style="justify-content:space-between;align-items:center;margin-top:12px">
+                <small class="hr-hint">
+                    @if (settings.IsDefault)
+                    {
+                        <text>Never saved — the app is running on the defaults shown.</text>
+                    }
+                    else
+                    {
+                        <text>Last saved @settings.UpdatedUtc?.ToLocalTime().ToString("dd MMM yyyy, h:mm tt")</text>
+                    }
+                </small>
+                @if (CanManage)
+                {
+                    <button class="hr-button" type="button" disabled="@IsSaving" @onclick="SaveAsync">
+                        @(IsSaving ? "Saving…" : "Save changes")
+                    </button>
+                }
+            </div>
+        }
+        else if (LoadError is null)
+        {
+            <p class="hr-hint">Loading…</p>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private EmployeeAppSettingsDto? Settings { get; set; }
+    private bool CanManage { get; set; }
+    private bool IsSaving { get; set; }
+    private string? LoadError { get; set; }
+    private string? SaveError { get; set; }
+    private string? Notice { get; set; }
+
+    private sealed record Toggle(
+        string Title,
+        string Description,
+        Func<EmployeeAppSettingsDto, bool> Get,
+        Action<EmployeeAppSettingsDto, bool> Set,
+        string? Note = null);
+
+    private sealed record ToggleGroup(string Heading, IReadOnlyList<Toggle> Items);
+
+    private static readonly IReadOnlyList<ToggleGroup> Groups =
+    [
+        new("Attendance",
+        [
+            new("Allow punch in / out from the app",
+                "Off: employees must use the attendance device. The (+) button stops offering Punch.",
+                s => s.AllowAppPunch, (s, v) => s.AllowAppPunch = v),
+            new("Require location when punching",
+                "Only accept an app punch that carries the phone's location.",
+                s => s.RequireLocationForPunch, (s, v) => s.RequireLocationForPunch = v,
+                "Takes effect when the app captures location"),
+            new("Allow attendance correction requests",
+                "Employees can ask for a missed or wrong punch to be fixed. Approvers still decide.",
+                s => s.AllowAttendanceCorrections, (s, v) => s.AllowAttendanceCorrections = v)
+        ]),
+        new("Gate pass",
+        [
+            new("Allow gate pass requests",
+                "Employees can request early exit or late entry passes from the app.",
+                s => s.AllowGatePassRequests, (s, v) => s.AllowGatePassRequests = v)
+        ]),
+        new("My profile — what employees can see",
+        [
+            new("Show Salary Details",
+                "The employee's grade salary structure, earnings, deductions and payment terms.",
+                s => s.ShowSalaryDetails, (s, v) => s.ShowSalaryDetails = v),
+            new("Show Bank Details",
+                "The salary bank account, always masked to the last four digits.",
+                s => s.ShowBankDetails, (s, v) => s.ShowBankDetails = v),
+            new("Show Employee Onboarding",
+                "Onboarding stage, progress and tasks for employees hired through recruitment.",
+                s => s.ShowOnboarding, (s, v) => s.ShowOnboarding = v),
+            new("Allow profile change requests",
+                "Employees can ask HR to update their personal details. HR applies every change.",
+                s => s.AllowProfileChangeRequests, (s, v) => s.AllowProfileChangeRequests = v,
+                "Takes effect when Update Profile ships")
+        ])
+    ];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        LoadError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanManage = caller.Has("MASTERS.MANAGE");
+            Settings = await AppSettings.GetAsync(caller.TenantKey);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private static void SetTarget(EmployeeAppSettingsDto settings, string? text)
+    {
+        if (decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            settings.AttendanceTargetPercent = (int)Math.Round(Math.Clamp(value, 50, 100));
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Settings is null)
+        {
+            return;
+        }
+
+        IsSaving = true;
+        SaveError = null;
+        Notice = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            await AppSettings.SaveAsync(caller, Settings);
+            Settings = await AppSettings.GetAsync(caller.TenantKey);
+            Notice = "Saved. The employee app picks these up the next time it loads a screen.";
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            SaveError = $"This needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+}

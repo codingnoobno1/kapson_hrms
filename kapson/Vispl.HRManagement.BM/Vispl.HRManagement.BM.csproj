@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vispl.HRManagement.BM.ITF\Vispl.HRManagement.BM.ITF.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.DL.ITF\Vispl.HRManagement.DL.ITF.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.Contracts\Vispl.HRManagement.Contracts.csproj" />
+    <ProjectReference Include="..\Vispl.HRManagement.VO\Vispl.HRManagement.VO.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="34.2.7" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

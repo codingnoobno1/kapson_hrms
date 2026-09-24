@@ -1,0 +1,8 @@
+@* RW-22 DescriptionCard *@
+<section class="card">
+    <p class="description-text">@Text</p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+}

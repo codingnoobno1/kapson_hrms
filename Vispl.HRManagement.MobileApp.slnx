@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/kapson/">
+    <Project Path="kapson/Vispl.HRManagement.Contracts/Vispl.HRManagement.Contracts.csproj" />
+  </Folder>
+  <Project Path="Vispl.HRManagement.MobileApp/Vispl.HRManagement.MobileApp.csproj" />
+</Solution>

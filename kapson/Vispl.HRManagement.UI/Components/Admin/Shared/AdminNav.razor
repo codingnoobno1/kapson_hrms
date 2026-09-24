@@ -1,0 +1,33 @@
+@code {
+    [Parameter] public string ActivePage { get; set; } = "";
+    private string Active(string page) => ActivePage == page ? "active" : "";
+}
+<header class="admin-header">
+    <a class="admin-brand" href="/admin/dashboard">Vertex HR Management</a>
+    <nav>
+        <a href="/admin/tenants" class="@Active("tenants")">Clients</a>
+        <a href="/admin/career-site" class="@Active("career-site")">Career Site</a>
+        <a href="/admin/masters" class="@Active("masters")">HR Masters</a>
+        <a href="/admin/jobs" class="@Active("jobs")">Job Openings</a>
+        <a href="/admin/leave-policies" class="@Active("leave-policies")">Leave Policies</a>
+        <a href="/admin/policies" class="@Active("policies")">Company Policies</a>
+        <a href="/admin/holidays" class="@Active("holidays")">Holidays</a>
+        <a href="/admin/shifts" class="@Active("shifts")">Shifts</a>
+        <a href="/admin/media" class="@Active("media")">Media</a>
+        <a href="/admin/mail" class="@Active("mail")">Mail</a>
+        <a href="/admin/accounts" class="@Active("accounts")">Accounts</a>
+        <a href="/admin/roles" class="@Active("roles")">Roles</a>
+        <a href="/kapson_home" target="_blank">Published Site ↗</a>
+    </nav>
+    <div class="admin-user-menu">
+        <AuthorizeView>
+            <Authorized Context="session">
+                <span>@(session.User.FindFirst("display_name")?.Value ?? session.User.Identity?.Name)</span>
+            </Authorized>
+        </AuthorizeView>
+        <form method="post" action="/identity/admin/logout">
+            <AntiforgeryToken />
+            <button type="submit">Sign out</button>
+        </form>
+    </div>
+</header>

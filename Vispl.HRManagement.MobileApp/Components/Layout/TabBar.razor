@@ -1,0 +1,45 @@
+@inject NavigationManager Navigation
+
+@* RW-05 BottomNavBar — exactly four destinations. Adding a fifth is a design
+   change, not an implementation detail.
+   RW-06 CenterActionButton — a nav-bar child that overlaps the bar by half its
+   height, so it never floats over scrolling content. *@
+<nav class="nav-bar">
+    <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
+        <AppIcon Name="home" Class="nav-icon" Size="22" />
+        <span>Home</span>
+    </NavLink>
+
+    <NavLink class="nav-item" href="/jobs">
+        <AppIcon Name="file-text" Class="nav-icon" Size="22" />
+        <span>Manage</span>
+    </NavLink>
+
+    <div class="nav-fab-slot">
+        <button class="nav-fab"
+                type="button"
+                aria-label="Add applicant"
+                @onclick="@(() => Navigation.NavigateTo("/applicants"))">
+            <AppIcon Name="user-plus" Size="26" StrokeWidth="2" />
+        </button>
+    </div>
+
+    <NavLink class="nav-item" href="/interviews">
+        <AppIcon Name="refresh" Class="nav-icon" Size="22" />
+        <span>Interview Status</span>
+    </NavLink>
+
+    <button class="nav-item @(IsDrawerOpen ? "active" : "")"
+            type="button"
+            aria-label="Menu"
+            aria-expanded="@IsDrawerOpen"
+            @onclick="OnMenuClick">
+        <AppIcon Name="menu" Class="nav-icon" Size="22" />
+        <span>Menu</span>
+    </button>
+</nav>
+
+@code {
+    [Parameter] public bool IsDrawerOpen { get; set; }
+    [Parameter] public EventCallback OnMenuClick { get; set; }
+}

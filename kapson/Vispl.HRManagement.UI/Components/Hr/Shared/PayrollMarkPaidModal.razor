@@ -1,0 +1,124 @@
+@using Vispl.HRManagement.Contracts.Admin
+
+@*
+    S10 — records salaries paid outside the system: Generated → Paid. Titled "Mark Salary as Paid"
+    rather than the reference's duplicated "Transfer Salary to Bank" (doc 10 §8).
+*@
+
+<div class="hr-modal-backdrop" @onclick="OnClose"></div>
+
+<div class="pay-modal narrow" role="dialog" aria-modal="true" aria-label="Mark Salary as Paid">
+    <div class="pay-modal-head green">
+        <h2>Mark Salary as Paid</h2>
+        <button type="button" class="pay-modal-close" aria-label="Close" @onclick="OnClose">✕</button>
+    </div>
+
+    <div class="pay-modal-body">
+        @if (Error is not null)
+        {
+            <div class="hr-alert error compact">@Error</div>
+        }
+        @if (!Workspace.Run.IsApproved)
+        {
+            <div class="hr-alert warning compact">Approve @Workspace.MonthLabel payroll from Preview before marking salaries paid.</div>
+        }
+
+        <div class="pay-mini-tiles green">
+            <div><span>Total Employees</span><strong>@Selected.Count</strong><small>Employees</small></div>
+            <div><span>Total Amount</span><strong>@PayrollFormat.Rupees(SelectedTotal)</strong><small>Net Payable</small></div>
+        </div>
+
+        <div class="pay-checklist">
+            <label class="pay-check-head">
+                <input type="checkbox" checked="@(Candidates.Count > 0 && Selected.Count == Candidates.Count)"
+                       disabled="@(Candidates.Count == 0)" @onchange="args => SelectAll(args.Value is true)" />
+                Select All Generated Salaries
+                <span>@Selected.Count selected</span>
+            </label>
+            @foreach (var row in Candidates)
+            {
+                <label class="pay-check-row" @key="row.EmployeeId">
+                    <input type="checkbox" checked="@Selected.Contains(row.EmployeeId)" @onchange="args => Toggle(row.EmployeeId, args.Value is true)" />
+                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                    <span class="pay-check-name"><strong>@row.DisplayName</strong><small>@row.EmployeeNumber - @row.DepartmentName - @row.Designation</small></span>
+                    <span class="pay-net">@PayrollFormat.Rupees(row.Amounts.NetPayable)</span>
+                </label>
+            }
+            @if (Candidates.Count == 0)
+            {
+                <p class="pay-empty">No generated, unpaid salaries in this scope.</p>
+            }
+        </div>
+
+        <dl class="pay-facts">
+            <div><dt>Status Change</dt><dd>Generated → Paid</dd></div>
+            <div><dt>Payment Mode</dt><dd>Bank Transfer</dd></div>
+            <div><dt>Document Type</dt><dd>Monthly Payroll</dd></div>
+        </dl>
+
+        <label class="pay-field">
+            Payment Date <em>*</em>
+            <input type="date" value="@PayrollFormat.DateInput(PaymentDate)"
+                   @onchange="args => PaymentDate = PayrollFormat.ParseDateInput(args.Value) ?? PaymentDate" />
+        </label>
+    </div>
+
+    <div class="pay-modal-foot">
+        <span></span>
+        <span class="pay-modal-actions">
+            <button type="button" class="pay-btn grey" @onclick="OnClose">✕ Cancel</button>
+            <button type="button" class="pay-btn green" disabled="@(Selected.Count == 0 || IsBusy || !Workspace.Run.IsApproved)" @onclick="ConfirmAsync">
+                @(IsBusy ? "Saving…" : "✅ Mark as Paid")
+            </button>
+        </span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PayrollWorkspaceDto Workspace { get; set; } = default!;
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<MarkSalaryPaidRequest> OnConfirm { get; set; }
+
+    private readonly HashSet<string> Selected = [];
+    private DateOnly PaymentDate = DateOnly.FromDateTime(DateTime.Today);
+
+    private IReadOnlyList<EmployeePayrollRowDto> Candidates =>
+        Workspace.Employees.Where(row => row.Status == PayrollLineStatuses.Generated).ToList();
+
+    private decimal SelectedTotal =>
+        Candidates.Where(row => Selected.Contains(row.EmployeeId)).Sum(row => row.Amounts.NetPayable);
+
+    protected override void OnParametersSet() =>
+        Selected.RemoveWhere(id => Candidates.All(row => row.EmployeeId != id));
+
+    private void Toggle(string employeeId, bool on)
+    {
+        if (on)
+        {
+            Selected.Add(employeeId);
+        }
+        else
+        {
+            Selected.Remove(employeeId);
+        }
+    }
+
+    private void SelectAll(bool on)
+    {
+        Selected.Clear();
+        if (on)
+        {
+            Selected.UnionWith(Candidates.Select(row => row.EmployeeId));
+        }
+    }
+
+    private Task ConfirmAsync() => OnConfirm.InvokeAsync(new MarkSalaryPaidRequest
+    {
+        EmployeeIds = Selected.ToList(),
+        PaymentDate = PaymentDate,
+        PaymentMode = "Bank Transfer",
+        DocumentType = "Monthly Payroll"
+    });
+}

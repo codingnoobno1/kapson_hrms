@@ -1,0 +1,8 @@
+<div class="loading-view" role="status" aria-live="polite">
+    <div class="spinner"></div>
+    <span>@Text</span>
+</div>
+
+@code {
+    [Parameter] public string Text { get; set; } = "Loading…";
+}

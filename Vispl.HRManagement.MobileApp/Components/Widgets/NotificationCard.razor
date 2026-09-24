@@ -1,0 +1,16 @@
+@* RW-40 NotificationCard. Unread is carried by weight, not by a coloured plate. *@
+<article class="card notification-card @(IsUnread ? "unread" : "")">
+    <div class="notification-head">
+        <span class="notification-title">@Notification.Title</span>
+        <span class="notification-when">
+            <AppIcon Name="clock" Size="14" /> @Notification.Time.ToString("HH:mm")
+            <span class="notification-date">@Notification.Date.ToString("d MMM yyyy")</span>
+        </span>
+    </div>
+    <p class="notification-body">@Notification.Body</p>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public NotificationModel Notification { get; set; } = default!;
+    [Parameter] public bool IsUnread { get; set; }
+}

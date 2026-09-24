@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.EmployeeApp.Features.Authentication.SignInPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="White">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="28,80,28,28" Spacing="0">
+
+            <Label
+                Text="KAPSONS"
+                FontSize="30"
+                FontAttributes="Bold"
+                CharacterSpacing="3"
+                TextColor="#111827"
+                HorizontalTextAlignment="Center" />
+
+            <Label
+                Text="DOOR TO GLOBAL FASHION"
+                FontSize="8"
+                CharacterSpacing="2"
+                TextColor="#8C8C8C"
+                HorizontalTextAlignment="Center"
+                Margin="0,0,0,44" />
+
+            <Label
+                Text="Sign in"
+                FontSize="20"
+                FontAttributes="Bold"
+                TextColor="#111827"
+                Margin="0,0,0,4" />
+
+            <Label
+                Text="Use the employee login HR gave you."
+                FontSize="13"
+                TextColor="#8C8C8C"
+                Margin="0,0,0,24" />
+
+            <Label Text="Username" FontSize="11" TextColor="#8C8C8C" Margin="0,0,0,4" />
+            <Border
+                Stroke="#F2F2F2"
+                StrokeThickness="1"
+                BackgroundColor="#F6F6F6"
+                Padding="12,2"
+                Margin="0,0,0,16">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+                <Entry
+                    x:Name="UserNameEntry"
+                    Placeholder="employee.number"
+                    ReturnType="Next"
+                    HeightRequest="44"
+                    BackgroundColor="Transparent"
+                    TextColor="#111827"
+                    Completed="OnUserNameCompleted"
+                    SemanticProperties.Description="Username" />
+            </Border>
+
+            <Label Text="Password" FontSize="11" TextColor="#8C8C8C" Margin="0,0,0,4" />
+            <Border
+                Stroke="#F2F2F2"
+                StrokeThickness="1"
+                BackgroundColor="#F6F6F6"
+                Padding="12,2"
+                Margin="0,0,0,8">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+                <Entry
+                    x:Name="PasswordEntry"
+                    IsPassword="True"
+                    ReturnType="Go"
+                    HeightRequest="44"
+                    BackgroundColor="Transparent"
+                    TextColor="#111827"
+                    Completed="OnSignInClicked"
+                    SemanticProperties.Description="Password" />
+            </Border>
+
+            <Label
+                x:Name="ErrorLabel"
+                FontSize="12"
+                TextColor="#FF6153"
+                IsVisible="False"
+                Margin="0,0,0,8" />
+
+            <Button
+                x:Name="SignInButton"
+                Text="Sign in"
+                BackgroundColor="#FF6153"
+                TextColor="White"
+                CornerRadius="12"
+                HeightRequest="50"
+                FontAttributes="Bold"
+                Margin="0,12,0,0"
+                Clicked="OnSignInClicked" />
+
+            <ActivityIndicator
+                x:Name="Busy"
+                Color="#FF6153"
+                IsVisible="False"
+                IsRunning="False"
+                Margin="0,16,0,0" />
+
+            <Label
+                Text="Trouble signing in? Ask HR to check your mobile access."
+                FontSize="11"
+                TextColor="#8C8C8C"
+                HorizontalTextAlignment="Center"
+                Margin="0,28,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

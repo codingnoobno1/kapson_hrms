@@ -1,0 +1,33 @@
+@*
+    One titled section of HrMenuCard entries — the Employee / Salary Management / Employee Report
+    tabs of the mega-menu. Reuses the exact same .hr-master-card visual as the APP Configuration
+    tab's HrMasterCardGrid, because the design's own rule is "same card, different content"
+    (scopedocs/web-portal/09-widgets-reusable-skeleton.md, AM-06).
+*@
+
+<section class="hr-panel hr-master-section">
+    <div class="hr-panel-head">
+        <h2>@Title</h2>
+    </div>
+    <div class="hr-master-grid">
+        @foreach (var card in Cards)
+        {
+            <a class="hr-master-card @(card.IsReady ? "" : "muted")" href="@card.Href">
+                <span class="hr-master-card-icon">@card.Icon</span>
+                <span class="hr-master-card-body">
+                    <strong>@card.Title</strong>
+                    <small>@card.Subtitle</small>
+                </span>
+                @if (!card.IsReady)
+                {
+                    <span class="hr-tag tone-muted">Not ready</span>
+                }
+            </a>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<HrMenuCard> Cards { get; set; } = [];
+}

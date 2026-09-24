@@ -1,0 +1,168 @@
+@page "/signin"
+@inject AppSession Session
+@inject AuthApi Auth
+@inject NavigationManager Navigation
+
+@* Staff sign in with the username an administrator gave them. Candidates use the address
+   they applied with; the app sends tenant and email separately and never composes a
+   username, so the server's storage format stays its own business. *@
+<PageTitle>Sign in</PageTitle>
+
+<div class="connect-page">
+    <div class="connect-brand">
+        <div class="connect-mark">@Initials</div>
+        <h1>Sign in</h1>
+        <p>@(Session.TenantName ?? "No company connected")</p>
+    </div>
+
+    @if (!Session.HasTenant)
+    {
+        <section class="card">
+            <h2>Connect a company first</h2>
+            <p class="card-note">Sign-in needs to know which company you belong to.</p>
+            <button class="btn-primary btn-block" type="button" @onclick="@(() => Navigation.NavigateTo("/connect"))">
+                Connect
+            </button>
+        </section>
+    }
+    else
+    {
+        <div class="segmented">
+            <button type="button" class="segment @(isStaff ? "active" : "")" @onclick="() => SetMode(true)">
+                <AppIcon Name="user" Size="16" /><span>Staff</span>
+            </button>
+            <button type="button" class="segment @(isStaff ? "" : "active")" @onclick="() => SetMode(false)">
+                <AppIcon Name="user-circle" Size="16" /><span>Applicant</span>
+            </button>
+        </div>
+
+        @if (isStaff)
+        {
+            <div class="field">
+                <label for="user">Username</label>
+                <input id="user" class="input" type="text" autocapitalize="none"
+                       @bind="userName" @bind:event="oninput" @onkeydown="OnKeyDown" />
+            </div>
+        }
+        else
+        {
+            <div class="field">
+                <label for="email">Email you applied with</label>
+                <input id="email" class="input" type="email" autocapitalize="none" autocomplete="email"
+                       @bind="email" @bind:event="oninput" @onkeydown="OnKeyDown" />
+            </div>
+        }
+
+        <div class="field">
+            <label for="pw">Password</label>
+            <input id="pw" class="input" type="password" autocomplete="current-password"
+                   @bind="password" @bind:event="oninput" @onkeydown="OnKeyDown" />
+        </div>
+
+        <button class="btn-primary btn-block" type="button" disabled="@(isBusy || !CanSubmit)" @onclick="SubmitAsync">
+            @(isBusy ? "Signing in…" : "Sign in")
+        </button>
+
+        @if (error is not null)
+        {
+            <div class="inline-error" role="alert">@error</div>
+        }
+
+        @if (mustChangePassword)
+        {
+            <section class="card">
+                <div class="card-head">
+                    <h2>Password change required</h2>
+                    <span class="badge badge-warning">Action needed</span>
+                </div>
+                <p class="card-note">
+                    You are signed in, but this account still has its initial password.
+                    Change it in the web console before the next sign-in.
+                </p>
+            </section>
+        }
+
+        <button class="btn-link" type="button" @onclick="@(() => Navigation.NavigateTo("/settings"))">
+            Server settings
+        </button>
+    }
+</div>
+
+@code {
+    private bool isStaff = true;
+    private string userName = string.Empty;
+    private string email = string.Empty;
+    private string password = string.Empty;
+    private string? error;
+    private bool isBusy;
+    private bool mustChangePassword;
+
+    private string Initials =>
+        string.IsNullOrWhiteSpace(Session.TenantName)
+            ? "HR"
+            : Session.TenantName[..1].ToUpperInvariant();
+
+    private bool CanSubmit =>
+        !string.IsNullOrWhiteSpace(password) &&
+        (isStaff ? !string.IsNullOrWhiteSpace(userName) : !string.IsNullOrWhiteSpace(email));
+
+    private void SetMode(bool staff)
+    {
+        isStaff = staff;
+        error = null;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await SubmitAsync();
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (isBusy || !CanSubmit || !Session.HasTenant)
+        {
+            return;
+        }
+
+        isBusy = true;
+        error = null;
+        mustChangePassword = false;
+
+        var result = isStaff
+            ? await Auth.SignInAsStaffAsync(userName.Trim(), password, Session.DeviceId)
+            : await Auth.SignInAsCandidateAsync(Session.TenantKey!, email.Trim(), password, Session.DeviceId);
+
+        isBusy = false;
+
+        if (result is { IsSuccess: true, Data: not null })
+        {
+            var grant = result.Data;
+
+            // The password never leaves this method; only the tokens are kept.
+            password = string.Empty;
+
+            await Session.SignInAsync(
+                grant.AccessToken, grant.RefreshToken, grant.DisplayName, grant.Portal, grant.Permissions);
+
+            if (grant.MustChangePassword)
+            {
+                mustChangePassword = true;
+                return;
+            }
+
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        error = result.Problem?.Code switch
+        {
+            "ACCOUNT_LOCKED" => "Too many failed attempts. Try again in a few minutes.",
+            "ACCOUNT_DISABLED" => "This account is not active. Contact your HR administrator.",
+            _ when result.Outcome == ApiOutcome.Offline => "The server could not be reached.",
+            _ => "That sign-in was not accepted. Check your details and try again."
+        };
+    }
+}

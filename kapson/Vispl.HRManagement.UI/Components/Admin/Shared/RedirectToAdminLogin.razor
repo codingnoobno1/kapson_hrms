@@ -1,0 +1,15 @@
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authenticationState.User;
+        var destination = user.Identity?.IsAuthenticated == true &&
+                          user.HasClaim("must_change_password", "true")
+            ? "/admin/change-password"
+            : $"/admin?returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri).Insert(0, "/"))}";
+        Navigation.NavigateTo(destination, forceLoad: true);
+    }
+}

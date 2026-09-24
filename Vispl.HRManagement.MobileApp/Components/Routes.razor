@@ -1,0 +1,18 @@
+@using Vispl.HRManagement.MobileApp.Components.Layout
+
+<Router AppAssembly="@typeof(MauiProgram).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(AppLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(AppLayout)">
+            <div class="empty-state">
+                <div class="empty-state-icon"><AppIcon Name="user-circle" Size="40" StrokeWidth="1.4" /></div>
+                <h1>Screen not found</h1>
+                <p>That route is not part of this build.</p>
+                <a class="btn-primary" href="/">Back to home</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

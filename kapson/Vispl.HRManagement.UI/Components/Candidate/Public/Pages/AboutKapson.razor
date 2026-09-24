@@ -1,0 +1,56 @@
+@page "/kapson/about"
+@page "/career/{TenantKey}/about"
+@inject ICareerSiteService CareerSiteService
+@inject IThemeTemplateService ThemeTemplateService
+
+@if (Site is null)
+{
+    <PageTitle>Career site unavailable</PageTitle>
+    <main class="not-found-page"><h1>Career site unavailable</h1><p>No published configuration was found.</p></main>
+}
+else
+{
+    <PageTitle>About @Site.CompanyName | @Site.PortalName</PageTitle>
+    <div class="public-site template-@Site.TemplateKey" style="@ThemeStyle">
+        <PublicHeader Site="Site" />
+        <main>
+            <section class="page-hero page-hero-about">
+                <div class="public-container narrow-container">
+                    <span class="eyebrow eyebrow-light">ABOUT @Site.CompanyName.ToUpperInvariant()</span>
+                    <h1>@Site.AboutHeroTitle</h1><p>@Site.AboutHeroSummary</p>
+                </div>
+            </section>
+            <section class="content-section">
+                <div class="public-container story-grid">
+                    <div><span class="eyebrow">OUR STORY</span><h2>@Site.AboutStoryTitle</h2></div>
+                    <div>
+                        @foreach (var paragraph in Site.AboutStoryBody.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <p>@paragraph</p>
+                        }
+                    </div>
+                </div>
+                <div class="public-container principle-grid">
+                    @foreach (var principle in Site.Principles.OrderBy(item => item.SortOrder))
+                    {
+                        <article><span>@principle.Code</span><h3>@principle.Title</h3><p>@principle.Body</p></article>
+                    }
+                </div>
+            </section>
+        </main>
+        <PublicFooter Site="Site" />
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantKey { get; set; } = "kapson";
+    private CareerSiteConfigurationDto? Site { get; set; }
+    private ThemeTemplateDto? Theme { get; set; }
+    private string ThemeStyle => Site is null ? string.Empty : $"--ink:{Site.PrimaryColor};--ink-soft:{Site.PrimaryColor};--gold:{Site.AccentColor};--cream:{Site.SurfaceColor};--body-font:{Theme?.FontFamily ?? "Inter, sans-serif"};--heading-font:{Theme?.HeadingFontFamily ?? "Georgia, serif"};--site-radius:{Theme?.BorderRadius ?? 20}px;";
+    protected override async Task OnParametersSetAsync()
+    {
+        TenantKey = string.IsNullOrWhiteSpace(TenantKey) ? "kapson" : TenantKey.ToLowerInvariant();
+        Site = await CareerSiteService.GetPublishedAsync(TenantKey);
+        Theme = Site is null ? null : await ThemeTemplateService.GetByKeyAsync(Site.TemplateKey);
+    }
+}

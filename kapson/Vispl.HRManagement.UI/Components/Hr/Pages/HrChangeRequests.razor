@@ -1,0 +1,200 @@
+@page "/hr/people/change-requests"
+@page "/hr/{TenantKey}/people/change-requests"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Mobile.Employee
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IMobileEmployeeService Employees
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Change Requests | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="DIRECTORY" Title="Change Requests"
+             Subtitle="Profile and bank account changes employees have asked for from the app."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Status
+            <select value="@Status" @onchange="ChangeStatusAsync">
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="">Everyone</option>
+            </select>
+        </label>
+
+        <a class="hr-button small ghost" href="@(string.IsNullOrWhiteSpace(TenantKey) ? "/hr/people" : $"/hr/{TenantKey}/people")">
+            ‹ Back to people
+        </a>
+    </Filters>
+
+    <ChildContent>
+        @if (DecisionError is not null)
+        {
+            <div class="hr-alert error compact">@DecisionError</div>
+        }
+
+        <HrDataTable TRow="EmployeeChangeRequestListItemDto"
+                     Title="Change requests"
+                     IsLoading="IsBusy"
+                     EmptyMessage="Nothing here."
+                     Rows="Rows">
+            <Header>
+                <th>Employee</th>
+                <th>Section</th>
+                <th>Requested changes</th>
+                <th>Reason</th>
+                <th>Submitted</th>
+                <th>Status</th>
+                <th></th>
+            </Header>
+            <Row Context="row">
+                <td>
+                    <strong>@row.EmployeeDisplayName</strong>
+                    <div class="hr-hint">@(row.EmployeeNumber ?? row.EmployeeId) · @(row.DepartmentCode ?? "—")</div>
+                </td>
+                <td>@row.Section</td>
+                <td>
+                    @foreach (var change in row.Changes)
+                    {
+                        <div class="hr-hint">@FieldLabel(change.Field): @(change.CurrentValue ?? "—") → <strong>@(change.RequestedValue ?? "—")</strong></div>
+                    }
+                </td>
+                <td>@(row.Reason ?? "—")</td>
+                <td>@row.SubmittedUtc.ToLocalTime().ToString("d MMM yyyy")</td>
+                <td><span class="hr-tag tone-@TagTone(row.Status.Tone)">@row.Status.Name</span></td>
+                <td>
+                    @if (row.Status.Code == "Pending")
+                    {
+                        @if (RejectingId == row.Id)
+                        {
+                            <div class="hr-reference-actions">
+                                <input type="text" placeholder="Reason (optional)" value="@RejectComment"
+                                       @oninput="@(e => RejectComment = e.Value?.ToString() ?? string.Empty)" />
+                                <button class="hr-button small" type="button" disabled="@(DecidingId == row.Id)"
+                                        @onclick="() => ConfirmRejectAsync(row.Id)">Confirm</button>
+                                <button class="hr-button small ghost" type="button" @onclick="() => RejectingId = null">Cancel</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="hr-reference-actions">
+                                <button class="approve" type="button" title="Approve" aria-label="Approve change request"
+                                        disabled="@(DecidingId == row.Id)"
+                                        @onclick="() => DecideAsync(row.Id, true)">✓</button>
+                                <button class="reject" type="button" title="Reject" aria-label="Reject change request"
+                                        disabled="@(DecidingId == row.Id)"
+                                        @onclick="() => StartReject(row.Id)">×</button>
+                            </div>
+                        }
+                    }
+                </td>
+            </Row>
+        </HrDataTable>
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private IReadOnlyList<EmployeeChangeRequestListItemDto>? Rows;
+    private string Status = "Pending";
+    private bool IsBusy = true;
+    private string? LoadError;
+    private string? DecisionError;
+    private string? DecidingId;
+    private string? RejectingId;
+    private string RejectComment = string.Empty;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        LoadError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Rows = await Employees.ListChangeRequestsAsync(
+                caller, new EmployeeChangeRequestQuery { Status = string.IsNullOrWhiteSpace(Status) ? null : Status },
+                CancellationToken.None);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account does not hold {denied.Permission}, so change requests cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ChangeStatusAsync(ChangeEventArgs args)
+    {
+        Status = args.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private void StartReject(string id)
+    {
+        RejectingId = id;
+        RejectComment = string.Empty;
+    }
+
+    private Task ConfirmRejectAsync(string id) => DecideAsync(id, false);
+
+    private async Task DecideAsync(string id, bool approve)
+    {
+        DecidingId = id;
+        DecisionError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            await Employees.DecideChangeRequestAsync(caller, id, new DecideEmployeeChangeRequest
+            {
+                Decision = approve ? "approve" : "reject",
+                Comment = approve ? null : (string.IsNullOrWhiteSpace(RejectComment) ? null : RejectComment.Trim())
+            }, CancellationToken.None);
+
+            RejectingId = null;
+            await LoadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            DecisionError = $"Deciding this request needs {denied.Permission}.";
+        }
+        catch (MobileValidationException invalid)
+        {
+            DecisionError = invalid.Message;
+        }
+        catch (Exception ex)
+        {
+            DecisionError = ex.Message;
+        }
+        finally
+        {
+            DecidingId = null;
+        }
+    }
+
+    private static string TagTone(string tone) => tone == "pending" ? "warning" : tone;
+
+    private static string FieldLabel(string field) => field switch
+    {
+        "PreferredName" => "Preferred name",
+        "MaritalStatus" => "Marital status",
+        "AccountHolderName" => "Account holder",
+        "AccountNumber" => "Account number",
+        "BankName" => "Bank",
+        "Ifsc" => "IFSC",
+        _ => field
+    };
+}

@@ -1,0 +1,445 @@
+@page "/hr/settings/masters/link-allowances-deductions-with-grade"
+@page "/hr/{TenantKey}/settings/masters/link-allowances-deductions-with-grade"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@inject IGradeSalaryService GradeSalary
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Link Allowances / Deductions With Grade | HR Portal</PageTitle>
+
+<div class="hr-app">
+    <HrNav ActivePage="settings" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <h1 class="hr-title-blue">Link Allowances / Deductions With Grade</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Path("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <a href="@Path("settings")">System Settings</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <strong>Link Allowances / Deductions With Grade</strong>
+        </nav>
+
+        @if (PageError is not null)
+        {
+            <div class="hr-alert error">@PageError</div>
+        }
+        else if (IsLoading)
+        {
+            <div class="hr-table-skeleton">
+                @for (var index = 0; index < 5; index++)
+                {
+                    <span></span>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="hr-salary-layout">
+                <section class="hr-panel hr-crud-card hr-salary-grades">
+                    <div class="hr-crud-head"><h2>Grades</h2></div>
+                    @foreach (var grade in Structures)
+                    {
+                        <button type="button"
+                                class="hr-salary-grade @(Editing?.GradeCode == grade.GradeCode ? "active" : "")"
+                                @onclick="() => SelectAsync(grade)">
+                            <strong>@grade.GradeName</strong>
+                            <small>
+                                @(grade.IsConfigured
+                                    ? $"Basic {Rupees(grade.BasicMonthly)} · {grade.Components.Count} linked"
+                                    : "Not configured")
+                            </small>
+                        </button>
+                    }
+                </section>
+
+                @if (Editing is { } editing)
+                {
+                    <section class="hr-panel hr-crud-card">
+                        <div class="hr-crud-head">
+                            <h2>@editing.GradeName</h2>
+                            @if (CanManage)
+                            {
+                                <div class="hr-crud-tools">
+                                    <button class="hr-button small ghost" type="button" @onclick="ResetAsync" disabled="@IsSaving">Reset</button>
+                                    <button class="hr-button small" type="button" @onclick="SaveAsync" disabled="@IsSaving">
+                                        @(IsSaving ? "Saving…" : "Save")
+                                    </button>
+                                </div>
+                            }
+                        </div>
+
+                        @if (SaveError is not null)
+                        {
+                            <div class="hr-alert error compact">@SaveError</div>
+                        }
+                        @if (SaveMessage is not null)
+                        {
+                            <div class="hr-alert success compact">@SaveMessage</div>
+                        }
+
+                        <label class="hr-salary-basic">
+                            Basic salary per month (fixed for this grade)
+                            <input type="number" min="0" step="1" disabled="@(!CanManage)"
+                                   value="@(editing.BasicMonthly.ToString(CultureInfo.InvariantCulture))"
+                                   @onchange="SetBasicAsync" />
+                        </label>
+
+                        @foreach (var kind in Kinds)
+                        {
+                            var isDeduction = kind == SalaryComponentKinds.Deduction;
+                            var rows = editing.Components.Where(item => item.Kind == kind).ToList();
+
+                            <div class="hr-salary-section">
+                                <div class="hr-crud-head">
+                                    <h3>@(isDeduction ? "Deductions" : "Allowances")</h3>
+                                    @if (CanManage)
+                                    {
+                                        <button class="hr-button small ghost" type="button" @onclick="() => AddAsync(kind)">
+                                            + Add @(isDeduction ? "deduction" : "allowance")
+                                        </button>
+                                    }
+                                </div>
+
+                                @if (rows.Count == 0)
+                                {
+                                    <p class="hr-empty">No @(isDeduction ? "deductions" : "allowances") linked to this grade.</p>
+                                }
+                                else
+                                {
+                                    <div class="hr-table-scroll">
+                                        <table class="hr-table hr-crud-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Component</th>
+                                                    <th>Calculation</th>
+                                                    <th>Value</th>
+                                                    <th>Cap (₹)</th>
+                                                    @if (isDeduction)
+                                                    {
+                                                        <th>Only when gross ≤ (₹)</th>
+                                                    }
+                                                    @if (CanManage)
+                                                    {
+                                                        <th class="hr-col-actions"></th>
+                                                    }
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var row in rows)
+                                                {
+                                                    <tr @key="row">
+                                                        <td>
+                                                            <select value="@row.ComponentCode" disabled="@(!CanManage)"
+                                                                    @onchange="args => SetCodeAsync(row, args)">
+                                                                <option value="">Select</option>
+                                                                @foreach (var option in isDeduction ? DeductionOptions : AllowanceOptions)
+                                                                {
+                                                                    <option value="@option.Code">@option.Name@(option.IsActive ? "" : " (inactive)")</option>
+                                                                }
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <select value="@row.CalculationType" disabled="@(!CanManage)"
+                                                                    @onchange="args => SetTypeAsync(row, args)">
+                                                                <option value="@SalaryCalculationTypes.Fixed">Fixed amount</option>
+                                                                <option value="@SalaryCalculationTypes.PercentOfBasic">% of Basic</option>
+                                                                @if (isDeduction)
+                                                                {
+                                                                    <option value="@SalaryCalculationTypes.PercentOfGross">% of Gross</option>
+                                                                }
+                                                            </select>
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" min="0" step="0.01" disabled="@(!CanManage)"
+                                                                   value="@(row.Value.ToString(CultureInfo.InvariantCulture))"
+                                                                   @onchange="args => SetValueAsync(row, args)" />
+                                                        </td>
+                                                        <td>
+                                                            <input type="number" min="0" step="1" placeholder="None" disabled="@(!CanManage)"
+                                                                   value="@(row.CapAmount?.ToString(CultureInfo.InvariantCulture))"
+                                                                   @onchange="args => SetCapAsync(row, args)" />
+                                                        </td>
+                                                        @if (isDeduction)
+                                                        {
+                                                            <td>
+                                                                <input type="number" min="0" step="1" placeholder="Always" disabled="@(!CanManage)"
+                                                                       value="@(row.GrossCeiling?.ToString(CultureInfo.InvariantCulture))"
+                                                                       @onchange="args => SetCeilingAsync(row, args)" />
+                                                            </td>
+                                                        }
+                                                        @if (CanManage)
+                                                        {
+                                                            <td class="hr-col-actions">
+                                                                <button class="hr-action-icon danger" type="button" title="Remove"
+                                                                        aria-label="Remove @(row.ComponentName ?? "row")"
+                                                                        @onclick="() => RemoveAsync(row)"><HrIcon Name="trash" Size="17" /></button>
+                                                            </td>
+                                                        }
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (Preview is { } preview)
+                        {
+                            <div class="hr-salary-preview">
+                                <h3>Monthly salary preview</h3>
+                                <dl>
+                                    <div><dt>Basic</dt><dd>@Rupees(preview.Basic)</dd></div>
+                                    @foreach (var line in preview.Allowances)
+                                    {
+                                        <div>
+                                            <dt>@line.Name @if (line.Note is not null) { <small>@line.Note</small> }</dt>
+                                            <dd>@Rupees(line.Amount)</dd>
+                                        </div>
+                                    }
+                                    <div class="total"><dt>Gross</dt><dd>@Rupees(preview.Gross)</dd></div>
+                                    @foreach (var line in preview.Deductions)
+                                    {
+                                        <div class="deduction">
+                                            <dt>@line.Name @if (line.Note is not null) { <small>@line.Note</small> }</dt>
+                                            <dd>−@Rupees(line.Amount)</dd>
+                                        </div>
+                                    }
+                                    <div class="total deduction"><dt>Total deductions</dt><dd>−@Rupees(preview.TotalDeductions)</dd></div>
+                                    <div class="total net"><dt>Net payable</dt><dd>@Rupees(preview.NetPayable)</dd></div>
+                                </dl>
+                                <p class="hr-salary-note">
+                                    Statutory items start from standard Indian defaults — PF 12% of Basic capped at ₹1,800,
+                                    ESI 0.75% when gross is ₹21,000 or less, Professional Tax ₹200 — and TDS at 0% until tax
+                                    slabs are configured. Confirm them with the client before running payroll.
+                                </p>
+                            </div>
+                        }
+                    </section>
+                }
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private static readonly CultureInfo India = CultureInfo.GetCultureInfo("en-IN");
+    private static readonly string[] Kinds = [SalaryComponentKinds.Allowance, SalaryComponentKinds.Deduction];
+
+    private IReadOnlyList<GradeSalaryStructureDto> Structures = [];
+    private IReadOnlyList<MasterOptionDto> AllowanceOptions = [];
+    private IReadOnlyList<MasterOptionDto> DeductionOptions = [];
+    private GradeSalaryStructureDto? Editing;
+    private SalaryBreakdownDto? Preview;
+
+    private string _tenantKey = string.Empty;
+    private bool CanManage;
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private string? PageError;
+    private string? SaveError;
+    private string? SaveMessage;
+
+    protected override Task OnInitializedAsync() => LoadAsync(null);
+
+    private async Task LoadAsync(string? keepGrade)
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            _tenantKey = caller.TenantKey;
+            CanManage = await PortalCaller.HasAsync("MASTERS.MANAGE");
+
+            Structures = await GradeSalary.GetAllAsync(_tenantKey);
+
+            var options = await Masters.GetAllAsync(_tenantKey);
+
+            // Basic is the grade's own field, so it is never offered as a linkable allowance.
+            AllowanceOptions = options
+                .Where(option => option.Category == MasterCategories.AllowanceType
+                                 && !string.Equals(option.Code, "BASIC", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(option => option.SortOrder).ThenBy(option => option.Name)
+                .ToList();
+
+            DeductionOptions = options
+                .Where(option => option.Category == MasterCategories.DeductionType)
+                .OrderBy(option => option.SortOrder).ThenBy(option => option.Name)
+                .ToList();
+
+            var target = Structures.FirstOrDefault(item => item.GradeCode == keepGrade) ?? Structures.FirstOrDefault();
+            if (target is not null)
+            {
+                await SelectAsync(target);
+            }
+        }
+        catch (Exception ex)
+        {
+            PageError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task SelectAsync(GradeSalaryStructureDto grade)
+    {
+        SaveError = null;
+        SaveMessage = null;
+        Editing = Clone(grade);
+        await RecalculateAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        var saved = Structures.FirstOrDefault(item => item.GradeCode == Editing?.GradeCode);
+        if (saved is not null)
+        {
+            await SelectAsync(saved);
+        }
+    }
+
+    private Task SetBasicAsync(ChangeEventArgs args)
+    {
+        if (Editing is not null)
+        {
+            Editing.BasicMonthly = ParseDecimal(args) ?? 0;
+        }
+
+        return RecalculateAsync();
+    }
+
+    private Task SetCodeAsync(GradeSalaryComponentDto row, ChangeEventArgs args)
+    {
+        row.ComponentCode = args.Value?.ToString() ?? string.Empty;
+        return RecalculateAsync();
+    }
+
+    private Task SetTypeAsync(GradeSalaryComponentDto row, ChangeEventArgs args)
+    {
+        row.CalculationType = args.Value?.ToString() ?? SalaryCalculationTypes.Fixed;
+        return RecalculateAsync();
+    }
+
+    private Task SetValueAsync(GradeSalaryComponentDto row, ChangeEventArgs args)
+    {
+        row.Value = ParseDecimal(args) ?? 0;
+        return RecalculateAsync();
+    }
+
+    private Task SetCapAsync(GradeSalaryComponentDto row, ChangeEventArgs args)
+    {
+        row.CapAmount = ParseDecimal(args);
+        return RecalculateAsync();
+    }
+
+    private Task SetCeilingAsync(GradeSalaryComponentDto row, ChangeEventArgs args)
+    {
+        row.GrossCeiling = ParseDecimal(args);
+        return RecalculateAsync();
+    }
+
+    private Task AddAsync(string kind)
+    {
+        Editing?.Components.Add(new GradeSalaryComponentDto
+        {
+            Kind = kind,
+            CalculationType = kind == SalaryComponentKinds.Deduction
+                ? SalaryCalculationTypes.PercentOfBasic
+                : SalaryCalculationTypes.Fixed
+        });
+
+        return RecalculateAsync();
+    }
+
+    private Task RemoveAsync(GradeSalaryComponentDto row)
+    {
+        Editing?.Components.Remove(row);
+        return RecalculateAsync();
+    }
+
+    private async Task RecalculateAsync()
+    {
+        if (Editing is null)
+        {
+            Preview = null;
+            return;
+        }
+
+        try
+        {
+            Preview = await GradeSalary.CalculateAsync(_tenantKey, Editing);
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Editing is null)
+        {
+            return;
+        }
+
+        IsSaving = true;
+        SaveError = null;
+        SaveMessage = null;
+
+        var gradeCode = Editing.GradeCode;
+        var gradeName = Editing.GradeName;
+
+        try
+        {
+            await GradeSalary.SaveAsync(_tenantKey, Editing);
+            await LoadAsync(gradeCode);
+            SaveMessage = $"{gradeName} salary structure saved.";
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private static GradeSalaryStructureDto Clone(GradeSalaryStructureDto source) => new()
+    {
+        GradeCode = source.GradeCode,
+        GradeName = source.GradeName,
+        BasicMonthly = source.BasicMonthly,
+        IsConfigured = source.IsConfigured,
+        UpdatedUtc = source.UpdatedUtc,
+        Components = source.Components
+            .Select(item => new GradeSalaryComponentDto
+            {
+                Kind = item.Kind,
+                ComponentCode = item.ComponentCode,
+                ComponentName = item.ComponentName,
+                CalculationType = item.CalculationType,
+                Value = item.Value,
+                CapAmount = item.CapAmount,
+                GrossCeiling = item.GrossCeiling
+            })
+            .ToList()
+    };
+
+    private static decimal? ParseDecimal(ChangeEventArgs args) =>
+        decimal.TryParse(args.Value?.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
+    private static string Rupees(decimal amount) => string.Format(India, "₹{0:N0}", amount);
+
+    private string Path(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Jobs.Pages.JobsPage"
+    x:Name="Page"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:models="clr-namespace:Vispl.HRManagement.Mobile.Shared.Models"
+    xmlns:pages="clr-namespace:Vispl.HRManagement.Mobile.Features.Jobs.Pages"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Jobs.ViewModels"
+    x:DataType="vm:JobsViewModel">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,Auto,Auto,*">
+        <controls:BrandHeader Subtitle="Recruitment management" />
+        <Grid Grid.Row="1" Padding="18,18,18,10" ColumnDefinitions="*,Auto">
+            <VerticalStackLayout Spacing="2">
+                <Label Text="Manage jobs" Style="{StaticResource PageTitle}" />
+                <Label Text="Publish, monitor and update every opening." Style="{StaticResource BodyText}" />
+            </VerticalStackLayout>
+            <Button Grid.Column="1" Text="＋ New" Style="{StaticResource SecondaryButton}" />
+        </Grid>
+        <VerticalStackLayout Grid.Row="2" Padding="18,0,18,12" Spacing="10">
+            <SearchBar Text="{Binding Query}" Placeholder="Search by job title or department" BackgroundColor="White" CancelButtonColor="{StaticResource Primary600}" />
+            <CollectionView ItemsSource="{Binding Statuses}" ItemsLayout="HorizontalList" HeightRequest="42" SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <Button Text="{Binding .}" Command="{Binding ViewModel.SelectStatusCommand, Source={x:Reference Page}, x:DataType=pages:JobsPage}" CommandParameter="{Binding .}"
+                                HeightRequest="36" Padding="15,0" Margin="0,0,7,0" CornerRadius="18" BackgroundColor="{StaticResource BlueTint}" TextColor="{StaticResource Primary600}" FontSize="12" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+        <Grid Grid.Row="3" Margin="18,0,18,0">
+            <CollectionView ItemsSource="{Binding FilteredJobs}" SelectionMode="None">
+                <CollectionView.ItemsLayout><LinearItemsLayout Orientation="Vertical" ItemSpacing="12" /></CollectionView.ItemsLayout>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:JobSummary">
+                        <controls:JobCard Item="{Binding .}" OpenCommand="{Binding ViewModel.OpenJobCommand, Source={x:Reference Page}, x:DataType=pages:JobsPage}" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout Padding="30" Spacing="8" HorizontalOptions="Center">
+                        <Label Text="No jobs found" Style="{StaticResource SectionTitle}" HorizontalTextAlignment="Center" />
+                        <Label Text="Try another search or status filter." Style="{StaticResource BodyText}" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+            </CollectionView>
+            <VerticalStackLayout IsVisible="{Binding IsBusy}" Spacing="12">
+                <controls:SkeletonView HeightRequest="118" />
+                <controls:SkeletonView HeightRequest="118" />
+                <controls:SkeletonView HeightRequest="118" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

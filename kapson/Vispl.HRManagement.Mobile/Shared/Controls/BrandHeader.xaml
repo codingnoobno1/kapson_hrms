@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentView
+    x:Class="Vispl.HRManagement.Mobile.Shared.Controls.BrandHeader"
+    x:Name="Root"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    x:DataType="controls:BrandHeader">
+    <Grid Padding="20,14" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" BackgroundColor="White">
+        <Border WidthRequest="42" HeightRequest="42" BackgroundColor="{StaticResource Navy800}" StrokeThickness="0">
+            <Border.StrokeShape><RoundRectangle CornerRadius="14" /></Border.StrokeShape>
+            <Label Text="H" TextColor="White" FontAttributes="Bold" FontSize="20" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+        </Border>
+        <VerticalStackLayout Grid.Column="1" Spacing="-2" VerticalOptions="Center">
+            <Label>
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="HR " FontAttributes="Bold" FontSize="18" />
+                        <Span Text="Management" FontSize="17" />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+            <Label Text="{Binding Subtitle, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+        </VerticalStackLayout>
+        <Border Grid.Column="2" WidthRequest="42" HeightRequest="42" BackgroundColor="{StaticResource Surface}" StrokeThickness="0">
+            <Border.StrokeShape><RoundRectangle CornerRadius="21" /></Border.StrokeShape>
+            <Label Text="⌕" FontSize="22" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" TextColor="{StaticResource Navy800}" />
+        </Border>
+        <Grid Grid.Column="3">
+            <Border WidthRequest="42" HeightRequest="42" BackgroundColor="{StaticResource Surface}" StrokeThickness="0">
+                <Border.StrokeShape><RoundRectangle CornerRadius="21" /></Border.StrokeShape>
+                <Label Text="◌" FontSize="22" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" TextColor="{StaticResource Navy800}" />
+            </Border>
+            <Border Padding="5,1" HorizontalOptions="End" VerticalOptions="Start" BackgroundColor="{StaticResource Primary600}" StrokeThickness="0">
+                <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                <Label Text="{Binding NotificationCount, Source={x:Reference Root}}" TextColor="White" FontSize="10" />
+            </Border>
+        </Grid>
+    </Grid>
+</ContentView>

@@ -1,0 +1,47 @@
+<footer class="public-footer">
+    <div class="public-container footer-grid">
+        <div>
+            <a class="public-brand public-brand-footer" href="@HomeUrl">
+                @if (!string.IsNullOrWhiteSpace(Site.LogoUrl))
+                {
+                    <img class="public-brand-logo" src="@Site.LogoUrl" alt="@Site.CompanyName logo" />
+                }
+                else
+                {
+                    <span class="public-brand-mark">@Site.BrandInitial</span>
+                }
+                <span><strong>@Site.CompanyName.ToUpperInvariant()</strong><small>@Site.PortalName.ToUpperInvariant()</small></span>
+            </a>
+            <p>@Site.FooterTagline</p>
+        </div>
+        <div>
+            <h3>Explore</h3>
+            @foreach (var item in Site.NavigationItems.OrderBy(item => item.SortOrder))
+            {
+                <a href="@item.Url">@item.Label</a>
+            }
+        </div>
+        <div>
+            <h3>Applicants</h3>
+            <a href="@OnboardingUrl">Track my application</a>
+            <a href="@OnboardingUrl">Set or reset my password</a>
+        </div>
+        <div>
+            <h3>Contact</h3>
+            <p>@Site.ContactAddress</p>
+            <a href="mailto:@Site.ContactEmail">@Site.ContactEmail</a>
+        </div>
+    </div>
+    <div class="public-container footer-bottom">
+        <span>© @DateTime.UtcNow.Year @Site.CompanyName. All rights reserved.</span>
+        <span>Privacy · Accessibility · Terms</span>
+    </div>
+</footer>
+
+@code {
+    [Parameter, EditorRequired]
+    public CareerSiteConfigurationDto Site { get; set; } = null!;
+    private string HomeUrl => Site.TenantKey == "kapson" ? "/kapson_home" : $"/career/{Site.TenantKey}";
+
+    private string OnboardingUrl => $"/onboarding?tenant={Uri.EscapeDataString(Site.TenantKey)}";
+}

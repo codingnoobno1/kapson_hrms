@@ -1,0 +1,110 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AppSession Session
+@inject ScreenData Data
+@inject NavigationManager Navigation
+@inject HrRealtimeClient Realtime
+@inject AppThemeService Theme
+
+<div class="app-shell" style="@Theme.CssVariables">
+    @if (ShowChrome)
+    {
+        <AppHeader />
+        <div class="live-sync @LiveClass" role="status">
+            <span class="live-sync-dot"></span>@LiveLabel
+        </div>
+        @if (Data.UseSampleData)
+        {
+            <SampleBanner />
+        }
+    }
+
+    <main class="app-content @(ShowChrome ? "" : "app-content-full")" @key="liveRevision">
+        @Body
+    </main>
+
+    @if (ShowChrome)
+    {
+        <TabBar IsDrawerOpen="isDrawerOpen" OnMenuClick="ToggleDrawer" />
+    }
+</div>
+
+@if (isDrawerOpen)
+{
+    <NavDrawer OnClose="CloseDrawer" />
+}
+
+@code {
+    private bool isDrawerOpen;
+    private long liveRevision;
+
+    private string CurrentPath =>
+        new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+
+    private bool ShowChrome => CurrentPath is not ("/connect" or "/signin");
+
+    protected override void OnInitialized()
+    {
+        Session.Load();
+        Session.Changed += OnStateChanged;
+        Data.Changed += OnStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        Realtime.DataChanged += OnLiveDataChanged;
+        Realtime.StateChanged += OnRealtimeStateChanged;
+        Theme.Changed += OnThemeChanged;
+
+        if (!Session.HasTenant && CurrentPath is not ("/connect" or "/settings"))
+        {
+            Navigation.NavigateTo("/connect");
+        }
+
+        if (Session.IsSignedIn)
+        {
+            _ = Realtime.StartAsync();
+        }
+    }
+
+    private void ToggleDrawer() => isDrawerOpen = !isDrawerOpen;
+
+    private void CloseDrawer() => isDrawerOpen = false;
+
+    private void OnStateChanged()
+    {
+        _ = Session.IsSignedIn ? Realtime.StartAsync() : Realtime.StopAsync();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRealtimeStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLiveDataChanged(HrDataChanged change) => InvokeAsync(() =>
+    {
+        liveRevision++;
+        StateHasChanged();
+    });
+
+    private string LiveClass => Realtime.State.ToString().ToLowerInvariant();
+    private string LiveLabel => Realtime.State switch
+    {
+        HrRealtimeState.Live => "Live",
+        HrRealtimeState.Connecting => "Connecting",
+        HrRealtimeState.Reconnecting => "Syncing",
+        _ => "Offline"
+    };
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
+    {
+        isDrawerOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnStateChanged;
+        Data.Changed -= OnStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+        Realtime.DataChanged -= OnLiveDataChanged;
+        Realtime.StateChanged -= OnRealtimeStateChanged;
+        Theme.Changed -= OnThemeChanged;
+    }
+}

@@ -1,0 +1,650 @@
+@page "/hr/payroll/loans"
+@page "/hr/{TenantKey}/payroll/loans"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject ILoanService Loans
+@inject IEmployeeReportService Reports
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Loan and Advance | HR Portal</PageTitle>
+
+@*
+    Named-only destination (scopedocs/web-portal/10 §1): no reference layout. Vouchers are issued
+    here, approved, and then recovered automatically through payroll month by month.
+*@
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="SALARY MANAGEMENT" Title="Loan and Advance"
+             Subtitle="Issue loans and salary advances. Approved vouchers are recovered through payroll each month until settled."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Status
+            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                <option value="">All</option>
+                <option value="@LoanStatuses.Pending">Pending</option>
+                <option value="@LoanStatuses.Active">Active</option>
+                <option value="@LoanStatuses.Closed">Closed</option>
+                <option value="@LoanStatuses.Rejected">Rejected</option>
+                <option value="@LoanStatuses.Cancelled">Cancelled</option>
+            </select>
+        </label>
+        <label>
+            Type
+            <select value="@Type" @onchange="args => ChangeAsync(() => Type = Text(args))">
+                <option value="">Loans and advances</option>
+                <option value="@LoanTypes.Loan">Loans</option>
+                <option value="@LoanTypes.Advance">Advances</option>
+            </select>
+        </label>
+        <label>
+            Search
+            <input type="search" placeholder="Name, number or voucher" value="@Search" @onchange="args => ChangeAsync(() => Search = Text(args))" />
+        </label>
+        <a class="hr-button small ghost" href="@Href("reports/loans")">📊 Loan report</a>
+        <button class="hr-button small" type="button" disabled="@(!CanManage)" title="@(CanManage ? null : "Needs PAYROLL.LOAN.MANAGE")"
+                @onclick="OpenCreate">+ New loan / advance</button>
+    </Filters>
+
+    <ChildContent>
+        @if (Notice is not null)
+        {
+            <div class="hr-alert success compact">@Notice</div>
+        }
+
+        @if (Workspace is { } workspace)
+        {
+            <section class="org-tiles">
+                <div><span>Active</span><strong>@workspace.Summary.ActiveCount</strong><small>being recovered</small></div>
+                <div class="@(workspace.Summary.PendingCount > 0 ? "warn" : null)"><span>Pending approval</span><strong>@workspace.Summary.PendingCount</strong></div>
+                <div><span>Disbursed principal</span><strong>@PayrollFormat.Rupees(workspace.Summary.TotalPrincipal)</strong><small>active and closed</small></div>
+                <div><span>Outstanding</span><strong class="pay-amber">@PayrollFormat.Rupees(workspace.Summary.TotalOutstanding)</strong></div>
+                <div><span>Recovered this month</span><strong class="pay-net">@PayrollFormat.Rupees(workspace.Summary.RecoveredThisMonth)</strong></div>
+            </section>
+
+            <section class="hr-panel">
+                @if (IsLoading)
+                {
+                    <p class="hr-empty">Loading loans…</p>
+                }
+                else if (workspace.Loans.Count == 0)
+                {
+                    <p class="hr-empty">No loans or advances match these filters.</p>
+                }
+                else
+                {
+                    <div class="pay-table-scroll">
+                        <table class="pay-table">
+                            <thead>
+                                <tr>
+                                    <th>Voucher</th><th>Employee</th><th>Type</th><th>Principal</th><th>Interest</th><th>Instalment</th>
+                                    <th>Recovery from</th><th>Recovered</th><th>Outstanding</th><th>Status</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var loan in workspace.Loans)
+                                {
+                                    <tr @key="loan.Id">
+                                        <td class="strong">@loan.VoucherNo</td>
+                                        <td>
+                                            <span class="pay-person">
+                                                <span class="pay-avatar c@(PayrollFormat.AvatarTone(loan.DisplayName))">@PayrollFormat.Initials(loan.DisplayName)</span>
+                                                <span><strong>@loan.DisplayName</strong><small>@loan.EmployeeNumber · @loan.DepartmentName</small></span>
+                                            </span>
+                                        </td>
+                                        <td>@loan.Type</td>
+                                        <td>@PayrollFormat.Rupees(loan.Principal)</td>
+                                        <td>@(loan.InterestPercent == 0 ? "—" : loan.InterestPercent.ToString("0.##") + "%")</td>
+                                        <td>@PayrollFormat.Rupees(loan.MonthlyInstallment) × @loan.Installments</td>
+                                        <td>@loan.StartMonthLabel</td>
+                                        <td>
+                                            <span class="loan-progress" title="@loan.InstallmentsRecovered of @loan.Installments instalments">
+                                                @PayrollFormat.Rupees(loan.Recovered)
+                                                <i style="width:@Percent(loan)%"></i>
+                                            </span>
+                                        </td>
+                                        <td class="@(loan.Outstanding > 0 ? "pay-amber" : null)">@PayrollFormat.Rupees(loan.Outstanding)</td>
+                                        <td><span class="loan-status @loan.Status.ToLowerInvariant()">● @loan.Status</span></td>
+                                        <td>
+                                            <span class="hr-action-row">
+                                                <button class="hr-button small ghost" type="button" @onclick="() => OpenDetailAsync(loan)">View</button>
+                                                @if (CanManage && loan.Status == LoanStatuses.Pending)
+                                                {
+                                                    <button class="hr-button small" type="button" @onclick="() => OpenDecision(loan, true)">Approve</button>
+                                                    <button class="hr-button small ghost" type="button" @onclick="() => OpenDecision(loan, false)">Reject</button>
+                                                }
+                                                @if (CanManage && loan.Status == LoanStatuses.Active)
+                                                {
+                                                    <button class="hr-button small ghost" type="button" @onclick="() => OpenRepayment(loan)">Repayment</button>
+                                                }
+                                                @if (CanManage && (loan.Status == LoanStatuses.Pending || (loan.Status == LoanStatuses.Active && loan.Recovered == 0)))
+                                                {
+                                                    <button class="hr-button small ghost" type="button" @onclick="() => OpenCancel(loan)">Cancel</button>
+                                                }
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+        else if (IsLoading)
+        {
+            <p class="hr-empty">Loading loans…</p>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@if (Modal == LoanModal.Create && Draft is { } draft)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="pay-modal" role="dialog" aria-modal="true" aria-label="New loan or advance">
+        <div class="pay-modal-head blue">
+            <h2>New loan / advance voucher</h2>
+            <button type="button" class="pay-modal-close" aria-label="Close" @onclick="CloseModal">✕</button>
+        </div>
+        <EditForm Model="draft" OnValidSubmit="CreateAsync" FormName="loan-create">
+            <DataAnnotationsValidator />
+            <div class="pay-modal-body">
+                @if (ModalError is not null)
+                {
+                    <div class="hr-alert error compact">@ModalError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <div class="hr-form-grid">
+                    <label class="hr-form-wide">
+                        Employee
+                        <InputSelect @bind-Value="draft.EmployeeId">
+                            <option value="">Choose an employee</option>
+                            @foreach (var person in People)
+                            {
+                                <option @key="person.EmployeeId" value="@person.EmployeeId">@person.DisplayName (@person.EmployeeNumber) · @person.DepartmentName</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Type
+                        <InputSelect @bind-Value="draft.Type">
+                            <option value="@LoanTypes.Loan">Loan</option>
+                            <option value="@LoanTypes.Advance">Salary advance</option>
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Amount (₹)
+                        @* step="any": a step with min="1" makes round amounts like 12000 invalid and silently blocks submit. *@
+                        <InputNumber @bind-Value="draft.Principal" min="1" step="any" />
+                    </label>
+                    <label>
+                        Interest (% a year, flat)
+                        <InputNumber @bind-Value="draft.InterestPercent" min="0" max="36" step="0.5" disabled="@(draft.Type == LoanTypes.Advance)" />
+                        @if (draft.Type == LoanTypes.Advance)
+                        {
+                            <small class="hr-hint">Advances are interest-free.</small>
+                        }
+                    </label>
+                    @if (draft.Type == LoanTypes.Advance)
+                    {
+                        <label>
+                            Advance type
+                            <InputSelect @bind-Value="draft.AdvanceTypeCode">
+                                <option value="">Choose a type</option>
+                                @foreach (var option in Options(MasterCategories.AdvanceType))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    }
+                    <label>
+                        Instalments (months)
+                        <InputNumber @bind-Value="draft.Installments" min="1" max="120" />
+                    </label>
+                    <label>
+                        Recovery starts — month
+                        <InputSelect @bind-Value="draft.StartMonth">
+                            @for (var month = 1; month <= 12; month++)
+                            {
+                                <option value="@month">@CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month)</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Recovery starts — year
+                        <InputSelect @bind-Value="draft.StartYear">
+                            @for (var year = DateTime.Today.Year - 1; year <= DateTime.Today.Year + 2; year++)
+                            {
+                                <option value="@year">@year</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Disbursed on
+                        <InputDate @bind-Value="draft.DisbursedOn" />
+                        <small class="hr-hint">Defaults to the approval date.</small>
+                    </label>
+                    <label class="hr-form-wide">
+                        Purpose
+                        <InputTextArea @bind-Value="draft.Purpose" rows="2" placeholder="e.g. Medical emergency, house deposit" />
+                    </label>
+                </div>
+
+                <dl class="loan-preview">
+                    <div><dt>Total repayable</dt><dd>@PayrollFormat.Rupees(PreviewTotal(draft))</dd></div>
+                    <div><dt>Monthly instalment</dt><dd>@PayrollFormat.Rupees(PreviewInstallment(draft))</dd></div>
+                    <div><dt>Deducted in payroll from</dt><dd>@MonthName(draft.StartYear, draft.StartMonth)</dd></div>
+                </dl>
+            </div>
+            <div class="pay-modal-foot">
+                <small class="hr-hint">The voucher is created as Pending and recovered only after approval.</small>
+                <span class="pay-modal-actions">
+                    <button type="button" class="pay-btn grey" @onclick="CloseModal">Cancel</button>
+                    <button type="submit" class="pay-btn primary" disabled="@IsSaving">@(IsSaving ? "Saving…" : "Create voucher")</button>
+                </span>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (Modal == LoanModal.Detail && Detail is { } detail)
+{
+    var loan = detail.Loan;
+    <div class="hr-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="pay-modal wide" role="dialog" aria-modal="true" aria-label="Loan voucher">
+        <div class="pay-modal-head blue">
+            <h2>@loan.VoucherNo · @loan.Type</h2>
+            <button type="button" class="pay-modal-close" aria-label="Close" @onclick="CloseModal">✕</button>
+        </div>
+        <div class="pay-modal-body">
+            <div class="pay-mini-tiles four">
+                <div><span>Employee</span><strong class="loan-name">@loan.DisplayName</strong><small>@loan.EmployeeNumber</small></div>
+                <div><span>Principal</span><strong>@PayrollFormat.Rupees(loan.Principal)</strong><small>@(loan.InterestPercent == 0 ? "Interest-free" : loan.InterestPercent.ToString("0.##") + "% flat a year")</small></div>
+                <div><span>Recovered</span><strong class="pay-net">@PayrollFormat.Rupees(loan.Recovered)</strong><small>of @PayrollFormat.Rupees(loan.TotalRepayable)</small></div>
+                <div><span>Outstanding</span><strong class="pay-amber">@PayrollFormat.Rupees(loan.Outstanding)</strong><small><span class="loan-status @loan.Status.ToLowerInvariant()">● @loan.Status</span></small></div>
+            </div>
+
+            <dl class="pay-facts">
+                @if (loan.AdvanceTypeName is not null)
+                {
+                    <div><dt>Advance type</dt><dd>@loan.AdvanceTypeName</dd></div>
+                }
+                <div><dt>Purpose</dt><dd>@(loan.Purpose ?? "—")</dd></div>
+                <div><dt>Requested on</dt><dd>@loan.RequestedOn.ToString("dd MMM yyyy")</dd></div>
+                <div><dt>Disbursed on</dt><dd>@(loan.DisbursedOn?.ToString("dd MMM yyyy") ?? "—")</dd></div>
+                @if (loan.DecisionNote is { } note)
+                {
+                    <div><dt>Decision note</dt><dd>@note</dd></div>
+                }
+            </dl>
+
+            <h3 class="pay-section-title">Recovery schedule</h3>
+            <div class="pay-table-scroll">
+                <table class="pay-table">
+                    <thead><tr><th>#</th><th>Payroll month</th><th>Due</th><th>Recovered</th><th>Balance after</th><th>State</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in detail.Schedule)
+                        {
+                            <tr @key="row.Number">
+                                <td>@row.Number</td>
+                                <td>@row.MonthLabel</td>
+                                <td>@PayrollFormat.Rupees(row.Due)</td>
+                                <td class="@(row.Recovered > 0 ? "pay-net" : null)">@PayrollFormat.Rupees(row.Recovered)</td>
+                                <td>@PayrollFormat.Rupees(row.BalanceAfter)</td>
+                                <td><span class="loan-state @row.State.ToLowerInvariant()">@row.State</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="pay-section-title">Repayments</h3>
+            @if (detail.Repayments.Count == 0)
+            {
+                <p class="hr-hint">Nothing recovered yet. Payroll records each instalment when its month is approved.</p>
+            }
+            else
+            {
+                <div class="pay-table-scroll">
+                    <table class="pay-table">
+                        <thead><tr><th>Recorded</th><th>Month</th><th>Amount</th><th>Source</th><th>Note</th></tr></thead>
+                        <tbody>
+                            @foreach (var entry in detail.Repayments)
+                            {
+                                <tr @key="entry.Id">
+                                    <td>@entry.RecordedOn.ToString("dd MMM yyyy")</td>
+                                    <td>@entry.MonthLabel</td>
+                                    <td class="pay-net">@PayrollFormat.Rupees(entry.Amount)</td>
+                                    <td>@entry.Source</td>
+                                    <td>@(entry.Note ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+        <div class="pay-modal-foot">
+            <span></span>
+            <span class="pay-modal-actions"><button type="button" class="pay-btn grey" @onclick="CloseModal">Close</button></span>
+        </div>
+    </div>
+}
+
+@if (Modal == LoanModal.Decide && Target is { } decided)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="pay-modal narrow" role="dialog" aria-modal="true" aria-label="Decide loan">
+        <div class="pay-modal-head @(DecideApprove ? "green" : "blue")">
+            <h2>@(DecideApprove ? "Approve" : "Reject") @decided.VoucherNo</h2>
+            <button type="button" class="pay-modal-close" aria-label="Close" @onclick="CloseModal">✕</button>
+        </div>
+        <div class="pay-modal-body">
+            @if (ModalError is not null)
+            {
+                <div class="hr-alert error compact">@ModalError</div>
+            }
+            <dl class="pay-facts">
+                <div><dt>Employee</dt><dd>@decided.DisplayName (@decided.EmployeeNumber)</dd></div>
+                <div><dt>@decided.Type</dt><dd>@PayrollFormat.Rupees(decided.Principal)</dd></div>
+                <div><dt>Recovery</dt><dd>@PayrollFormat.Rupees(decided.MonthlyInstallment) × @decided.Installments from @decided.StartMonthLabel</dd></div>
+            </dl>
+            <label class="pay-field">
+                Note
+                <textarea rows="2" value="@DecisionNote" @oninput="args => DecisionNote = Text(args)"
+                          placeholder="@(DecideApprove ? "Optional" : "Why it was rejected")"></textarea>
+            </label>
+        </div>
+        <div class="pay-modal-foot">
+            <small class="hr-hint">@(DecideApprove ? "Payroll starts deducting from " + decided.StartMonthLabel + "." : "The employee's request is closed.")</small>
+            <span class="pay-modal-actions">
+                <button type="button" class="pay-btn grey" @onclick="CloseModal">Cancel</button>
+                <button type="button" class="pay-btn @(DecideApprove ? "green" : "amber")" disabled="@IsSaving" @onclick="DecideAsync">
+                    @(IsSaving ? "Saving…" : DecideApprove ? "Approve" : "Reject")
+                </button>
+            </span>
+        </div>
+    </div>
+}
+
+@if (Modal == LoanModal.Repay && Target is { } repaid && Repayment is { } repayment)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="pay-modal narrow" role="dialog" aria-modal="true" aria-label="Record repayment">
+        <div class="pay-modal-head green">
+            <h2>Record repayment · @repaid.VoucherNo</h2>
+            <button type="button" class="pay-modal-close" aria-label="Close" @onclick="CloseModal">✕</button>
+        </div>
+        <EditForm Model="repayment" OnValidSubmit="RepayAsync" FormName="loan-repayment">
+            <DataAnnotationsValidator />
+            <div class="pay-modal-body">
+                @if (ModalError is not null)
+                {
+                    <div class="hr-alert error compact">@ModalError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+                <p class="hr-hint">For money repaid outside payroll, such as a cash settlement. Outstanding: <strong>@PayrollFormat.Rupees(repaid.Outstanding)</strong>.</p>
+                <div class="hr-form-grid">
+                    <label>Amount (₹) <InputNumber @bind-Value="repayment.Amount" min="1" step="any" /></label>
+                    <label>Received on <InputDate @bind-Value="repayment.RecordedOn" /></label>
+                    <label class="hr-form-wide">Note <InputText @bind-Value="repayment.Note" placeholder="e.g. Cash receipt 1042" /></label>
+                </div>
+            </div>
+            <div class="pay-modal-foot">
+                <button type="button" class="pay-btn outline small" @onclick="() => repayment.Amount = repaid.Outstanding">Settle in full</button>
+                <span class="pay-modal-actions">
+                    <button type="button" class="pay-btn grey" @onclick="CloseModal">Cancel</button>
+                    <button type="submit" class="pay-btn green" disabled="@IsSaving">@(IsSaving ? "Saving…" : "Record")</button>
+                </span>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (Modal == LoanModal.Cancel && Target is { } cancelled)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="hr-modal hr-modal-small" role="dialog" aria-modal="true" aria-label="Cancel voucher">
+        <div class="hr-modal-head">
+            <h2>Cancel @cancelled.VoucherNo</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseModal">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            @if (ModalError is not null)
+            {
+                <div class="hr-alert error compact">@ModalError</div>
+            }
+            <p>Cancel <strong>@cancelled.DisplayName</strong>'s @cancelled.Type.ToLowerInvariant() of @PayrollFormat.Rupees(cancelled.Principal)? Payroll will not recover it.</p>
+        </div>
+        <div class="hr-modal-foot">
+            <span></span>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="CloseModal">Keep it</button>
+                <button type="button" class="hr-button small danger" disabled="@IsSaving" @onclick="CancelAsync">@(IsSaving ? "Cancelling…" : "Cancel voucher")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private enum LoanModal { None, Create, Detail, Decide, Repay, Cancel }
+
+    private LoanWorkspaceDto? Workspace;
+    private IReadOnlyList<EmployeeDirectoryRowDto> People = [];
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+
+    private string Status = string.Empty;
+    private string Type = string.Empty;
+    private string Search = string.Empty;
+
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private bool CanManage;
+    private string? LoadError;
+    private string? ModalError;
+    private string? Notice;
+
+    private LoanModal Modal = LoanModal.None;
+    private SaveLoanRequest? Draft;
+    private LoanDetailDto? Detail;
+    private LoanListItemDto? Target;
+    private RecordLoanRepaymentRequest? Repayment;
+    private bool DecideApprove;
+    private string DecisionNote = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanManage = await PortalCaller.HasAsync("PAYROLL.LOAN.MANAGE");
+
+            if (CanManage && await PortalCaller.HasAsync("EMPLOYEES.VIEW"))
+            {
+                People = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery { Status = "Active" });
+            }
+
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Workspace = await Loans.GetWorkspaceAsync(caller, new LoanQuery { Status = Status, Type = Type, Search = Search });
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Workspace = null;
+            LoadError = $"This account does not hold {denied.Permission}, so loans cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ChangeAsync(Action change)
+    {
+        change();
+        await LoadAsync();
+    }
+
+    private void OpenCreate()
+    {
+        var next = DateTime.Today.AddMonths(1);
+        Draft = new SaveLoanRequest { Installments = 6, StartMonth = next.Month, StartYear = next.Year };
+        Open(LoanModal.Create);
+    }
+
+    private async Task OpenDetailAsync(LoanListItemDto loan)
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Detail = await Loans.GetDetailAsync(caller, loan.Id);
+            Open(LoanModal.Detail);
+        }
+        catch (Exception ex)
+        {
+            Notice = null;
+            LoadError = ex.Message;
+        }
+    }
+
+    private void OpenDecision(LoanListItemDto loan, bool approve)
+    {
+        Target = loan;
+        DecideApprove = approve;
+        DecisionNote = string.Empty;
+        Open(LoanModal.Decide);
+    }
+
+    private void OpenRepayment(LoanListItemDto loan)
+    {
+        Target = loan;
+        Repayment = new RecordLoanRepaymentRequest { LoanId = loan.Id, Amount = Math.Min(loan.MonthlyInstallment, loan.Outstanding) };
+        Open(LoanModal.Repay);
+    }
+
+    private void OpenCancel(LoanListItemDto loan)
+    {
+        Target = loan;
+        Open(LoanModal.Cancel);
+    }
+
+    private void Open(LoanModal modal)
+    {
+        ModalError = null;
+        Modal = modal;
+    }
+
+    private void CloseModal()
+    {
+        Modal = LoanModal.None;
+        ModalError = null;
+    }
+
+    private Task CreateAsync() => RunAsync(async caller =>
+    {
+        var created = await Loans.CreateAsync(caller, Draft!);
+        return $"Created {created.VoucherNo} for {created.DisplayName} — pending approval.";
+    });
+
+    private Task DecideAsync() => RunAsync(async caller =>
+    {
+        var decided = await Loans.DecideAsync(caller, new LoanDecisionRequest { LoanId = Target!.Id, Approve = DecideApprove, Note = DecisionNote });
+        return DecideApprove
+            ? $"Approved {decided.VoucherNo}. Payroll recovers {PayrollFormat.Rupees(decided.MonthlyInstallment)} a month from {decided.StartMonthLabel}."
+            : $"Rejected {decided.VoucherNo}.";
+    });
+
+    private Task RepayAsync() => RunAsync(async caller =>
+    {
+        var updated = await Loans.RecordRepaymentAsync(caller, Repayment!);
+        return updated.Status == LoanStatuses.Closed
+            ? $"Recorded the repayment. {updated.VoucherNo} is fully settled and closed."
+            : $"Recorded the repayment. {PayrollFormat.Rupees(updated.Outstanding)} is still outstanding on {updated.VoucherNo}.";
+    });
+
+    private Task CancelAsync() => RunAsync(async caller =>
+    {
+        var updated = await Loans.CancelAsync(caller, Target!.Id, null);
+        return $"Cancelled {updated.VoucherNo}.";
+    });
+
+    private async Task RunAsync(Func<MobileCallerContext, Task<string>> write)
+    {
+        IsSaving = true;
+        ModalError = null;
+        Notice = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Notice = await write(caller);
+            Modal = LoanModal.None;
+            await LoadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            ModalError = $"This needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            ModalError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    // Mirrors LoanService so the form shows what the voucher will say before it is created.
+    private static decimal PreviewTotal(SaveLoanRequest draft)
+    {
+        var interest = draft.Type == LoanTypes.Advance ? 0 : Math.Clamp(draft.InterestPercent, 0, 36);
+        var months = Math.Clamp(draft.Installments, 1, 120);
+        return Math.Round(Math.Max(0, draft.Principal) * (1 + interest / 100m * months / 12m), 0, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal PreviewInstallment(SaveLoanRequest draft) =>
+        Math.Ceiling(PreviewTotal(draft) / Math.Clamp(draft.Installments, 1, 120));
+
+    private static int Percent(LoanListItemDto loan) =>
+        loan.TotalRepayable <= 0 ? 0 : (int)Math.Min(100, loan.Recovered * 100 / loan.TotalRepayable);
+
+    private static string MonthName(int year, int month) =>
+        month is >= 1 and <= 12 ? new DateTime(year, month, 1).ToString("MMMM yyyy", CultureInfo.InvariantCulture) : "—";
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

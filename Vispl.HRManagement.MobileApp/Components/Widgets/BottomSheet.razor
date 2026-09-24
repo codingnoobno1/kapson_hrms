@@ -1,0 +1,33 @@
+@* RW-17 BottomSheetScaffold. Record detail opens here, never as a pushed page.
+   Dismisses on scrim tap and on Escape. *@
+<div class="sheet-layer">
+    <button class="sheet-scrim" type="button" aria-label="Close" @onclick="OnClose"></button>
+
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="@Title" @onkeydown="OnKeyDown" tabindex="-1">
+        <div class="sheet-head">
+            <h2 class="sheet-title">
+                <AppIcon Name="@Icon" Size="18" />
+                <span>@Title</span>
+            </h2>
+            <button class="sheet-close" type="button" aria-label="Close" @onclick="OnClose"><AppIcon Name="x" Size="18" /></button>
+        </div>
+        <div class="sheet-body">
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+}

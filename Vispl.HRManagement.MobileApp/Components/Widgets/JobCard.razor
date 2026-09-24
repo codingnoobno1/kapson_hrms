@@ -1,0 +1,55 @@
+@* RW-33 JobCard, with RW-34 JobMetaLine, RW-35 JobCardActionBar and
+   RW-36 SalaryRangeText. Disabled actions stay in place at 40% opacity so the
+   row keeps a stable shape. *@
+<article class="card job-card">
+    <div class="card-head">
+        <h2>@Job.Title</h2>
+        <StatusPill Label="@StateStyles.Label(Job.State)" State="@StateKey" />
+    </div>
+
+    <div class="job-sub">
+        <span class="list-item-meta">@Job.Department • @Job.Location</span>
+        @if (Job.ExpiresOn.HasValue)
+        {
+            <span class="job-expiry">Expiry Date: @Job.ExpiresOn.Value.ToString("dd-MM-yyyy")</span>
+        }
+    </div>
+
+    <div class="job-meta">
+        <AppIcon Name="briefcase" Size="14" /> @Job.EmploymentType
+        <span class="job-dot">•</span>
+        <AppIcon Name="clock" Size="14" /> @Job.ExperienceBand
+        <span class="job-dot">•</span>
+        <span class="job-salary">@SalaryText</span>
+    </div>
+
+    <div class="job-footer">
+        <div class="card-action-bar">
+            <button class="card-action card-action-view" type="button" aria-label="View job"
+                    disabled="@(!CanView)" @onclick="OnView"><AppIcon Name="eye" Size="16" /></button>
+            <button class="card-action card-action-edit" type="button" aria-label="Edit job"
+                    disabled="@(!CanEdit)" @onclick="OnEdit"><AppIcon Name="edit" Size="16" /></button>
+            <button class="card-action card-action-delete" type="button" aria-label="Delete job"
+                    disabled="@(!CanDelete)" @onclick="OnDelete"><AppIcon Name="trash" Size="16" /></button>
+        </div>
+        @if (Job.LastStatusUpdated.HasValue)
+        {
+            <span class="job-updated">Last Status Updated:@Job.LastStatusUpdated.Value.ToString("dd-MM-yyyy")</span>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public JobCardModel Job { get; set; } = default!;
+    [Parameter] public bool CanView { get; set; } = true;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool CanDelete { get; set; }
+    [Parameter] public EventCallback OnView { get; set; }
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+
+    private string StateKey => StateStyles.Label(Job.State).ToLowerInvariant().Replace(" ", "-");
+
+    // RW-36: masked to an em dash when the value is absent or withheld.
+    private string SalaryText => string.IsNullOrWhiteSpace(Job.SalaryRange) ? "—" : Job.SalaryRange!;
+}

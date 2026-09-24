@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Home.Pages.DashboardPage"
+    x:Name="Page"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:models="clr-namespace:Vispl.HRManagement.Mobile.Shared.Models"
+    xmlns:pages="clr-namespace:Vispl.HRManagement.Mobile.Features.Home.Pages"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Home.ViewModels"
+    x:DataType="vm:DashboardViewModel">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,*">
+        <controls:BrandHeader Subtitle="HR workspace" />
+        <Grid Grid.Row="1">
+            <ScrollView>
+                <VerticalStackLayout Padding="18,18,18,30" Spacing="20">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Good morning, Michael" Style="{StaticResource PageTitle}" />
+                            <Label Text="Here is what needs your attention today." Style="{StaticResource BodyText}" />
+                        </VerticalStackLayout>
+                        <Border Grid.Column="1" WidthRequest="42" HeightRequest="42" BackgroundColor="{StaticResource Navy800}" StrokeThickness="0" VerticalOptions="Center">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="14" /></Border.StrokeShape>
+                            <Label Text="＋" TextColor="White" FontSize="24" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        </Border>
+                    </Grid>
+
+                    <CollectionView ItemsSource="{Binding Metrics}" ItemsLayout="HorizontalList" HeightRequest="132" SelectionMode="None">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:KpiMetric">
+                                <controls:KpiTile Item="{Binding .}" Margin="0,0,10,0" />
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Interview schedule" Style="{StaticResource SectionTitle}" />
+                            <Label Grid.Column="1" Text="View all" TextColor="{StaticResource Primary600}" FontSize="13" VerticalTextAlignment="Center" />
+                        </Grid>
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Interviews}" Spacing="10">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:InterviewSummary"><controls:InterviewCard Item="{Binding .}" /></DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Hiring spotlight" Style="{StaticResource SectionTitle}" />
+                            <Label Grid.Column="1" Text="Manage jobs" TextColor="{StaticResource Primary600}" FontSize="13" />
+                        </Grid>
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding SpotlightJobs}" Spacing="11">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:JobSummary">
+                                    <controls:JobCard Item="{Binding .}" OpenCommand="{Binding ViewModel.OpenJobCommand, Source={x:Reference Page}, x:DataType=pages:DashboardPage}" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <VerticalStackLayout IsVisible="{Binding IsBusy}" Padding="18,18,18,0" Spacing="20">
+                <HorizontalStackLayout Spacing="10">
+                    <controls:SkeletonView WidthRequest="112" HeightRequest="128" CornerRadius="18" />
+                    <controls:SkeletonView WidthRequest="112" HeightRequest="128" CornerRadius="18" />
+                    <controls:SkeletonView WidthRequest="112" HeightRequest="128" CornerRadius="18" />
+                </HorizontalStackLayout>
+                <controls:SkeletonView HeightRequest="80" CornerRadius="15" />
+                <controls:SkeletonView HeightRequest="110" CornerRadius="18" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

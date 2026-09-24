@@ -1,0 +1,38 @@
+<div class="access-role-picker">
+    <div class="access-field-heading">
+        <strong>Assigned roles</strong>
+        <span>Select one or more @Portal.ToString().ToLowerInvariant() roles.</span>
+    </div>
+    @if (Roles.Count == 0)
+    {
+        <p>No active roles are available. <a href="/admin/roles">Create a role first.</a></p>
+    }
+    else
+    {
+        <div class="access-role-options">
+            @foreach (var role in Roles.Where(item => item.IsActive))
+            {
+                var roleId = role.Id;
+                <label class="access-role-option">
+                    <input type="checkbox" checked="@SelectedRoleIds.Contains(roleId)" @onchange="args => ToggleRole(roleId, args)" />
+                    <span><strong>@role.DisplayName</strong><small>@role.RoleCode · @(role.IsSystem ? "System" : "Custom")</small></span>
+                </label>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AccessRoleDto> Roles { get; set; } = [];
+    [Parameter, EditorRequired] public List<string> SelectedRoleIds { get; set; } = [];
+    [Parameter] public AccountPortal Portal { get; set; } = AccountPortal.Hr;
+    [Parameter] public EventCallback<List<string>> SelectedRoleIdsChanged { get; set; }
+
+    private async Task ToggleRole(string roleId, ChangeEventArgs args)
+    {
+        var selected = args.Value is bool value && value;
+        if (selected && !SelectedRoleIds.Contains(roleId)) SelectedRoleIds.Add(roleId);
+        if (!selected) SelectedRoleIds.Remove(roleId);
+        await SelectedRoleIdsChanged.InvokeAsync(SelectedRoleIds);
+    }
+}

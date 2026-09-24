@@ -1,0 +1,44 @@
+@switch (Section.Key)
+{
+    case "hero":
+        <section class="hero-section">
+            <div class="hero-orb hero-orb-one"></div><div class="hero-orb hero-orb-two"></div>
+            <div class="public-container hero-grid">
+                <div class="hero-copy"><span class="eyebrow eyebrow-light">@Site.HeroEyebrow</span><h1>@Site.HeroTitle</h1><p>@Site.HeroSummary</p><div class="hero-actions"><a class="button button-gold" href="@CareersUrl">Explore open positions <span>→</span></a><a class="text-link text-link-light" href="@AboutUrl">Discover our story <span>↗</span></a></div></div>
+                <div class="hero-card" aria-label="@Site.CompanyName people and culture">
+                    <div class="hero-card-top"><span>PEOPLE FIRST</span><span class="status-dot"></span></div>
+                    <div class="hero-visual"><span class="hero-letter">@Site.BrandInitial</span><div class="hero-visual-caption"><strong>@Site.HeroCardTitle</strong><span>@Site.HeroCardSubtitle</span></div></div>
+                    <div class="hero-stats">@foreach (var statistic in Site.HeroStatistics.OrderBy(item => item.SortOrder)) { <div><strong>@statistic.Title</strong><span>@statistic.Body</span></div> }</div>
+                </div>
+            </div>
+        </section>
+        break;
+    case "intro":
+        <section class="intro-section"><div class="public-container intro-grid"><div><span class="eyebrow">@Site.IntroEyebrow</span><h2>@Site.IntroTitle</h2></div><div class="intro-copy"><p>@Site.IntroBody</p><a class="text-link" href="@AboutUrl">More about @Site.CompanyName <span>→</span></a></div></div></section>
+        break;
+    case "openings":
+        <section class="positions-section" id="openings"><div class="public-container">
+            <div class="section-heading-row"><div><span class="eyebrow">OPPORTUNITIES</span><h2>Find where you belong.</h2></div><a class="button button-outline" href="@CareersUrl">View all positions</a></div>
+            @if (Jobs.Count == 0) { <div class="public-empty-jobs"><h3>No positions are open right now.</h3><p>Check back soon for new opportunities.</p></div> }
+            else { <div class="job-grid">@foreach (var job in Jobs.Take(3)) { <article class="job-card"><div class="job-card-topline"><span>@job.Department</span><span class="job-arrow">↗</span></div><h3><a href="@JobUrl(job.Slug)">@job.Title</a></h3><p>@job.Summary</p><div class="job-meta"><span>@job.Location</span><span>@job.WorkMode</span><span>@job.Experience</span></div><a class="card-link" href="@JobUrl(job.Slug)">View position <span>→</span></a></article> }</div> }
+        </div></section>
+        break;
+    case "values":
+        <section class="values-section"><div class="public-container"><div class="section-heading centered-heading"><span class="eyebrow eyebrow-light">WHY @Site.CompanyName.ToUpperInvariant()</span><h2>@Site.ValuesTitle</h2></div><div class="value-grid">@foreach (var value in Site.Values.OrderBy(item => item.SortOrder)) { <article><span>@value.Code</span><h3>@value.Title</h3><p>@value.Body</p></article> }</div></div></section>
+        break;
+    case "hiring":
+        <section class="process-section" id="hiring-process"><div class="public-container process-grid"><div class="process-heading"><span class="eyebrow">YOUR JOURNEY</span><h2>@Site.HiringTitle</h2><p>@Site.HiringSummary</p></div><ol class="process-list">@foreach (var step in Site.HiringSteps.OrderBy(item => item.SortOrder)) { <li><span>@step.Code</span><div><h3>@step.Title</h3><p>@step.Body</p></div></li> }</ol></div></section>
+        break;
+    case "closing":
+        <section class="closing-cta"><div class="public-container closing-cta-inner"><span class="eyebrow eyebrow-light">YOUR NEXT CHAPTER</span><h2>@Site.ClosingTitle</h2><p>@Site.ClosingSummary</p><a class="button button-gold" href="@CareersUrl">Explore careers <span>→</span></a></div></section>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public PageSectionDto Section { get; set; } = null!;
+    [Parameter, EditorRequired] public CareerSiteConfigurationDto Site { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<JobOpeningDto> Jobs { get; set; } = [];
+    private string AboutUrl => Site.TenantKey == "kapson" ? "/kapson/about" : $"/career/{Site.TenantKey}/about";
+    private string CareersUrl => Site.TenantKey == "kapson" ? "/kapson/careers" : $"/career/{Site.TenantKey}/careers";
+    private string JobUrl(string slug) => $"{CareersUrl}/{slug}";
+}

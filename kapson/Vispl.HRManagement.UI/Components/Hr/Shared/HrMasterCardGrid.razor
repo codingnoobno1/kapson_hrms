@@ -1,0 +1,50 @@
+@*
+    The "APP Configuration" tab content — extracted so both the full /hr/settings page and the
+    mega-menu overlay's APP Configuration tab render the exact same grid from the exact same
+    registry. One widget, two hosts, per the client-locked design's own rule that a tab's content
+    doesn't get reimplemented per surface.
+
+    Laid out as the locked design: four columns of grouped sections (Employee Masters | Payroll &
+    Compensation + Leave & Attendance | Personal & Demographics | Organization & Location +
+    Document Management + Other). Anything the design does not name sits in a fifth "Other
+    Configurations" column, so the four approved columns never change shape.
+*@
+
+<section class="hr-panel hr-master-panel">
+    <div class="hr-master-columns">
+        @foreach (var column in HrMasterRegistry.Columns)
+        {
+            <div class="hr-master-column">
+                @foreach (var (groupName, items) in column)
+                {
+                    <div class="hr-master-group @(groupName == HrMasterRegistry.OtherConfigurations ? "extra" : "")">
+                        <h3>@groupName</h3>
+                        <div class="hr-master-list">
+                            @foreach (var entry in items)
+                            {
+                                <a class="hr-master-card @(entry.IsReady ? "" : "muted")"
+                                   href="@DetailLink(entry.Key)"
+                                   title="@(entry.IsReady ? null : "Not available yet")">
+                                    <span class="hr-master-card-icon" aria-hidden="true">@entry.Icon</span>
+                                    <span class="hr-master-card-body">
+                                        <strong>@entry.Title</strong>
+                                        <small>@entry.Subtitle</small>
+                                    </span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private string DetailLink(string key) =>
+        string.IsNullOrWhiteSpace(TenantKey)
+            ? $"/hr/settings/masters/{key}"
+            : $"/hr/{TenantKey}/settings/masters/{key}";
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "tenantKey": "kapson",
+    "code": "GENERAL",
+    "name": "General shift",
+    "startTime": "09:00",
+    "endTime": "18:00",
+    "breakMinutes": 60,
+    "graceMinutes": 15,
+    "workingDays": "NYYYYYN",
+    "crossesMidnight": false,
+    "isDefault": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "STORE-OPEN",
+    "name": "Store opening",
+    "startTime": "10:00",
+    "endTime": "19:00",
+    "breakMinutes": 60,
+    "graceMinutes": 10,
+    "workingDays": "YYYYYYY",
+    "crossesMidnight": false,
+    "isDefault": false
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "STORE-CLOSE",
+    "name": "Store closing",
+    "startTime": "13:00",
+    "endTime": "22:00",
+    "breakMinutes": 60,
+    "graceMinutes": 10,
+    "workingDays": "YYYYYYY",
+    "crossesMidnight": false,
+    "isDefault": false
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "NIGHT",
+    "name": "Night shift",
+    "startTime": "22:00",
+    "endTime": "06:00",
+    "breakMinutes": 45,
+    "graceMinutes": 15,
+    "workingDays": "NYYYYYN",
+    "crossesMidnight": true,
+    "isDefault": false
+  }
+]

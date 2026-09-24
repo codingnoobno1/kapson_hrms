@@ -1,0 +1,301 @@
+@page "/hr/leave"
+@page "/hr/{TenantKey}/leave"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IWorkforceReportService Reports
+@inject IMobileLeaveService Leave
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Leave | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="leave" TenantKey="@TenantKey"
+             Kicker="TIME OFF" Title="Leave"
+             Subtitle="Requests waiting on a decision, and what everyone has left to take."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Year
+            <input type="number" min="2000" max="2100" step="1"
+                   value="@Year" @onchange="ChangeYear" />
+        </label>
+
+        <button class="hr-button small" type="button" @onclick="LoadAsync" disabled="@IsBusy">
+            @(IsBusy ? "Loading…" : "Refresh")
+        </button>
+    </Filters>
+
+    <ChildContent>
+        @if (Queue is { } queue && queue.TotalPending > 0)
+        {
+            <div class="hr-kpi-strip">
+                <article class="hr-kpi-card tone-@(queue.TotalPending > 0 ? "warning" : "muted")">
+                    <span class="hr-kpi-title">AWAITING A DECISION</span>
+                    <strong class="hr-kpi-value">@queue.TotalPending</strong>
+                    <span class="hr-kpi-sub">requests across this client</span>
+                </article>
+                <article class="hr-kpi-card tone-@(queue.StartingSoon > 0 ? "danger" : "muted")">
+                    <span class="hr-kpi-title">STARTING SOON</span>
+                    <strong class="hr-kpi-value">@queue.StartingSoon</strong>
+                    <span class="hr-kpi-sub">begin within three days, or already have</span>
+                </article>
+                <article class="hr-kpi-card tone-muted">
+                    <span class="hr-kpi-title">LONGEST WAIT</span>
+                    <strong class="hr-kpi-value">@queue.LongestWaitDays</strong>
+                    <span class="hr-kpi-sub">@(queue.LongestWaitDays == 1 ? "day" : "days")</span>
+                </article>
+            </div>
+        }
+
+        @if (ActionMessage is { } message)
+        {
+            <div class="hr-alert success">@message</div>
+        }
+
+        <HrDataTable TRow="LeaveApprovalRowDto"
+                     Title="Awaiting a decision"
+                     Meta="@QueueMeta()"
+                     Total="Queue?.TotalPending"
+                     Error="@QueueError"
+                     IsLoading="IsBusy"
+                     EmptyMessage="Nothing is waiting on a decision."
+                     Rows="Queue?.Rows">
+            <Header>
+                <th>Employee</th><th>Department</th><th>Type</th>
+                <th>From</th><th>To</th><th class="numeric">Days</th>
+                <th>Reason</th><th class="numeric">Waiting</th><th>Decision</th>
+            </Header>
+            <Row Context="request">
+                <td class="strong">
+                    @request.DisplayName
+                    <small class="hr-hint">@request.EmployeeNumber</small>
+                </td>
+                <td>@(request.DepartmentName ?? request.DepartmentCode)</td>
+                <td>
+                    @* Same colour and icon HR chose on Leave Type Colours, as the employee app shows. *@
+                    <span style="@LeaveTonePalette.TagStyle(request.ToneKey)" title="@request.LeaveTypeCode">
+                        @request.Emoji @(request.LeaveTypeName ?? request.LeaveTypeCode)
+                    </span>
+                </td>
+                <td>
+                    @request.From.ToString("dd MMM")
+                    @if (request.StartsWithinWindow)
+                    {
+                        <span class="hr-tag tone-danger">Soon</span>
+                    }
+                </td>
+                <td>@request.To.ToString("dd MMM")</td>
+                <td class="numeric strong">@request.Days.ToString("0.#")</td>
+                <td>@request.Reason</td>
+                <td class="numeric">@request.WaitingDays d</td>
+                <td>
+                    @if (request.IsOwn)
+                    {
+                        @* The service refuses this too; saying so here saves the click. *@
+                        <small class="hr-hint">Your own request — somebody else must decide it.</small>
+                    }
+                    else if (!CanApprove)
+                    {
+                        <small class="hr-hint">Deciding needs LEAVE.APPROVE.</small>
+                    }
+                    else
+                    {
+                        <span class="hr-action-row">
+                            <button class="hr-button small" type="button"
+                                    disabled="@(DecidingId == request.RequestId)"
+                                    @onclick="() => DecideAsync(request, true)">Approve</button>
+                            <button class="hr-button small ghost" type="button"
+                                    disabled="@(DecidingId == request.RequestId)"
+                                    @onclick="() => DecideAsync(request, false)">Reject</button>
+                        </span>
+                    }
+                </td>
+            </Row>
+        </HrDataTable>
+
+        <HrDataTable TRow="DepartmentLeaveBalanceRowDto"
+                     Title="Balance by department"
+                     Meta="@($"Year {DepartmentBalances?.Year ?? Year}")"
+                     Error="@BalanceError"
+                     IsLoading="IsBusy"
+                     EmptyMessage="No leave has been granted yet."
+                     Rows="DepartmentBalances?.Rows">
+            <Header>
+                <th>Department</th><th class="numeric">Employees</th>
+                <th class="numeric">Used (days)</th><th class="numeric">Available (days)</th>
+                <th>Utilisation</th>
+            </Header>
+            <Row Context="row">
+                <td>@row.DepartmentCode</td>
+                <td class="numeric">@row.EmployeeCount</td>
+                <td class="numeric">@row.UsedDays.ToString("0.#")</td>
+                <td class="numeric">@row.AvailableDays.ToString("0.#")</td>
+                <td>
+                    <div class="hr-inline-bar"><div style="width:@(row.UtilisationPercent)%"></div></div>
+                    <small>@row.UtilisationPercent.ToString("0.#")%</small>
+                </td>
+            </Row>
+        </HrDataTable>
+
+        <HrDataTable TRow="EmployeeLeaveBalanceRowDto"
+                     Title="Balance by employee"
+                     Meta="@($"Year {EmployeeBalances?.Year ?? Year}")"
+                     Total="@(EmployeeBalances?.Rows.ApproximateTotal is { } total ? (int)total : null)"
+                     Error="@BalanceError"
+                     IsLoading="IsBusy"
+                     EmptyMessage="No balances have been granted."
+                     Rows="EmployeeBalances?.Rows.Items">
+            <Header>
+                <th>Employee</th><th>Department</th>
+                @if (EmployeeBalances is not null)
+                {
+                    @foreach (var column in EmployeeBalances.PolicyColumns)
+                    {
+                        <th class="numeric">@column</th>
+                    }
+                }
+                <th class="numeric">Total</th>
+            </Header>
+            <Row Context="row">
+                <td>@row.DisplayName</td>
+                <td>@row.DepartmentCode</td>
+                @foreach (var cell in row.Balances)
+                {
+                    <td class="numeric">@cell.Available.ToString("0.#")</td>
+                }
+                <td class="numeric strong">@row.Total.ToString("0.#")</td>
+            </Row>
+        </HrDataTable>
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    /// <summary>Presentational only; the data is always the signed-in account's client.</summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private LeaveApprovalQueueDto? Queue;
+    private DepartmentLeaveBalanceGridDto? DepartmentBalances;
+    private EmployeeLeaveBalanceGridDto? EmployeeBalances;
+
+    private int Year = DateTime.UtcNow.Year;
+
+    private string? LoadError;
+    private string? QueueError;
+    private string? BalanceError;
+    private string? ActionMessage;
+    private bool IsBusy = true;
+    private string? DecidingId;
+    private bool CanApprove;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CanApprove = await PortalCaller.HasAsync("LEAVE.APPROVE");
+        await LoadAsync();
+    }
+
+    private void ChangeYear(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var parsed) && parsed is >= 2000 and <= 2100)
+        {
+            Year = parsed;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        QueueError = null;
+        BalanceError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            // The queue and the balance grids fail independently: an approver without
+            // LEAVE.REPORT should still be able to clear their queue.
+            try
+            {
+                Queue = await Reports.GetLeaveApprovalQueueAsync(
+                    caller, new DashboardScopeQuery(), CancellationToken.None);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                QueueError = $"The approval queue needs {denied.Permission}.";
+            }
+
+            try
+            {
+                var grid = new LeaveBalanceGridQuery { Year = Year, PageSize = 25 };
+                DepartmentBalances = await Reports.GetDepartmentLeaveBalancesAsync(caller, grid, CancellationToken.None);
+                EmployeeBalances = await Reports.GetEmployeeLeaveBalancesAsync(caller, grid, CancellationToken.None);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                BalanceError = $"Balance reporting needs {denied.Permission}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task DecideAsync(LeaveApprovalRowDto request, bool approve)
+    {
+        DecidingId = request.RequestId;
+        ActionMessage = null;
+        QueueError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            await Leave.DecideAsync(caller, request.RequestId, new LeaveDecisionRequest
+            {
+                Decision = approve ? "approve" : "reject",
+                Comment = approve ? null : "Rejected from the HR portal."
+            }, CancellationToken.None);
+
+            ActionMessage = approve
+                ? $"{request.DisplayName}'s {request.Days:0.#} day {request.LeaveTypeCode} was approved."
+                : $"{request.DisplayName}'s {request.LeaveTypeCode} request was rejected.";
+
+            await LoadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            QueueError = $"Deciding a request needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            QueueError = ex.Message;
+        }
+        finally
+        {
+            DecidingId = null;
+        }
+    }
+
+    private string QueueMeta()
+    {
+        if (Queue is null)
+        {
+            return "Loading";
+        }
+
+        if (Queue.TotalPending == 0)
+        {
+            return "The queue is clear";
+        }
+
+        return Queue.StartingSoon > 0
+            ? $"{Queue.StartingSoon} starting within three days"
+            : $"Longest wait {Queue.LongestWaitDays} days";
+    }
+}

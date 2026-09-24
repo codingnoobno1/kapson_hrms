@@ -1,0 +1,103 @@
+@page "/connect"
+@inject DiscoveryApi Discovery
+@inject AppSession Session
+@inject NavigationManager Navigation
+
+<div class="connect-page">
+    <div class="connect-brand">
+        <div class="connect-mark">HR</div>
+        <h1>Vispl HR</h1>
+        <p>Enter your company code to connect this device.</p>
+    </div>
+
+    <div class="field">
+        <label for="company">Company code or domain</label>
+        <input id="company"
+               class="input"
+               type="text"
+               autocomplete="organization"
+               autocapitalize="none"
+               placeholder="kapson"
+               @bind="companyCode"
+               @bind:event="oninput"
+               @onkeydown="OnKeyDown" />
+    </div>
+
+    <button class="btn-primary btn-block"
+            type="button"
+            disabled="@(isBusy || string.IsNullOrWhiteSpace(companyCode))"
+            @onclick="ResolveAsync">
+        @(isBusy ? "Connecting…" : "Continue")
+    </button>
+
+    @if (error is not null)
+    {
+        <div class="inline-error" role="alert">@error</div>
+    }
+
+    @if (metadata is not null)
+    {
+        <div class="connect-meta">
+            <span>API @metadata.ApiVersion</span>
+            <span>·</span>
+            <span>Minimum app @metadata.MinimumAppVersion</span>
+        </div>
+    }
+
+    <button class="btn-link" type="button" @onclick="@(() => Navigation.NavigateTo("/settings"))">
+        Server settings
+    </button>
+</div>
+
+@code {
+    private string companyCode = string.Empty;
+    private string? error;
+    private bool isBusy;
+    private Vispl.HRManagement.Contracts.Mobile.Bootstrap.PublicMobileMetadataDto? metadata;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Discovery.GetMetadataAsync();
+        if (result.IsSuccess)
+        {
+            metadata = result.Data;
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await ResolveAsync();
+        }
+    }
+
+    private async Task ResolveAsync()
+    {
+        if (isBusy || string.IsNullOrWhiteSpace(companyCode))
+        {
+            return;
+        }
+
+        isBusy = true;
+        error = null;
+
+        var result = await Discovery.ResolveTenantAsync(companyCode.Trim());
+
+        isBusy = false;
+
+        if (result is { IsSuccess: true, Data: not null })
+        {
+            Session.SetTenant(result.Data);
+            Navigation.NavigateTo("/");
+            return;
+        }
+
+        error = result.Outcome switch
+        {
+            ApiOutcome.NotFound => "No company matches that code.",
+            ApiOutcome.Offline => $"Could not reach the server. Check the base address in settings.",
+            _ => result.Message
+        };
+    }
+}

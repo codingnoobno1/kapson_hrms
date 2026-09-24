@@ -1,0 +1,24 @@
+{
+  "defaultComponents": [
+    { "kind": "Allowance", "componentCode": "HRA", "calculationType": "PercentOfBasic", "value": 40 },
+    { "kind": "Allowance", "componentCode": "TRANSPORT", "calculationType": "Fixed", "value": 1600 },
+    { "kind": "Allowance", "componentCode": "MEDICAL", "calculationType": "Fixed", "value": 1250 },
+    { "kind": "Allowance", "componentCode": "SPECIAL", "calculationType": "PercentOfBasic", "value": 10 },
+    { "kind": "Deduction", "componentCode": "PF", "calculationType": "PercentOfBasic", "value": 12, "capAmount": 1800 },
+    { "kind": "Deduction", "componentCode": "ESI", "calculationType": "PercentOfGross", "value": 0.75, "grossCeiling": 21000 },
+    { "kind": "Deduction", "componentCode": "PROF_TAX", "calculationType": "Fixed", "value": 200 },
+    { "kind": "Deduction", "componentCode": "TDS", "calculationType": "PercentOfGross", "value": 0 }
+  ],
+  "grades": [
+    { "tenantKey": "kapson", "gradeCode": "EXECUTIVE", "basicMonthly": 18000 },
+    { "tenantKey": "kapson", "gradeCode": "SPECIALIST", "basicMonthly": 25000 },
+    { "tenantKey": "kapson", "gradeCode": "SENIOR", "basicMonthly": 35000 },
+    { "tenantKey": "kapson", "gradeCode": "LEAD", "basicMonthly": 45000 },
+    { "tenantKey": "kapson", "gradeCode": "MANAGER", "basicMonthly": 55000 },
+    { "tenantKey": "kapson", "gradeCode": "SENIOR_MANAGER", "basicMonthly": 70000 },
+    { "tenantKey": "kapson", "gradeCode": "ARCHITECT", "basicMonthly": 80000 },
+    { "tenantKey": "kapson", "gradeCode": "DIRECTOR", "basicMonthly": 110000 },
+    { "tenantKey": "kapson", "gradeCode": "VP", "basicMonthly": 150000 },
+    { "tenantKey": "kapson", "gradeCode": "CXO", "basicMonthly": 250000 }
+  ]
+}

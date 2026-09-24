@@ -1,0 +1,761 @@
+@page "/onboarding"
+@page "/career/{TenantKey}/onboarding"
+@using System.Net.Http.Json
+@using System.Text.Json
+@using Vispl.HRManagement.Contracts.Recruitment
+@inject NavigationManager Navigation
+@inject IHttpClientFactory HttpClients
+@inject ICareerSiteService CareerSiteService
+@inject IThemeTemplateService ThemeTemplateService
+
+@*
+    Where a candidate lands from the mail they were sent when they applied.
+
+    It talks to the public and candidate APIs over HTTP rather than reaching into the business
+    services, so it is held to exactly the same rules a phone would be — a candidate sees their
+    own applications and nothing else, enforced by the token, not by this page remembering to
+    filter. Because this is server-side Blazor the token stays in the circuit and never reaches
+    the browser.
+*@
+
+<PageTitle>Your application | @(site?.CompanyName ?? "Vispl HR")</PageTitle>
+
+@*
+    Wrapped in the client's own career-site chrome when we know which client this is. A
+    candidate arrives here from a company's careers page or from that company's email; landing
+    on an unbranded form makes a perfectly legitimate link look like a phishing page.
+*@
+<div class="public-site template-@(site?.TemplateKey ?? "classic")" style="@ThemeStyle">
+    @if (site is not null)
+    {
+        <PublicHeader Site="site" />
+    }
+
+    <main>
+<div class="cand-page">
+    @if (site is null)
+    {
+        <header class="cand-head">
+            <span class="cand-mark">HR</span>
+            <div>
+                <h1>Your application</h1>
+                <p>Track where things stand and complete your joining formalities.</p>
+            </div>
+        </header>
+    }
+    else
+    {
+        <header class="cand-head plain">
+            <div>
+                <h1>Your application</h1>
+                <p>Track where things stand and complete your joining formalities.</p>
+            </div>
+        </header>
+    }
+
+    @if (notice is { } message)
+    {
+        <div class="cand-note success">@message</div>
+    }
+
+    @if (error is { } problem)
+    {
+        <div class="cand-note error">@problem</div>
+    }
+
+    @if (progress is null)
+    {
+        <section class="cand-card">
+            @if (HasToken)
+            {
+                @* Arrived from the mail link. One job: set a password. *@
+                <h2>Choose a password</h2>
+                <p class="cand-sub">
+                    This is how you will sign back in to check your application.
+                </p>
+
+                @*
+                    Asked for even though the link identifies them. The token carries no
+                    address, so without this the page can set a password and then be unable to
+                    sign the person in — and it is a mild check that the link reached the
+                    person it was sent to rather than someone they forwarded it to.
+                *@
+                <label class="cand-field">
+                    <span>The email you applied with</span>
+                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                </label>
+
+                <label class="cand-field">
+                    <span>Password</span>
+                    <input type="password" @bind="password" @bind:event="oninput"
+                           placeholder="At least 10 characters" autocomplete="new-password" />
+                </label>
+
+                <label class="cand-field">
+                    <span>Confirm password</span>
+                    <input type="password" @bind="confirm" @bind:event="oninput"
+                           autocomplete="new-password" />
+                </label>
+
+                <button class="cand-button" type="button" disabled="@busy" @onclick="ActivateAsync">
+                    @(busy ? "Saving…" : "Set password and continue")
+                </button>
+
+                <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
+                    I already have a password
+                </button>
+            }
+            else if (mode == Mode.RequestLink)
+            {
+                <h2>Send me a link</h2>
+                <p class="cand-sub">
+                    Enter the address you applied with. If it matches an application we will
+                    email you a link to set a password.
+                </p>
+
+                @* Asked for only when we do not already know. Somebody who followed a link
+                   from a company's own careers site should not be asked which company. *@
+                @if (site is null)
+                {
+                    <label class="cand-field">
+                        <span>Company</span>
+                        <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
+                    </label>
+                }
+
+                <label class="cand-field">
+                    <span>Email</span>
+                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                </label>
+
+                <button class="cand-button" type="button" disabled="@busy" @onclick="RequestLinkAsync">
+                    @(busy ? "Sending…" : "Send the link")
+                </button>
+
+                <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
+                    Back to sign in
+                </button>
+            }
+            else
+            {
+                <h2>Sign in</h2>
+                <p class="cand-sub">Use the address you applied with.</p>
+
+                @* Asked for only when we do not already know. Somebody who followed a link
+                   from a company's own careers site should not be asked which company. *@
+                @if (site is null)
+                {
+                    <label class="cand-field">
+                        <span>Company</span>
+                        <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
+                    </label>
+                }
+
+                <label class="cand-field">
+                    <span>Email</span>
+                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                </label>
+
+                <label class="cand-field">
+                    <span>Password</span>
+                    <input type="password" @bind="password" @bind:event="oninput"
+                           autocomplete="current-password" @onkeydown="SignInKey" />
+                </label>
+
+                <button class="cand-button" type="button" disabled="@busy" @onclick="SignInAsync">
+                    @(busy ? "Signing in…" : "Sign in")
+                </button>
+
+                <button class="cand-link" type="button" @onclick="() => mode = Mode.RequestLink">
+                    I have not set a password yet
+                </button>
+            }
+        </section>
+    }
+    else
+    {
+        <section class="cand-card">
+            <div class="cand-who">
+                <div>
+                    <strong>@progress.CandidateName</strong>
+                    <span class="cand-sub">@progress.Email</span>
+                </div>
+                <button class="cand-link" type="button" @onclick="SignOut">Sign out</button>
+            </div>
+        </section>
+
+        <h2 class="cand-section">Your applications</h2>
+
+        @foreach (var application in progress.Applications)
+        {
+            <section class="cand-card">
+                <div class="cand-row">
+                    <div>
+                        <strong>@application.JobTitle</strong>
+                        <span class="cand-sub">@application.Department · @application.Reference</span>
+                    </div>
+                    <span class="cand-pill tone-@application.StageTone">@application.Stage</span>
+                </div>
+
+                <p class="cand-explain">@application.StageExplanation</p>
+                <p class="cand-sub">Applied @application.AppliedUtc.ToLocalTime().ToString("d MMMM yyyy")</p>
+
+                @if (application.AwaitingMyDecision)
+                {
+                    @* Only the candidate can answer an offer — the server refuses anyone else,
+                       so this is the one place in the product where it can be done. *@
+                    <div class="cand-actions">
+                        <button class="cand-button" type="button" disabled="@busy"
+                                @onclick="() => RespondAsync(application.ApplicationId, true)">
+                            Accept the offer
+                        </button>
+                        <button class="cand-button quiet" type="button" disabled="@busy"
+                                @onclick="() => RespondAsync(application.ApplicationId, false)">
+                            Decline
+                        </button>
+                    </div>
+                }
+            </section>
+        }
+
+        @if (progress.Applications.Count == 0)
+        {
+            <section class="cand-card">
+                <p class="cand-sub">No applications on this account yet.</p>
+            </section>
+        }
+
+        @if (progress.Onboarding is { } checklist)
+        {
+            <h2 class="cand-section">Joining checklist</h2>
+
+            @*
+                Their progress, not ours. The DTO's CompletionPercent counts what HR has
+                approved, which is the right number for HR and a demoralising lie here — it
+                reads 0% to somebody who has just uploaded everything they were asked for.
+                What a candidate wants to know is whether anything is still on them.
+            *@
+            <section class="cand-card">
+                <div class="cand-row">
+                    <strong>
+                        @if (MyOutstanding == 0)
+                        {
+                            <text>You are all done</text>
+                        }
+                        else
+                        {
+                            <text>@MyOutstanding item@(MyOutstanding == 1 ? "" : "s") left for you</text>
+                        }
+                    </strong>
+                    <span class="cand-sub">@MyDone of @MyTotal sent</span>
+                </div>
+
+                <div class="cand-bar"><div style="width:@MyPercent%"></div></div>
+
+                @if (MyOutstanding == 0 && checklist.OutstandingRequiredCount > 0)
+                {
+                    <p class="cand-sub" style="margin-top:10px">
+                        We are checking what you sent. Nothing else is needed from you.
+                    </p>
+                }
+            </section>
+
+            @foreach (var task in checklist.Tasks.Where(item => item.OwnerKind == "Candidate"))
+            {
+                <section class="cand-card">
+                    <div class="cand-row">
+                        <div>
+                            <strong>@task.Title</strong>
+                            <span class="cand-sub">@(task.IsRequired ? "Required" : "Optional")</span>
+                        </div>
+                        <span class="cand-pill tone-@TaskTone(task.Status)">@TaskLabel(task.Status)</span>
+                    </div>
+
+                    <p class="cand-explain">@task.Instructions</p>
+
+                    @if (task.DecisionReason is { } reason)
+                    {
+                        <p class="cand-note error inline">@reason</p>
+                    }
+
+                    @if (CanSubmit(task.Status))
+                    {
+                        @if (task.TaskType == "Document")
+                        {
+                            <InputFile OnChange="args => UploadAsync(checklist.Id, task, args)"
+                                       accept=".pdf,.jpg,.jpeg,.png" class="cand-file" />
+                            <p class="cand-sub">PDF or a photo, up to 10 MB.</p>
+                        }
+                        else
+                        {
+                            @*
+                                Read through a helper rather than bound straight to the
+                                dictionary: an indexer binding throws while rendering any task
+                                the candidate has not typed into yet, which is all of them the
+                                first time the checklist appears.
+                            *@
+                            <textarea class="cand-input" rows="3"
+                                      placeholder="Type your answer"
+                                      value="@AnswerFor(task.Id)"
+                                      @oninput="args => answers[task.Id] = args.Value?.ToString() ?? string.Empty"></textarea>
+                            <button class="cand-button" type="button"
+                                    disabled="@(busyTask == task.Id)"
+                                    @onclick="() => SubmitFormAsync(checklist.Id, task)">
+                                @(busyTask == task.Id ? "Sending…" : "Submit")
+                            </button>
+                        }
+                    }
+                </section>
+            }
+
+            <p class="cand-sub footnote">
+                Items marked for the company are ours to complete — you do not need to do
+                anything about those.
+            </p>
+        }
+    }
+
+    <p class="cand-sub footnote">
+        We will never ask you for a payment. If anyone does, it is not us.
+    </p>
+</div>
+    </main>
+
+    @if (site is not null)
+    {
+        <PublicFooter Site="site" />
+    }
+</div>
+
+@code {
+    private enum Mode { SignIn, RequestLink }
+
+    /// <summary>Set on the career-site route; the bare /onboarding route reads ?tenant instead.</summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tenant")] private string? TenantFromLink { get; set; }
+    [SupplyParameterFromQuery(Name = "token")] private string? TokenFromLink { get; set; }
+
+    private CareerSiteConfigurationDto? site;
+    private ThemeTemplateDto? theme;
+
+    private string ThemeStyle =>
+        site is null
+            ? string.Empty
+            : $"--ink:{site.PrimaryColor};--ink-soft:{site.PrimaryColor};--gold:{site.AccentColor};" +
+              $"--cream:{site.SurfaceColor};--body-font:{theme?.FontFamily ?? "Inter, sans-serif"};" +
+              $"--heading-font:{theme?.HeadingFontFamily ?? "Georgia, serif"};" +
+              $"--site-radius:{theme?.BorderRadius ?? 20}px;";
+
+    private bool HasToken => !string.IsNullOrWhiteSpace(TokenFromLink);
+
+    private Mode mode = Mode.SignIn;
+    private string tenant = string.Empty;
+    private string email = string.Empty;
+    private string password = string.Empty;
+    private string confirm = string.Empty;
+
+    private bool busy;
+    private long? busyTask;
+    private string? notice;
+    private string? error;
+
+    /// <summary>
+    /// The candidate's own bearer token. Held in the circuit on the server, so it is never
+    /// written to the browser and cannot be read by anything running there.
+    /// </summary>
+    private string? accessToken;
+
+    private CandidateProgressDto? progress;
+    private readonly Dictionary<long, string> answers = [];
+
+    /// <summary>
+    /// The required items this candidate owns. Optional ones are left out of the count on
+    /// purpose: telling somebody they have three things left when one of them is optional
+    /// makes the number useless for deciding whether they can stop.
+    /// </summary>
+    private IReadOnlyList<OnboardingTaskDto> MyTasks =>
+        progress?.Onboarding?.Tasks
+            .Where(task => task.OwnerKind == "Candidate" && task.IsRequired)
+            .ToList() ?? [];
+
+    private int MyTotal => MyTasks.Count;
+
+    private int MyOutstanding => MyTasks.Count(task => CanSubmit(task.Status));
+
+    private int MyDone => MyTotal - MyOutstanding;
+
+    private int MyPercent => MyTotal == 0 ? 100 : (int)Math.Round(MyDone * 100d / MyTotal);
+
+    private string AnswerFor(long taskId) => answers.GetValueOrDefault(taskId, string.Empty);
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // The route segment wins over the query string: /career/kapson/onboarding is an
+        // explicit statement of which company, where ?tenant= is a hint carried on a link.
+        var resolved = TenantKey ?? TenantFromLink;
+
+        if (!string.IsNullOrWhiteSpace(resolved) && string.IsNullOrWhiteSpace(tenant))
+        {
+            tenant = resolved.Trim().ToLowerInvariant();
+        }
+
+        if (site is null && !string.IsNullOrWhiteSpace(tenant))
+        {
+            // Branding only. Nothing shown on this page is decided by it, and a client with no
+            // published career site still gets a working page — just an unbranded one.
+            site = await CareerSiteService.GetPublishedAsync(tenant);
+            theme = site is null ? null : await ThemeTemplateService.GetByKeyAsync(site.TemplateKey);
+        }
+    }
+
+    private HttpClient Client()
+    {
+        var client = HttpClients.CreateClient();
+        client.BaseAddress = new Uri(Navigation.BaseUri);
+        return client;
+    }
+
+    private async Task SignInKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await SignInAsync();
+        }
+    }
+
+    private async Task ActivateAsync()
+    {
+        error = null;
+        notice = null;
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            error = "Enter the email address you applied with.";
+            return;
+        }
+
+        if (password.Length < 10)
+        {
+            error = "Use at least 10 characters.";
+            return;
+        }
+
+        if (password != confirm)
+        {
+            error = "Those two passwords are not the same.";
+            return;
+        }
+
+        busy = true;
+
+        try
+        {
+            using var client = Client();
+            var response = await client.PostAsJsonAsync("api/public/v1/candidate/activate", new
+            {
+                tenant,
+                token = TokenFromLink,
+                password
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ProblemTitle(response) ??
+                        "That link is no longer valid. Ask for a new one below.";
+                mode = Mode.RequestLink;
+
+                // The token in the address is spent either way; leaving it there invites a
+                // second attempt that cannot succeed.
+                Navigation.NavigateTo("/onboarding", replace: true);
+                return;
+            }
+
+            notice = "Your password is set.";
+
+            // Straight in, so somebody arriving from a mail link does not have to type
+            // what they just typed. The token in the address is spent and has to go.
+            Navigation.NavigateTo("/onboarding", replace: true);
+            await SignInAsync();
+
+            if (progress is null)
+            {
+                // Signing in did not take. The password is set, so the sign-in form is the
+                // right place to land rather than an activation form that cannot work twice.
+                notice = "Your password is set. Sign in with it below.";
+                error = null;
+                mode = Mode.SignIn;
+            }
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task RequestLinkAsync()
+    {
+        error = null;
+        notice = null;
+        busy = true;
+
+        try
+        {
+            using var client = Client();
+            await client.PostAsJsonAsync("api/public/v1/candidate/activation-link", new { tenant, email });
+
+            // Deliberately the same answer whether or not that address has applied. Saying
+            // which would turn this box into a way of testing who has applied where.
+            notice = "If that address matches an application, we have sent a link to it.";
+            mode = Mode.SignIn;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SignInAsync()
+    {
+        error = null;
+        busy = true;
+
+        try
+        {
+            using var client = Client();
+            var response = await client.PostAsJsonAsync("api/mobile/v1/auth/token", new
+            {
+                tenant,
+                email,
+                password,
+                deviceId = "onboarding-web"
+            });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = "That email and password do not match an account.";
+                return;
+            }
+
+            var grant = await response.Content.ReadFromJsonAsync<JsonElement>();
+            accessToken = grant.GetProperty("accessToken").GetString();
+            password = string.Empty;
+            confirm = string.Empty;
+
+            await LoadAsync();
+        }
+        catch (Exception)
+        {
+            error = "We could not sign you in just now. Try again in a moment.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (accessToken is null)
+        {
+            return;
+        }
+
+        using var client = Client();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/candidate/v1/me");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await client.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            error = "We could not load your application just now.";
+            return;
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<JsonElement>();
+        progress = envelope.GetProperty("data").Deserialize<CandidateProgressDto>(Json);
+    }
+
+    private async Task RespondAsync(long applicationId, bool accept)
+    {
+        error = null;
+        notice = null;
+        busy = true;
+
+        try
+        {
+            using var client = Client();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, $"api/candidate/v1/applications/{applicationId}/offer")
+            {
+                Content = JsonContent.Create(new { accept })
+            };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await client.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ProblemTitle(response) ?? "We could not record that just now.";
+                return;
+            }
+
+            notice = accept
+                ? "Offer accepted. Your joining checklist is below."
+                : "You have declined the offer. Thank you for letting us know.";
+
+            await LoadAsync();
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SubmitFormAsync(long onboardingId, OnboardingTaskDto task)
+    {
+        error = null;
+        notice = null;
+
+        var answer = answers.GetValueOrDefault(task.Id, string.Empty).Trim();
+
+        if (answer.Length == 0)
+        {
+            error = "Fill the box before sending it.";
+            return;
+        }
+
+        busyTask = task.Id;
+
+        try
+        {
+            using var client = Client();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, $"api/candidate/v1/onboarding/{onboardingId}/tasks/{task.Id}/form")
+            {
+                Content = JsonContent.Create(new { values = new Dictionary<string, string> { [task.Code] = answer } })
+            };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await client.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ProblemTitle(response) ?? "We could not accept that just now.";
+                return;
+            }
+
+            notice = $"{task.Title} sent.";
+            answers.Remove(task.Id);
+            await LoadAsync();
+        }
+        finally
+        {
+            busyTask = null;
+        }
+    }
+
+    private async Task UploadAsync(long onboardingId, OnboardingTaskDto task, InputFileChangeEventArgs args)
+    {
+        error = null;
+        notice = null;
+        busyTask = task.Id;
+
+        try
+        {
+            var file = args.File;
+
+            // The server enforces its own limit; this one is here so an oversized file fails
+            // on the candidate's screen rather than after a long upload.
+            const long limit = 10 * 1024 * 1024;
+
+            if (file.Size > limit)
+            {
+                error = "That file is larger than 10 MB.";
+                return;
+            }
+
+            using var content = new MultipartFormDataContent();
+            using var stream = file.OpenReadStream(limit);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+
+            content.Add(streamContent, "File", file.Name);
+
+            using var client = Client();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, $"api/candidate/v1/onboarding/{onboardingId}/tasks/{task.Id}/document")
+            {
+                Content = content
+            };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await client.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                error = await ProblemTitle(response) ?? "We could not accept that file.";
+                return;
+            }
+
+            notice = $"{task.Title} uploaded.";
+            await LoadAsync();
+        }
+        catch (Exception)
+        {
+            error = "We could not read that file.";
+        }
+        finally
+        {
+            busyTask = null;
+        }
+    }
+
+    private void SignOut()
+    {
+        accessToken = null;
+        progress = null;
+        password = string.Empty;
+        notice = null;
+        error = null;
+    }
+
+    private static async Task<string?> ProblemTitle(HttpResponseMessage response)
+    {
+        try
+        {
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            return problem.TryGetProperty("title", out var title) ? title.GetString() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A submitted or approved item is not theirs to change again.</summary>
+    private static bool CanSubmit(string status) =>
+        status is OnboardingTaskStatuses.Pending or OnboardingTaskStatuses.Rejected;
+
+    private static string TaskLabel(string status) => status switch
+    {
+        OnboardingTaskStatuses.Pending => "To do",
+        OnboardingTaskStatuses.Submitted => "With us",
+        OnboardingTaskStatuses.Approved => "Accepted",
+        OnboardingTaskStatuses.Rejected => "Needs redoing",
+        _ => status
+    };
+
+    private static string TaskTone(string status) => status switch
+    {
+        OnboardingTaskStatuses.Approved => "success",
+        OnboardingTaskStatuses.Submitted => "info",
+        OnboardingTaskStatuses.Rejected => "danger",
+        _ => "muted"
+    };
+}

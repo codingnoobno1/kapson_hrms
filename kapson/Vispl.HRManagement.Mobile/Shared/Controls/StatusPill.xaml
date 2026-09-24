@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentView
+    x:Class="Vispl.HRManagement.Mobile.Shared.Controls.StatusPill"
+    x:Name="Root"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    x:DataType="controls:StatusPill">
+    <Border Padding="10,4" StrokeThickness="0" BackgroundColor="{Binding Status, Source={x:Reference Root}, Converter={StaticResource StatusColorConverter}}">
+        <Border.StrokeShape><RoundRectangle CornerRadius="12" /></Border.StrokeShape>
+        <Label Text="{Binding Status, Source={x:Reference Root}}" TextColor="White" FontSize="11" FontAttributes="Bold" />
+    </Border>
+</ContentView>

@@ -1,0 +1,53 @@
+@inject AppSession Session
+@inject NavigationManager Navigation
+
+@* RW-01 AppHeaderBar. No page title here — the title belongs to the content area.
+   Tenant identity appears as a logo swap and the brand token, never as text. *@
+<header class="app-header">
+    <div class="brand-lockup">
+        @if (!string.IsNullOrWhiteSpace(Session.TenantLogoUrl))
+        {
+            <img class="brand-mark-img" src="@Session.TenantLogoUrl" alt="" />
+        }
+        else
+        {
+            <span class="brand-symbol" aria-hidden="true">
+                <i></i><i></i><i></i><i></i>
+            </span>
+        }
+        <span class="brand-words">
+            <span class="brand-words-top">HR</span>
+            <span class="brand-words-bottom">Management</span>
+        </span>
+    </div>
+
+    <div class="header-actions">
+        <button class="header-circle-btn"
+                type="button"
+                aria-label="Search"
+                @onclick="@(() => Navigation.NavigateTo("/modules/search"))">
+            <AppIcon Name="search" Size="20" />
+        </button>
+
+        <button class="header-circle-btn"
+                type="button"
+                aria-label="@BellLabel"
+                @onclick="@(() => Navigation.NavigateTo("/notifications"))">
+            <AppIcon Name="bell" Size="20" />
+            @* RW-04: hidden at zero — never render an empty ring.
+               No notification count exists yet, so no badge is drawn. *@
+            @if (UnreadCount > 0)
+            {
+                <span class="count-badge">@(UnreadCount > 99 ? "99+" : UnreadCount.ToString())</span>
+            }
+        </button>
+    </div>
+</header>
+
+@code {
+    [Parameter] public int UnreadCount { get; set; }
+
+    private string BellLabel => UnreadCount > 0
+        ? $"Notifications, {UnreadCount} unread"
+        : "Notifications";
+}

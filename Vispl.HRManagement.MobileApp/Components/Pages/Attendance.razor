@@ -1,0 +1,239 @@
+@page "/attendance"
+@inject AttendanceApi AttendanceClient
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+
+@* Today at a glance, then the two lists somebody actually chases: who came in late and
+   whose day is incomplete. *@
+<PageTitle>Attendance</PageTitle>
+
+<h1 class="page-title">Attendance</h1>
+
+@if (dashboard is not null)
+{
+    <p class="page-subtitle">@dashboard.Date.ToString("dddd, d MMMM yyyy")</p>
+}
+
+@if (isLoading)
+{
+    <SkeletonList Count="4" Label="Loading attendance" />
+}
+else if (dashboard is not null)
+{
+    <KpiCardRow Kpis="Kpis" />
+
+    <FilterChipGroup Chips="Tabs" Selected="@tab" SelectedChanged="OnTabChanged" />
+
+    @if (tab == "late")
+    {
+        @if (late?.Caveat is { } caveat)
+        {
+            <p class="card-note">@caveat</p>
+        }
+
+        @if (late is { Rows.Items.Count: > 0 })
+        {
+            <div class="stagger">
+                @foreach (var row in late.Rows.Items)
+                {
+                    <article class="card">
+                        <div class="card-head">
+                            <div class="list-item-main">
+                                <span class="list-item-title">@row.DisplayName</span>
+                                <span class="list-item-meta">@row.DepartmentCode · @(row.ShiftCode ?? "default shift")</span>
+                            </div>
+                            <StatusPill Label="@Duration(row.DelayMinutes)" State="pending" />
+                        </div>
+                        <KeyValueCard Rows="LateRows(row)" />
+                    </article>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><AppIcon Name="clock" Size="40" StrokeWidth="1.4" /></div>
+                <h2>Nobody late</h2>
+                <p>Everyone rostered arrived within their grace period.</p>
+            </div>
+        }
+    }
+    else if (tab == "missing")
+    {
+        @if (missing is { Rows.Items.Count: > 0 })
+        {
+            <div class="stagger">
+                @foreach (var row in missing.Rows.Items)
+                {
+                    <article class="card">
+                        <div class="card-head">
+                            <div class="list-item-main">
+                                <span class="list-item-title">@row.DisplayName</span>
+                                <span class="list-item-meta">@row.DepartmentCode · @row.Date.ToString("d MMM")</span>
+                            </div>
+                            <StatusPill Label="@row.State" State="@row.StateTone" />
+                        </div>
+                        <p class="card-note">Missing @row.MissingSide punch.</p>
+                    </article>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><AppIcon Name="check" Size="40" StrokeWidth="1.4" /></div>
+                <h2>Every day is complete</h2>
+                <p>No punches are missing.</p>
+            </div>
+        }
+    }
+    else
+    {
+        @if (OffSite.Count > 0)
+        {
+            <div class="stagger">
+                @foreach (var row in OffSite)
+                {
+                    <article class="card">
+                        <div class="card-head">
+                            <div class="list-item-main">
+                                <span class="list-item-title">@row.DisplayName</span>
+                                <span class="list-item-meta">@row.DepartmentCode · @row.Detail</span>
+                            </div>
+                            <StatusPill Label="@(row.IsOverdue ? "Overdue" : row.ActualReturnUtc is null ? "Out" : "Back")"
+                                        State="@(row.IsOverdue ? "rejected" : row.ActualReturnUtc is null ? "pending" : "active")" />
+                        </div>
+                        <p class="card-note">
+                            Out @row.GoingOutUtc.ToString("HH\\:mm"), expected back
+                            @row.ExpectedReturnUtc.ToString("HH\\:mm") · away @Duration(row.MinutesOut)
+                        </p>
+                    </article>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><AppIcon Name="building" Size="40" StrokeWidth="1.4" /></div>
+                <h2>Nobody is out</h2>
+                <p>No movement has been declared today.</p>
+            </div>
+        }
+    }
+}
+else if (result is not null)
+{
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@code {
+    private static readonly FilterChipGroup.Chip[] Tabs =
+    [
+        new("late", "Late arrivals"),
+        new("missing", "Missing punches"),
+        new("movement", "Off site")
+    ];
+
+    private ApiResult<AttendanceDashboardDto>? result;
+    private AttendanceDashboardDto? dashboard;
+    private LateArrivalReportDto? late;
+    private MissPunchReportDto? missing;
+    private MovementBoardDto? movement;
+
+    private string tab = "late";
+    private bool isLoading = true;
+
+    /// <summary>
+    /// The counts come back as a dictionary keyed by status, so the tiles are built from
+    /// whatever the server reports rather than from a fixed list this screen invents.
+    /// </summary>
+    private IReadOnlyList<KpiModel> Kpis =>
+        dashboard is null
+            ? []
+            : dashboard.Counts
+                .OrderBy(pair => Order(pair.Key))
+                .Select(pair => new KpiModel(pair.Key, pair.Value.ToString(), Icon(pair.Key), Tone(pair.Key)))
+                .ToList();
+
+    private IReadOnlyList<MovementRowDto> OffSite =>
+        movement is null
+            ? []
+            : movement.Personal.Concat(movement.Official)
+                .OrderByDescending(row => row.IsOverdue)
+                .ThenBy(row => row.GoingOutUtc)
+                .ToList();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnTabChanged(string key)
+    {
+        tab = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+
+        result = await AttendanceClient.GetDashboardAsync();
+        dashboard = result.Data;
+
+        // Only the visible list is fetched. A phone on a train should not pull three reports
+        // to show one of them.
+        switch (tab)
+        {
+            case "late":
+                late = (await AttendanceClient.GetLateArrivalsAsync()).Data;
+                break;
+            case "missing":
+                missing = (await AttendanceClient.GetMissingPunchesAsync()).Data;
+                break;
+            default:
+                movement = (await AttendanceClient.GetMovementAsync()).Data;
+                break;
+        }
+
+        isLoading = false;
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> LateRows(LateArrivalRowDto row) =>
+    [
+        ("Expected", row.ExpectedTime.ToString("HH\\:mm")),
+        ("Arrived", row.ArrivalTime.ToString("HH\\:mm")),
+        ("This week", Duration(row.LateMinutesThisWeek)),
+        ("This month", Duration(row.LateMinutesThisMonth))
+    ];
+
+    private static int Order(string status) => status switch
+    {
+        "Present" => 0,
+        "Partial" => 1,
+        "Leave" => 2,
+        "Absent" => 3,
+        "WeeklyOff" => 4,
+        _ => 5
+    };
+
+    private static string Icon(string status) => status switch
+    {
+        "Present" => "check",
+        "Partial" => "clock",
+        "Leave" => "sun",
+        "Absent" => "x-circle",
+        "WeeklyOff" => "sun",
+        _ => "bar-chart"
+    };
+
+    /// <summary>The row renders <c>kpi-{Tone}</c>, so these are the bare colour names.</summary>
+    private static string Tone(string status) => status switch
+    {
+        "Present" => "cyan",
+        "Absent" => "amber",
+        _ => "blue"
+    };
+
+    private static string Duration(int minutes) =>
+        minutes <= 0 ? "-"
+        : minutes < 60 ? $"{minutes} min"
+        : $"{minutes / 60} hr {minutes % 60:00} min";
+}

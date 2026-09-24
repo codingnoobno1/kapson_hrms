@@ -1,0 +1,186 @@
+@page "/hr"
+@page "/hr/{TenantKey}"
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+@inject ITenantService TenantService
+
+<PageTitle>@(Client?.DisplayName ?? "HR Portal") | Sign in</PageTitle>
+
+@if (TenantKey is not null && Client is null)
+{
+    @* An unknown or closed client is not distinguished from a typo: naming which clients exist
+       would tell anyone who asks who this platform's customers are. *@
+    <div class="hr-login">
+        <section class="hr-login-panel">
+            <span class="hr-kicker">HR PORTAL</span>
+            <h1>This portal is not available</h1>
+            <p>Check the address with your administrator.</p>
+            <a class="hr-button" href="/hr">Go to the general sign-in</a>
+        </section>
+    </div>
+}
+else
+{
+    <AuthorizeView Policy="HrPortal">
+        <Authorized>
+            <div class="hr-login">
+                <section class="hr-login-panel">
+                    <span class="hr-kicker">HR PORTAL</span>
+                    <h1>Welcome back</h1>
+                    <p>Your session is still active.</p>
+                    <a class="hr-button" href="@DashboardPath">Continue to the dashboard</a>
+                </section>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div class="hr-login">
+                <aside class="hr-login-brand">
+                    <div class="hr-login-brand-heading">
+                        <div class="hr-brand-mark">
+                            <img src="/_content/Vispl.HRManagement.UI/images/hr-login/hr-logo.png"
+                                 alt="HR Management logo" />
+                        </div>
+                        <div>
+                            <span class="hr-brand-eyebrow">WORKFORCE, CONNECTED</span>
+                            <h2>@(Client?.DisplayName ?? "HR Management")</h2>
+                        </div>
+                    </div>
+
+                    <div class="hr-login-slideshow" aria-label="HR Management highlights">
+                        <figure class="hr-login-slide hr-login-slide-one">
+                            <img src="/_content/Vispl.HRManagement.UI/images/hr-login/connected-workforce.png"
+                                 alt="A connected and collaborative workforce" />
+                            <figcaption>
+                                <strong>One workforce. One clear view.</strong>
+                                <span>Bring people, approvals and insights together.</span>
+                            </figcaption>
+                        </figure>
+
+                        <figure class="hr-login-slide hr-login-slide-two">
+                            <img src="/_content/Vispl.HRManagement.UI/images/hr-login/smooth-onboarding.png"
+                                 alt="An HR professional welcoming a new employee" />
+                            <figcaption>
+                                <strong>Make every first day exceptional.</strong>
+                                <span>Guide onboarding with clarity, trust and care.</span>
+                            </figcaption>
+                        </figure>
+
+                        <figure class="hr-login-slide hr-login-slide-three">
+                            <img src="/_content/Vispl.HRManagement.UI/images/hr-login/growth-journey.png"
+                                 alt="Employees progressing along their career journey" />
+                            <figcaption>
+                                <strong>Support every step forward.</strong>
+                                <span>Turn employee moments into lasting progress.</span>
+                            </figcaption>
+                        </figure>
+
+                        <div class="hr-login-slide-dots" aria-hidden="true">
+                            <span class="hr-login-slide-dot dot-one"></span>
+                            <span class="hr-login-slide-dot dot-two"></span>
+                            <span class="hr-login-slide-dot dot-three"></span>
+                        </div>
+                    </div>
+
+                    <p class="hr-login-brand-footnote">
+                        Attendance, leave, onboarding and workforce reporting in one secure workspace.
+                    </p>
+                </aside>
+
+                <section class="hr-login-panel">
+                    <span class="hr-kicker">SECURE SIGN IN</span>
+                    <h1>Sign in to your account</h1>
+                    <p>
+                        @if (Client is not null)
+                        {
+                            <text>You are signing in to <strong>@Client.DisplayName</strong>.</text>
+                        }
+                        else
+                        {
+                            <text>Use the HR credentials issued to you.</text>
+                        }
+                    </p>
+
+                    @if (ErrorMessage is not null)
+                    {
+                        <div class="hr-alert error">@ErrorMessage</div>
+                    }
+
+                    <form method="post" action="/identity/hr/login" class="hr-login-form">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        <input type="hidden" name="tenantKey" value="@TenantKey" />
+
+                        <label>
+                            User name
+                            <input name="userName" autocomplete="username" required autofocus />
+                        </label>
+
+                        <label>
+                            Password
+                            <input name="password" type="password" autocomplete="current-password" required />
+                        </label>
+
+                        <button class="hr-button" type="submit">Sign in</button>
+                    </form>
+
+                    <p class="hr-login-note">
+                        This is the HR portal. Platform administration is at
+                        <a href="/admin">/admin</a> and uses a separate account.
+                    </p>
+                </section>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+}
+
+@code {
+    /// <summary>
+    /// The client this sign-in page is for. Absent on the general <c>/hr</c> page, where the
+    /// client is resolved from the account instead.
+    /// </summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private TenantDto? Client;
+    private string? ErrorMessage;
+    private string? ReturnUrl;
+
+    private string DashboardPath =>
+        TenantKey is null ? "/hr/dashboard" : $"/hr/{TenantKey}/dashboard";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (TenantKey is not null)
+        {
+            var client = await TenantService.GetByKeyAsync(TenantKey);
+
+            // A client that is closed, or whose portal is switched off, is treated exactly like
+            // one that does not exist.
+            Client = client is { IsActive: true, HrPortalEnabled: true } ? client : null;
+        }
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("returnUrl", out var returnUrl))
+        {
+            var candidate = returnUrl.ToString();
+
+            // Only a same-site path is carried forward, so a crafted link cannot bounce a
+            // freshly signed-in user off to another host.
+            ReturnUrl = candidate.StartsWith('/') && !candidate.StartsWith("//") ? candidate : null;
+        }
+
+        ErrorMessage = query.TryGetValue("error", out var error)
+            ? error.ToString() switch
+            {
+                "locked" => "That account is locked. Try again in 15 minutes, or ask an administrator to unlock it.",
+                "disabled" => "The HR portal is switched off for this client. An administrator can re-enable it.",
+                "denied" => "That account cannot use the HR portal.",
+                // The same message for a wrong name, a wrong password and an account belonging to
+                // another client: anything else would let someone map accounts to clients.
+                _ => "Those credentials were not recognised."
+            }
+            : null;
+    }
+}

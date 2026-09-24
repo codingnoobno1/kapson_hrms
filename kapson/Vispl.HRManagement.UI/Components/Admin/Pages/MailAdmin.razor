@@ -1,0 +1,500 @@
+@page "/admin/mail"
+@attribute [Authorize(Policy = "AdminPortal")]
+@using Vispl.HRManagement.BM.ITF.Shared
+@inject IMailInbox Inbox
+@inject IEmailSender Sender
+
+<PageTitle>Mail | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="mail" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">PLATFORM</span>
+                <h1>Mail</h1>
+                <p>
+                    Every message this system sent, as it was delivered. Activation links, offers and
+                    notices are read here rather than guessed at from a log — a link that was printed
+                    is not the same as a link that arrived.
+                </p>
+            </div>
+            <div class="admin-context-bar-inline">
+                @if (Sender.IsConfigured)
+                {
+                    <button class="admin-button primary" type="button" @onclick="StartComposing">
+                        Compose
+                    </button>
+                }
+                @if (Inbox.IsConfigured)
+                {
+                    <code class="admin-mail-origin">@Inbox.Origin</code>
+                    <a class="admin-button secondary" href="@Inbox.Origin" target="_blank" rel="noopener">
+                        Full mail client ↗
+                    </a>
+                }
+            </div>
+        </div>
+
+        @if (!Inbox.IsConfigured)
+        {
+            <div class="admin-alert warning">
+                No mailbox is configured, so there is nothing to read here. Set
+                <code>Mail:ReceiverBaseUrl</code> to a service that keeps what was sent. This is
+                expected once a real provider is relaying: the mail leaves and is not ours to browse.
+            </div>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(Failure))
+            {
+                <div class="admin-alert error">@Failure</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Notice))
+            {
+                <div class="admin-alert success">@Notice</div>
+            }
+
+            <div class="admin-masters-shell admin-leave-shell">
+
+                <section class="admin-masters-list-panel admin-panel">
+                    <div class="admin-section-title">
+                        <div>
+                            <span>@Messages.Count</span>
+                            <h2>@ListHeading</h2>
+                        </div>
+                        <button class="admin-button secondary" type="button" @onclick="ReloadAsync"
+                                disabled="@Busy">Refresh</button>
+                    </div>
+
+                    <label class="admin-mail-search">
+                        <input type="search" placeholder="Search subject, address or body"
+                               value="@Search" @oninput="SearchChangedAsync" />
+                    </label>
+
+                    <div class="admin-master-list admin-mail-list">
+                        @if (Messages.Count == 0)
+                        {
+                            <p class="admin-mail-none">@EmptyListText</p>
+                        }
+                        @foreach (var message in Messages)
+                        {
+                            <button type="button"
+                                    class="admin-master-item admin-mail-row @(Open?.Id == message.Id ? "active" : null) @(message.Seen ? null : "unread")"
+                                    @onclick="() => OpenAsync(message.Id)">
+                                <span class="admin-mail-avatar" style="background:@HueFor(message.From)">
+                                    @Initials(DisplayName(message.From))
+                                </span>
+                                <span>
+                                    <strong>@DisplayName(message.From)</strong>
+                                    <small>@message.Subject</small>
+                                    <small class="admin-mail-to">to @string.Join(", ", message.To)</small>
+                                </span>
+                                <em>@When(message.ReceivedUtc)</em>
+                            </button>
+                        }
+                    </div>
+                </section>
+
+                <section class="admin-masters-editor-panel admin-panel">
+                    @if (Composing)
+                    {
+                        <div class="admin-section-title">
+                            <div>
+                                <h2>New message</h2>
+                            </div>
+                            <div class="admin-mail-actions">
+                                <button class="admin-button secondary" type="button"
+                                        @onclick="CancelComposing" disabled="@Busy">Cancel</button>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(ComposeError))
+                        {
+                            <div class="admin-alert error">@ComposeError</div>
+                        }
+
+                        <div class="admin-form-grid">
+                            <label>To
+                                <input type="email" @bind="Outgoing.To" @bind:event="oninput"
+                                       placeholder="someone@@example.com" /></label>
+                            <label>Name (optional)
+                                <input type="text" @bind="Outgoing.ToName" @bind:event="oninput" /></label>
+
+                            <label class="span-two">Subject
+                                <input type="text" @bind="Outgoing.Subject" @bind:event="oninput" /></label>
+
+                            <label class="span-two">
+                                Message — required, because a message only some readers can read is
+                                not a message
+                                <textarea class="tall-input" @bind="Outgoing.Text"
+                                          @bind:event="oninput"></textarea></label>
+
+                            <label class="span-two">HTML body (optional)
+                                <textarea @bind="Outgoing.Html" @bind:event="oninput"></textarea></label>
+                        </div>
+
+                        <div class="admin-form-actions admin-form-gap">
+                            <button class="admin-button primary" type="button"
+                                    @onclick="SendAsync" disabled="@Busy">
+                                @(Busy ? "Sending…" : "Send")
+                            </button>
+                        </div>
+
+                        <p class="admin-form-note">
+                            Relayed by the mail sender, from the address it is configured with. It
+                            arrives wherever that relay delivers — on a development machine, the
+                            inbox on the left.
+                        </p>
+                    }
+                    else if (Open is null)
+                    {
+                        <div class="admin-empty-state">
+                            <h2>Select a message</h2>
+                            <p>
+                                Read what was actually delivered — headers, body and every link the
+                                message carried.
+                            </p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="admin-section-title">
+                            <div>
+                                <h2>@Open.Subject</h2>
+                            </div>
+                            <div class="admin-mail-actions">
+                                <button class="admin-button secondary" type="button"
+                                        @onclick="MarkUnreadAsync" disabled="@Busy">Mark unread</button>
+                                <button class="admin-button danger" type="button"
+                                        @onclick="DeleteAsync" disabled="@Busy">Delete</button>
+                            </div>
+                        </div>
+
+                        <dl class="admin-mail-headers">
+                            <dt>From</dt><dd>@Open.From</dd>
+                            <dt>To</dt><dd>@string.Join(", ", Open.To)</dd>
+                            <dt>Received</dt><dd>@Open.ReceivedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm:ss")</dd>
+                        </dl>
+
+                        @if (Open.Links.Count > 0)
+                        {
+                            <div class="admin-mail-links">
+                                @foreach (var link in Open.Links)
+                                {
+                                    <a href="@link" target="_blank" rel="noopener noreferrer">@link</a>
+                                }
+                            </div>
+                        }
+
+                        <div class="admin-mail-tabs">
+                            @foreach (var tab in AvailableTabs)
+                            {
+                                <button type="button" class="@(BodyTab == tab ? "on" : null)"
+                                        @onclick="() => ShowTab(tab)">@tab</button>
+                            }
+                        </div>
+
+                        @if (BodyTab == HtmlTab)
+                        {
+                            @* Captured mail is untrusted content. An empty sandbox is the whole
+                               point: it renders, and it runs nothing. *@
+                            <iframe class="admin-mail-html" sandbox="" title="Message body"
+                                    srcdoc="@Open.HtmlBody"></iframe>
+                        }
+                        else
+                        {
+                            <pre class="admin-mail-body">@BodyText</pre>
+                        }
+                    }
+                </section>
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    private const string TextTab = "Text";
+    private const string HtmlTab = "HTML";
+    private const string SourceTab = "Source";
+
+    private IReadOnlyList<MailboxSummary> Messages { get; set; } = [];
+    private MailboxMessage? Open { get; set; }
+
+    private string Search { get; set; } = string.Empty;
+    private string BodyTab { get; set; } = TextTab;
+    private string? Failure { get; set; }
+    private string? Notice { get; set; }
+    private bool Busy { get; set; }
+
+    private bool Composing { get; set; }
+    private Draft Outgoing { get; set; } = new();
+    private string? ComposeError { get; set; }
+
+    // Cancels the previous keystroke's request. Typing quickly should not leave an older,
+    // slower answer to overwrite a newer one.
+    private CancellationTokenSource? searching;
+
+    private int Unread => Messages.Count(message => !message.Seen);
+
+    private string ListHeading => Unread > 0 ? $"Inbox · {Unread} unread" : "Inbox";
+
+    private string EmptyListText => string.IsNullOrWhiteSpace(Search)
+        ? "Nothing has been delivered yet."
+        : "Nothing matches that search.";
+
+    private string? BodyText => BodyTab == SourceTab ? Open?.Raw : Open?.TextBody;
+
+    /// <summary>Only the tabs this message actually has. Source is always available.</summary>
+    private IEnumerable<string> AvailableTabs
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Open?.TextBody)) yield return TextTab;
+            if (!string.IsNullOrWhiteSpace(Open?.HtmlBody)) yield return HtmlTab;
+            yield return SourceTab;
+        }
+    }
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private void ShowTab(string tab) => BodyTab = tab;
+
+    // ---- Composing --------------------------------------------------------
+    // Sent through IEmailSender, the same port everything else here sends through. Nothing on
+    // this page knows how a message is delivered, which is the point of having the port: an
+    // administrator typing a message and a candidate being sent an activation link take the
+    // same road out.
+
+    private void StartComposing()
+    {
+        Composing = true;
+        ComposeError = null;
+        Notice = null;
+
+        // The message being read stays selected. Coming back from Cancel to what you were
+        // looking at is what a mail client does.
+    }
+
+    private void CancelComposing()
+    {
+        Composing = false;
+        ComposeError = null;
+    }
+
+    private async Task SendAsync()
+    {
+        var to = Outgoing.To.Trim();
+        var subject = Outgoing.Subject.Trim();
+        var text = Outgoing.Text.Trim();
+
+        // Checked here so the page can say which field, rather than relaying an empty message
+        // and turning the sender's validation into a sentence about a request body. The sender
+        // checks the same things, because it is reachable from more than this page.
+        ComposeError =
+            string.IsNullOrEmpty(to) ? "A recipient is required."
+            : !to.Contains('@') || to.StartsWith('@') || to.EndsWith('@') ? "That is not an email address."
+            : string.IsNullOrEmpty(subject) ? "A subject is required."
+            : string.IsNullOrEmpty(text) ? "A message is required."
+            : null;
+
+        if (ComposeError is not null)
+        {
+            return;
+        }
+
+        Busy = true;
+
+        var html = string.IsNullOrWhiteSpace(Outgoing.Html) ? null : Outgoing.Html;
+        var result = await Sender.SendAsync(
+            new EmailMessage(to, Outgoing.ToName.Trim(), subject, text, html));
+
+        Busy = false;
+
+        if (!result.Sent)
+        {
+            ComposeError = result.Failure ?? "The mail sender would not take it.";
+            return;
+        }
+
+        Notice = $"Sent “{subject}” to {to}.";
+        Outgoing = new Draft();
+        Composing = false;
+
+        await ReloadAsync();
+    }
+
+    /// <summary>A message being written. Kept whole so Cancel throws away one thing.</summary>
+    private sealed class Draft
+    {
+        public string To { get; set; } = string.Empty;
+        public string ToName { get; set; } = string.Empty;
+        public string Subject { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public string Html { get; set; } = string.Empty;
+    }
+
+    private async Task ReloadAsync()
+    {
+        Busy = true;
+
+        var result = await Inbox.ListAsync(Search);
+
+        Failure = result.Reached ? null : result.Failure;
+        Messages = result.Value ?? [];
+
+        // A message deleted elsewhere should not stay open pretending it still exists.
+        if (Open is not null && !Messages.Any(message => message.Id == Open.Id))
+        {
+            Open = null;
+        }
+
+        Busy = false;
+    }
+
+    private async Task SearchChangedAsync(ChangeEventArgs args)
+    {
+        Search = args.Value?.ToString() ?? string.Empty;
+
+        searching?.Cancel();
+        searching = new CancellationTokenSource();
+        var token = searching.Token;
+
+        try
+        {
+            await Task.Delay(220, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private async Task OpenAsync(string id)
+    {
+        Notice = null;
+
+        // Selecting a message leaves the composer. A click on the list that appeared to do
+        // nothing would be the page's fault, not the reader's.
+        Composing = false;
+
+        var result = await Inbox.FindAsync(id);
+
+        if (!result.Reached)
+        {
+            Failure = result.Failure;
+            return;
+        }
+
+        Open = result.Value;
+
+        if (Open is null)
+        {
+            // Gone since the list was drawn. Refreshing is a better answer than an error.
+            await ReloadAsync();
+            return;
+        }
+
+        BodyTab = AvailableTabs.First();
+
+        // Opening is what marks a message read, the same as in any mail client — and read state
+        // is shared with IMAP, so a desktop client agrees with this page.
+        await Inbox.SetSeenAsync(id, seen: true);
+        await ReloadAsync();
+    }
+
+    private async Task MarkUnreadAsync()
+    {
+        if (Open is null) return;
+
+        await Inbox.SetSeenAsync(Open.Id, seen: false);
+        Open = null;
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Open is null) return;
+
+        var subject = Open.Subject;
+        var result = await Inbox.DeleteAsync(Open.Id);
+
+        if (!result.Reached)
+        {
+            Failure = result.Failure;
+            return;
+        }
+
+        Open = null;
+        Notice = $"Deleted “{subject}”.";
+        await ReloadAsync();
+    }
+
+    // ---- Reading a header as a person -------------------------------------
+    // "Vispl HR" <no-reply@x> is an address, not a name. A mail client shows the name.
+
+    private static string DisplayName(string address)
+    {
+        var trimmed = address.Trim();
+
+        if (trimmed.StartsWith('"'))
+        {
+            var close = trimmed.IndexOf('"', 1);
+            if (close > 1) return trimmed[1..close];
+        }
+
+        var angle = trimmed.IndexOf('<');
+        if (angle > 0) return trimmed[..angle].Trim();
+
+        var at = trimmed.IndexOf('@');
+        return at > 0 ? trimmed[..at].Trim('<') : trimmed;
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split([' ', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant()
+        };
+    }
+
+    /// <summary>
+    /// A colour hashed from the address, so the same correspondent always looks the same. It
+    /// carries no meaning beyond that — it is there to make a list scannable.
+    /// </summary>
+    private static string HueFor(string address)
+    {
+        var hash = 0;
+        foreach (var character in address)
+        {
+            hash = (hash * 31 + character) & 0xFFFFFF;
+        }
+
+        return $"hsl({hash % 360} 55% 45%)";
+    }
+
+    /// <summary>
+    /// Today reads as a time, this week as a weekday, older as a date. A full timestamp is
+    /// unreadable at a glance and the year is never the point in a list.
+    /// </summary>
+    private static string When(DateTimeOffset receivedUtc)
+    {
+        var at = receivedUtc.ToLocalTime();
+        var days = (DateTime.Now.Date - at.Date).Days;
+
+        return days switch
+        {
+            0 => at.ToString("HH:mm"),
+            1 => "Yesterday",
+            < 7 => at.ToString("ddd"),
+            _ => at.ToString("d MMM")
+        };
+    }
+}

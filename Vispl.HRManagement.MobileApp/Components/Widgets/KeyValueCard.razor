@@ -1,0 +1,15 @@
+@* RW-19/RW-20 KeyValueRow inside a SectionCard. The colons align down the
+   column — that alignment is part of the design, not incidental. *@
+<section class="card">
+    @foreach (var row in Rows)
+    {
+        <div class="kv">
+            <span>@row.Label</span>
+            <span class="kv-colon">@row.Value</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<(string Label, string Value)> Rows { get; set; } = [];
+}

@@ -1,0 +1,154 @@
+@page "/leave"
+@inject LeaveApi Leave
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+
+@* Approving leave is the thing an HR lead most wants to do from a phone, so the queue is
+   the screen and the decision is one tap from it. *@
+<PageTitle>Leave Approvals</PageTitle>
+
+<h1 class="page-title">Leave Approvals</h1>
+
+@if (queue is { TotalPending: > 0 })
+{
+    <p class="page-subtitle">@Summary</p>
+}
+
+@if (isLoading)
+{
+    <SkeletonList Count="4" Tall="true" Label="Loading the approval queue" />
+}
+else if (queue is { Rows.Count: > 0 })
+{
+    @if (message is { } note)
+    {
+        <p class="card-note">@note</p>
+    }
+
+    @if (error is { } problem)
+    {
+        <p class="inline-error">@problem</p>
+    }
+
+    <div class="stagger">
+        @foreach (var request in queue.Rows)
+        {
+            <article class="card">
+                <div class="card-head">
+                    <div class="list-item-main">
+                        <span class="list-item-title">@request.DisplayName</span>
+                        <span class="list-item-meta">@request.EmployeeNumber · @request.DepartmentCode</span>
+                    </div>
+                    @if (request.StartsWithinWindow)
+                    {
+                        <StatusPill Label="Starts soon" State="rejected" />
+                    }
+                    else
+                    {
+                        <StatusPill Label="@($"{request.WaitingDays}d waiting")" State="pending" />
+                    }
+                </div>
+
+                <KeyValueCard Rows="Details(request)" />
+
+                @if (request.IsOwn)
+                {
+                    @* The service refuses this too; saying so here saves the tap. *@
+                    <p class="card-note">Your own request — somebody else has to decide it.</p>
+                }
+                else
+                {
+                    <div class="applicant-actions">
+                        <button class="btn-primary" type="button"
+                                disabled="@(pending == request.RequestId)"
+                                @onclick="() => DecideAsync(request, true)">
+                            @(pending == request.RequestId ? "Saving…" : "Approve")
+                        </button>
+                        <button class="btn-ghost" type="button"
+                                disabled="@(pending == request.RequestId)"
+                                @onclick="() => DecideAsync(request, false)"><AppIcon Name="x" Size="15" /> Reject</button>
+                    </div>
+                }
+            </article>
+        }
+    </div>
+}
+else if (queue is not null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="sun" Size="40" StrokeWidth="1.4" /></div>
+        <h2>The queue is clear</h2>
+        <p>Nothing is waiting on a decision.</p>
+    </div>
+}
+else if (result is not null)
+{
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@code {
+    private ApiResult<LeaveApprovalQueueDto>? result;
+    private LeaveApprovalQueueDto? queue;
+    private bool isLoading = true;
+    private string? pending;
+    private string? message;
+    private string? error;
+
+    private string Summary
+    {
+        get
+        {
+            if (queue is null)
+            {
+                return string.Empty;
+            }
+
+            var head = $"{queue.TotalPending} awaiting a decision";
+            return queue.StartingSoon > 0
+                ? $"{head} · {queue.StartingSoon} starting within three days"
+                : $"{head} · longest wait {queue.LongestWaitDays} days";
+        }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        result = await Leave.GetApprovalQueueAsync();
+        queue = result.Data;
+        isLoading = false;
+    }
+
+    private async Task DecideAsync(LeaveApprovalRowDto request, bool approve)
+    {
+        pending = request.RequestId;
+        error = null;
+        message = null;
+
+        var decided = await Leave.DecideAsync(
+            request.RequestId, approve, approve ? null : "Rejected from the HR app.");
+
+        pending = null;
+
+        if (!decided.IsSuccess)
+        {
+            error = decided.Problem?.Title ?? "That decision was refused.";
+            return;
+        }
+
+        message = approve
+            ? $"{request.DisplayName}'s {request.Days:0.#} day {request.LeaveTypeCode} was approved."
+            : $"{request.DisplayName}'s {request.LeaveTypeCode} request was rejected.";
+
+        await LoadAsync();
+    }
+
+    private static IReadOnlyList<(string Label, string Value)> Details(LeaveApprovalRowDto request) =>
+    [
+        ("Type", request.LeaveTypeCode),
+        ("From", request.From.ToString("ddd d MMM")),
+        ("To", request.To.ToString("ddd d MMM")),
+        ("Days", request.Days.ToString("0.#")),
+        ("Reason", request.Reason)
+    ];
+}

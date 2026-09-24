@@ -1,0 +1,504 @@
+@page "/hr/payroll/bank-accounts"
+@page "/hr/{TenantKey}/payroll/bank-accounts"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.Contracts.Mobile.Shared
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IBankAccountService BankAccounts
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Bank Accounts | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="PAYROLL" Title="Bank Accounts"
+             Subtitle="Where salaries are paid from, and where each employee is paid to. Account numbers are stored encrypted and only ever shown masked."
+             Error="@LoadError">
+    <Filters>
+        <div class="hr-bank-tabs" role="tablist">
+            <button type="button" role="tab" class="@(Tab == BankTab.Employees ? "active" : null)"
+                    aria-selected="@(Tab == BankTab.Employees)" @onclick="() => Tab = BankTab.Employees">
+                Employee accounts <span>@EmployeeRows.Count(row => row.Account is not null)/@EmployeeRows.Count</span>
+            </button>
+            <button type="button" role="tab" class="@(Tab == BankTab.Company ? "active" : null)"
+                    aria-selected="@(Tab == BankTab.Company)" @onclick="() => Tab = BankTab.Company">
+                Company accounts <span>@CompanyAccounts.Count</span>
+            </button>
+        </div>
+
+        @if (Tab == BankTab.Employees)
+        {
+            <label>
+                Search
+                <input type="search" placeholder="Name or employee number"
+                       value="@Search" @oninput="args => Search = args.Value?.ToString() ?? string.Empty" />
+            </label>
+            <label class="hr-check">
+                <input type="checkbox" checked="@MissingOnly" @onchange="args => MissingOnly = args.Value is true" />
+                Missing an account
+            </label>
+        }
+        else if (CanManage)
+        {
+            <button class="hr-button small" type="button" @onclick="AddCompanyAccount">+ Add company account</button>
+        }
+    </Filters>
+
+    <ChildContent>
+        @if (Notice is not null)
+        {
+            <div class="hr-alert success compact">@Notice</div>
+        }
+
+        @if (Tab == BankTab.Employees)
+        {
+            <HrDataTable TRow="EmployeeBankAccountRowDto"
+                         Title="Employee salary accounts"
+                         Meta="@EmployeeMeta()"
+                         Total="@VisibleEmployees.Count"
+                         Error="@TableError"
+                         IsLoading="IsLoading"
+                         EmptyMessage="@(MissingOnly ? "Everyone has a salary account." : "Nobody matches that search.")"
+                         Rows="VisibleEmployees">
+                <Header>
+                    <th>Employee</th><th>Number</th><th>Bank</th><th>Account</th><th>IFSC</th><th>Type</th><th></th>
+                </Header>
+                <Row Context="row">
+                    <td class="strong">@row.DisplayName</td>
+                    <td>@row.EmployeeNumber</td>
+                    @if (row.Account is { } account)
+                    {
+                        <td>@account.BankName</td>
+                        <td><span class="hr-mask">@account.MaskedAccountNumber</span></td>
+                        <td>@account.Ifsc</td>
+                        <td>@account.AccountType</td>
+                    }
+                    else
+                    {
+                        <td colspan="4">
+                            <span class="hr-tag tone-warning">No salary account</span>
+                            <small class="hr-hint">Cannot be paid by bank transfer</small>
+                        </td>
+                    }
+                    <td>
+                        @if (CanManage)
+                        {
+                            <span class="hr-action-row">
+                                <button class="hr-button small ghost" type="button" @onclick="() => EditEmployee(row)">
+                                    @(row.Account is null ? "Add" : "Edit")
+                                </button>
+                                @if (row.Account is not null)
+                                {
+                                    <button class="hr-button small ghost" type="button" @onclick="() => PendingRemoval = row">Remove</button>
+                                }
+                            </span>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+        }
+        else
+        {
+            <HrDataTable TRow="CompanyBankAccountDto"
+                         Title="Company bank accounts"
+                         Meta="Salaries are transferred from these accounts"
+                         Total="@CompanyAccounts.Count"
+                         Error="@TableError"
+                         IsLoading="IsLoading"
+                         EmptyMessage="No company bank account yet. Add one before transferring salaries."
+                         Rows="CompanyAccounts">
+                <Header>
+                    <th>Label</th><th>Bank</th><th>Account</th><th>IFSC</th><th>Branch</th><th>Status</th><th></th>
+                </Header>
+                <Row Context="account">
+                    <td class="strong">
+                        @account.AccountLabel
+                        @if (account.IsDefault)
+                        {
+                            <span class="hr-tag tone-info">Default</span>
+                        }
+                    </td>
+                    <td>@account.BankName</td>
+                    <td><span class="hr-mask">@account.MaskedAccountNumber</span></td>
+                    <td>@account.Ifsc</td>
+                    <td>@(account.BranchName ?? "—")</td>
+                    <td><span class="hr-tag tone-@(account.IsActive ? "success" : "neutral")">@(account.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        @if (CanManage)
+                        {
+                            <span class="hr-action-row">
+                                <button class="hr-button small ghost" type="button" @onclick="() => EditCompany(account)">Edit</button>
+                                <button class="hr-button small ghost" type="button" @onclick="() => PendingDelete = account">Delete</button>
+                            </span>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+        }
+    </ChildContent>
+</HrPageShell>
+
+@if (EmployeeEditor is { } employeeEditor && EditingEmployee is { } editing)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseEditors"></div>
+
+    <div class="hr-modal" role="dialog" aria-modal="true" aria-label="Salary bank account">
+        <div class="hr-modal-head">
+            <h2>@(editing.Account is null ? "Add" : "Edit") salary account · @editing.DisplayName</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseEditors">✕</button>
+        </div>
+
+        <EditForm Model="employeeEditor" OnValidSubmit="SaveEmployeeAsync" FormName="employee-bank-editor" class="hr-modal-form">
+            <DataAnnotationsValidator />
+
+            <div class="hr-modal-body">
+                @if (SaveError is not null)
+                {
+                    <div class="hr-alert error compact">@SaveError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <div class="hr-form-grid">
+                    <label>
+                        Bank name
+                        <InputText @bind-Value="employeeEditor.BankName" placeholder="HDFC Bank" />
+                    </label>
+                    <label>
+                        Account holder
+                        <InputText @bind-Value="employeeEditor.AccountHolderName" />
+                    </label>
+                    <label>
+                        Account number
+                        <InputText @bind-Value="employeeEditor.AccountNumber" inputmode="numeric" autocomplete="off"
+                                   placeholder="@NumberHint(editing.Account?.MaskedAccountNumber)" />
+                    </label>
+                    <label>
+                        IFSC
+                        <InputText @bind-Value="employeeEditor.Ifsc" placeholder="HDFC0001234" />
+                    </label>
+                    <label>
+                        Account type
+                        <InputSelect @bind-Value="employeeEditor.AccountType">
+                            @foreach (var type in BankAccountTypes.All)
+                            {
+                                <option @key="type" value="@type">@type</option>
+                            }
+                        </InputSelect>
+                    </label>
+                </div>
+            </div>
+
+            <div class="hr-modal-foot">
+                <small class="hr-hint">Stored encrypted. Only the last four digits are ever shown.</small>
+                <div class="hr-modal-actions">
+                    <button type="button" class="hr-button small ghost" @onclick="CloseEditors">Cancel</button>
+                    <button type="submit" class="hr-button small" disabled="@IsSaving">@(IsSaving ? "Saving…" : "Save")</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (CompanyEditor is { } companyEditor)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseEditors"></div>
+
+    <div class="hr-modal" role="dialog" aria-modal="true" aria-label="Company bank account">
+        <div class="hr-modal-head">
+            <h2>@(EditingCompany is null ? "Add company bank account" : "Edit " + EditingCompany.AccountLabel)</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseEditors">✕</button>
+        </div>
+
+        <EditForm Model="companyEditor" OnValidSubmit="SaveCompanyAsync" FormName="company-bank-editor" class="hr-modal-form">
+            <DataAnnotationsValidator />
+
+            <div class="hr-modal-body">
+                @if (SaveError is not null)
+                {
+                    <div class="hr-alert error compact">@SaveError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <div class="hr-form-grid">
+                    <label>
+                        Account label
+                        <InputText @bind-Value="companyEditor.AccountLabel" placeholder="SBI - KAPSONS0034" />
+                    </label>
+                    <label>
+                        Bank name
+                        <InputText @bind-Value="companyEditor.BankName" placeholder="State Bank of India" />
+                    </label>
+                    <label>
+                        Account number
+                        <InputText @bind-Value="companyEditor.AccountNumber" inputmode="numeric" autocomplete="off"
+                                   placeholder="@NumberHint(EditingCompany?.MaskedAccountNumber)" />
+                    </label>
+                    <label>
+                        IFSC
+                        <InputText @bind-Value="companyEditor.Ifsc" placeholder="SBIN0001234" />
+                    </label>
+                    <label class="hr-form-wide">
+                        Branch
+                        <InputText @bind-Value="companyEditor.BranchName" placeholder="Mohali Phase 7" />
+                    </label>
+                    <label class="hr-check">
+                        <InputCheckbox @bind-Value="companyEditor.IsDefault" />
+                        Default account for salary transfers
+                    </label>
+                    <label class="hr-check">
+                        <InputCheckbox @bind-Value="companyEditor.IsActive" />
+                        Active
+                    </label>
+                </div>
+            </div>
+
+            <div class="hr-modal-foot">
+                <small class="hr-hint">Stored encrypted. Only the last four digits are ever shown.</small>
+                <div class="hr-modal-actions">
+                    <button type="button" class="hr-button small ghost" @onclick="CloseEditors">Cancel</button>
+                    <button type="submit" class="hr-button small" disabled="@IsSaving">@(IsSaving ? "Saving…" : "Save")</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (PendingRemoval is { } removal)
+{
+    <div class="hr-modal-backdrop" @onclick="() => PendingRemoval = null"></div>
+
+    <div class="hr-modal hr-modal-small" role="dialog" aria-modal="true" aria-label="Remove salary account">
+        <div class="hr-modal-head">
+            <h2>Remove salary account</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="() => PendingRemoval = null">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            @if (SaveError is not null)
+            {
+                <div class="hr-alert error compact">@SaveError</div>
+            }
+            <p>Remove <strong>@removal.DisplayName</strong>'s salary account (@removal.Account?.MaskedAccountNumber)? They cannot be paid by bank transfer until a new one is added.</p>
+        </div>
+        <div class="hr-modal-foot">
+            <span></span>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="() => PendingRemoval = null">Cancel</button>
+                <button type="button" class="hr-button small danger" disabled="@IsSaving" @onclick="ConfirmRemovalAsync">
+                    @(IsSaving ? "Removing…" : "Remove")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (PendingDelete is { } doomed)
+{
+    <div class="hr-modal-backdrop" @onclick="() => PendingDelete = null"></div>
+
+    <div class="hr-modal hr-modal-small" role="dialog" aria-modal="true" aria-label="Delete company bank account">
+        <div class="hr-modal-head">
+            <h2>Delete company bank account</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="() => PendingDelete = null">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            @if (SaveError is not null)
+            {
+                <div class="hr-alert error compact">@SaveError</div>
+            }
+            <p>Delete <strong>@doomed.AccountLabel</strong> (@doomed.MaskedAccountNumber)? Mark it inactive instead if past transfers should still name it.</p>
+        </div>
+        <div class="hr-modal-foot">
+            <span></span>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="() => PendingDelete = null">Cancel</button>
+                <button type="button" class="hr-button small danger" disabled="@IsSaving" @onclick="ConfirmDeleteAsync">
+                    @(IsSaving ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Presentational only; the data is always the signed-in account's client.</summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private enum BankTab { Employees, Company }
+
+    private BankTab Tab = BankTab.Employees;
+    private IReadOnlyList<EmployeeBankAccountRowDto> EmployeeRows = [];
+    private IReadOnlyList<CompanyBankAccountDto> CompanyAccounts = [];
+
+    private string Search = string.Empty;
+    private bool MissingOnly;
+
+    private bool CanManage;
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private string? LoadError;
+    private string? TableError;
+    private string? SaveError;
+    private string? Notice;
+
+    private SaveEmployeeBankAccountRequest? EmployeeEditor;
+    private EmployeeBankAccountRowDto? EditingEmployee;
+    private SaveCompanyBankAccountRequest? CompanyEditor;
+    private CompanyBankAccountDto? EditingCompany;
+    private EmployeeBankAccountRowDto? PendingRemoval;
+    private CompanyBankAccountDto? PendingDelete;
+
+    private IReadOnlyList<EmployeeBankAccountRowDto> VisibleEmployees =>
+        EmployeeRows
+            .Where(row => !MissingOnly || row.Account is null)
+            .Where(row => string.IsNullOrWhiteSpace(Search) ||
+                          row.DisplayName.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                          row.EmployeeNumber.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        TableError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanManage = await PortalCaller.HasAsync("PAYROLL.MANAGE");
+            EmployeeRows = await BankAccounts.GetEmployeeAccountsAsync(caller);
+            CompanyAccounts = await BankAccounts.GetCompanyAccountsAsync(caller);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account does not hold {denied.Permission}, so bank accounts cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            TableError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void EditEmployee(EmployeeBankAccountRowDto row)
+    {
+        CloseEditors();
+        EditingEmployee = row;
+        EmployeeEditor = new SaveEmployeeBankAccountRequest
+        {
+            EmployeeId = row.EmployeeId,
+            BankName = row.Account?.BankName ?? string.Empty,
+            AccountHolderName = row.Account?.AccountHolderName ?? row.DisplayName,
+            Ifsc = row.Account?.Ifsc ?? string.Empty,
+            AccountType = row.Account?.AccountType ?? BankAccountTypes.Savings
+        };
+    }
+
+    private void AddCompanyAccount()
+    {
+        CloseEditors();
+        CompanyEditor = new SaveCompanyBankAccountRequest { IsDefault = CompanyAccounts.Count == 0 };
+    }
+
+    private void EditCompany(CompanyBankAccountDto account)
+    {
+        CloseEditors();
+        EditingCompany = account;
+        CompanyEditor = new SaveCompanyBankAccountRequest
+        {
+            Id = account.Id,
+            BankName = account.BankName,
+            AccountLabel = account.AccountLabel,
+            Ifsc = account.Ifsc,
+            BranchName = account.BranchName,
+            IsDefault = account.IsDefault,
+            IsActive = account.IsActive
+        };
+    }
+
+    private void CloseEditors()
+    {
+        EmployeeEditor = null;
+        EditingEmployee = null;
+        CompanyEditor = null;
+        EditingCompany = null;
+        SaveError = null;
+    }
+
+    private Task SaveEmployeeAsync() => RunAsync(async caller =>
+    {
+        await BankAccounts.SaveEmployeeAccountAsync(caller, EmployeeEditor!);
+        return $"Saved the salary account for {EditingEmployee!.DisplayName}.";
+    });
+
+    private Task SaveCompanyAsync() => RunAsync(async caller =>
+    {
+        await BankAccounts.SaveCompanyAccountAsync(caller, CompanyEditor!);
+        return $"Saved company account {CompanyEditor!.AccountLabel.Trim()}.";
+    });
+
+    private Task ConfirmRemovalAsync() => RunAsync(async caller =>
+    {
+        var removal = PendingRemoval!;
+        await BankAccounts.RemoveEmployeeAccountAsync(caller, removal.EmployeeId);
+        return $"Removed the salary account for {removal.DisplayName}.";
+    });
+
+    private Task ConfirmDeleteAsync() => RunAsync(async caller =>
+    {
+        var doomed = PendingDelete!;
+        await BankAccounts.DeleteCompanyAccountAsync(caller, doomed.Id);
+        return $"Deleted company account {doomed.AccountLabel}.";
+    });
+
+    /// <summary>One save path for every write: close what was open, reload, and say what happened.</summary>
+    private async Task RunAsync(Func<MobileCallerContext, Task<string>> write)
+    {
+        IsSaving = true;
+        SaveError = null;
+        Notice = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var message = await write(caller);
+
+            CloseEditors();
+            PendingRemoval = null;
+            PendingDelete = null;
+            Notice = message;
+            await LoadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            SaveError = $"This needs {denied.Permission}.";
+        }
+        catch (MobileValidationException invalid)
+        {
+            SaveError = invalid.Message;
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private static string NumberHint(string? currentMask) =>
+        currentMask is null ? "9 to 18 digits" : $"Leave blank to keep {currentMask}";
+
+    private string EmployeeMeta()
+    {
+        var missing = EmployeeRows.Count(row => row.Account is null);
+        return missing == 0
+            ? "Every employee has a salary account"
+            : $"{missing} of {EmployeeRows.Count} employees have no salary account";
+    }
+}

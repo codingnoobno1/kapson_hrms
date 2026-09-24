@@ -1,0 +1,651 @@
+@page "/hr/reports/attendance-monthly"
+@page "/hr/{TenantKey}/reports/attendance-monthly"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IEmployeeReportService Reports
+@inject IAttendanceService Attendance
+@inject IExcelExporter Excel
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<PageTitle>Employee Monthly Attendance Report | HR Portal</PageTitle>
+
+@*
+    Phase D, R01–R08: the client-locked Employee Monthly Attendance Report. Filters, four tiles,
+    the monthly calendar with P · A · L · W counts per day, and the Detailed Attendance Records grid
+    with an in / out cell per day. Every figure comes from IEmployeeReportService; the edit icon
+    applies an approved correction through IAttendanceService (ATTENDANCE.MANAGE, decision D-1).
+*@
+
+<HrSettingsPage TenantKey="@TenantKey" Title="Employee Monthly Attendance Report" Error="@LoadError">
+    <section class="hr-panel att-filters">
+        <label>
+            <span>DEPARTMENT</span>
+            <select value="@DepartmentCode" @onchange="ChangeDepartmentAsync">
+                <option value="">All Departments</option>
+                @foreach (var option in Options(MasterCategories.Department))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>EMPLOYEE</span>
+            <select value="@EmployeeId" @onchange="args => EmployeeId = Text(args)">
+                <option value="">All Employee</option>
+                @foreach (var person in EmployeeOptions)
+                {
+                    <option @key="person.EmployeeId" value="@person.EmployeeId">@person.DisplayName (@person.EmployeeNumber)</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>MONTH</span>
+            <select value="@MonthKey" @onchange="args => MonthKey = Text(args)">
+                @foreach (var month in MonthOptions())
+                {
+                    <option @key="month.Key" value="@month.Key">@month.Label</option>
+                }
+            </select>
+        </label>
+        <button type="button" class="att-button outline" @onclick="() => ShowMore = !ShowMore">
+            <HrIcon Name="settings" Size="15" /> More Filters
+        </button>
+        <button type="button" class="att-button solid" @onclick="LoadAsync" disabled="@IsLoading">
+            <HrIcon Name="sliders" Size="15" /> @(IsLoading ? "Loading…" : "Apply Filter")
+        </button>
+
+        @if (ShowMore)
+        {
+            <div class="att-more">
+                <label>
+                    <span>DIVISION</span>
+                    <select value="@DivisionCode" @onchange="args => DivisionCode = Text(args)">
+                        <option value="">All Divisions</option>
+                        @foreach (var option in Options(MasterCategories.Division))
+                        {
+                            <option @key="option.Code" value="@option.Code">@option.Name</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    <span>SEARCH</span>
+                    <input type="search" placeholder="Name or employee ID" value="@Search" @onchange="args => Search = Text(args)" />
+                </label>
+            </div>
+        }
+    </section>
+
+    @if (Report is { } report)
+    {
+        var summary = report.Summary ?? new AttendanceReportSummaryDto(0, 0, 0, 0);
+
+        <section class="att-kpis">
+            <div class="att-kpi present"><span>Present Days</span><strong>@summary.PresentDays</strong><small>Present Days</small></div>
+            <div class="att-kpi absent"><span>Absent Days</span><strong>@summary.AbsentDays</strong><small>@summary.AbsentDays Days</small></div>
+            <div class="att-kpi leave"><span>Leave Days</span><strong>@summary.LeaveDays</strong><small>@summary.LeaveDays Days</small></div>
+            <div class="att-kpi rate"><span>Attendance Rate</span><strong>@summary.AttendanceRate.ToString("0.#", CultureInfo.InvariantCulture)%</strong><small>Overall Performance</small></div>
+        </section>
+
+        <section class="hr-panel att-calendar">
+            <div class="att-card-head">
+                <h2>Monthly Attendance Calendar</h2>
+                <div class="att-cal-nav">
+                    <button type="button" class="att-pill" @onclick="() => StepAsync(-1)" disabled="@IsLoading">
+                        <HrIcon Name="arrow-left" Size="13" /> Prev
+                    </button>
+                    <strong>@report.MonthLabel</strong>
+                    <button type="button" class="att-pill" @onclick="() => StepAsync(1)" disabled="@(IsLoading || !CanStepForward())">
+                        Next <HrIcon Name="arrow-right" Size="13" />
+                    </button>
+                </div>
+            </div>
+
+            <div class="att-cal-grid">
+                @foreach (var weekday in WeekdayNames)
+                {
+                    <div class="att-cal-weekday">@weekday</div>
+                }
+                @for (var blank = 0; blank < LeadingBlanks(report); blank++)
+                {
+                    <div class="att-cal-day empty"></div>
+                }
+                @foreach (var total in report.DailyTotals ?? Array.Empty<AttendanceDailyTotalDto>())
+                {
+                    <div class="att-cal-day @(total.Date > Today ? "future" : null)">
+                        <span>@total.Date.Day</span>
+                        <span class="att-dots">
+                            <i class="att-dot p" title="Present"><em>P</em>@total.Present</i>
+                            <i class="att-dot a" title="Absent"><em>A</em>@total.Absent</i>
+                            <i class="att-dot l" title="Leave"><em>L</em>@total.Leave</i>
+                            <i class="att-dot w" title="Weekend / holiday"><em>W</em>@total.WeeklyOff</i>
+                        </span>
+                    </div>
+                }
+                @for (var blank = 0; blank < TrailingBlanks(report); blank++)
+                {
+                    <div class="att-cal-day empty"></div>
+                }
+            </div>
+
+            <div class="att-legend2">
+                <span><i class="present"></i> Present</span>
+                <span><i class="absent"></i> Absent</span>
+                <span><i class="leave"></i> Leave</span>
+                <span><i class="off"></i> Weekend/Holiday</span>
+            </div>
+        </section>
+
+        <section class="hr-panel att-records">
+            <div class="att-card-head">
+                <h2>Detailed Attendance Records <span class="att-month">(@report.MonthLabel)</span></h2>
+                <div class="att-toolbar">
+                    <button type="button" class="att-button outline" @onclick="GoToAnalytics">
+                        <HrIcon Name="bar-chart" Size="15" /> Analytics
+                    </button>
+                    <button type="button" class="att-button green" disabled="@(!CanExport || report.Rows.Count == 0)"
+                            title="@(CanExport ? null : "Needs REPORTS.EXPORT")" @onclick="MasterRollAsync">
+                        <HrIcon Name="table" Size="15" /> Master Roll
+                    </button>
+                    <button type="button" class="att-button solid" disabled="@(!CanExport || report.Rows.Count == 0)"
+                            title="@(CanExport ? null : "Needs REPORTS.EXPORT")" @onclick="ExportAsync">
+                        <HrIcon Name="download" Size="15" /> Export Excel
+                    </button>
+                    <button type="button" class="att-button outline-blue" disabled="@(report.Rows.Count == 0)" @onclick="PrintAsync">
+                        <HrIcon Name="print" Size="15" /> Print
+                    </button>
+                </div>
+            </div>
+
+            @if (Notice is not null)
+            {
+                <div class="hr-alert success compact">@Notice</div>
+            }
+
+            @if (report.Rows.Count == 0)
+            {
+                <p class="hr-empty">Nobody in this filter had joined by the end of @report.MonthLabel.</p>
+            }
+            else
+            {
+                <div id="att-print-area" class="att-grid-scroll">
+                    <table class="att-grid">
+                        <thead>
+                            <tr>
+                                <th class="att-sticky-check">
+                                    <input type="checkbox" aria-label="Select all employees"
+                                           checked="@(Selected.Count > 0 && Selected.Count == report.Rows.Count)"
+                                           @onchange="args => SelectAll(report, args.Value is true)" />
+                                </th>
+                                <th class="att-sticky-id">Employee ID</th>
+                                <th>Name</th>
+                                <th>Company</th>
+                                <th>Department</th>
+                                <th>Designation</th>
+                                <th>Shift</th>
+                                @for (var day = 1; day <= report.DaysInMonth; day++)
+                                {
+                                    <th class="att-day-head">@day</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in report.Rows)
+                            {
+                                <tr @key="row.EmployeeId" class="@(Selected.Contains(row.EmployeeId) ? "selected" : null)">
+                                    <td class="att-sticky-check">
+                                        <input type="checkbox" aria-label="Select @row.DisplayName"
+                                               checked="@Selected.Contains(row.EmployeeId)"
+                                               @onchange="args => Toggle(row.EmployeeId, args.Value is true)" />
+                                    </td>
+                                    <td class="att-sticky-id">@row.EmployeeNumber</td>
+                                    <td class="att-name">@row.DisplayName</td>
+                                    <td>@(row.CompanyName ?? "—")</td>
+                                    <td>@row.DepartmentName</td>
+                                    <td>@(row.Designation ?? "—")</td>
+                                    <td class="att-shift">@(row.ShiftLabel ?? "—")</td>
+                                    @foreach (var dayCell in row.Cells ?? Array.Empty<AttendanceReportCellDto>())
+                                    {
+                                        <td class="att-day">
+                                            @if (dayCell.Tone != "na")
+                                            {
+                                                <div class="att-daycell @dayCell.Tone @(dayCell.IsEditable ? "editable" : null)">
+                                                    <strong>@dayCell.Code</strong>
+                                                    <span>@Time(dayCell.CheckIn)</span>
+                                                    <span>@Time(dayCell.CheckOut)</span>
+                                                    @if (dayCell.IsEditable)
+                                                    {
+                                                        <button type="button" class="att-edit" title="Edit @dayCell.Date.ToString("d MMM", CultureInfo.InvariantCulture)"
+                                                                aria-label="Edit @row.DisplayName on @dayCell.Date.ToString("d MMM", CultureInfo.InvariantCulture)"
+                                                                @onclick="() => OpenEdit(row, dayCell)">
+                                                            <HrIcon Name="edit" Size="14" />
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+    else if (IsLoading)
+    {
+        <p class="hr-empty">Loading attendance…</p>
+    }
+</HrSettingsPage>
+
+@if (Editing is { } editing)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseEdit"></div>
+
+    <div class="hr-modal" role="dialog" aria-modal="true" aria-label="Edit attendance">
+        <div class="hr-modal-head">
+            <h2>Edit attendance · @editing.Name · @editing.Date.ToString("ddd, d MMM yyyy", CultureInfo.InvariantCulture)</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseEdit">✕</button>
+        </div>
+
+        <div class="hr-modal-body">
+            @if (EditError is not null)
+            {
+                <div class="hr-alert error compact">@EditError</div>
+            }
+
+            <p class="hr-hint">
+                Now: <strong>@(string.IsNullOrEmpty(editing.CurrentCode) ? "—" : editing.CurrentCode)</strong>
+                · in @Time(editing.CurrentIn) · out @Time(editing.CurrentOut)
+            </p>
+
+            <div class="hr-form-grid">
+                <label class="hr-check hr-form-wide">
+                    <input type="checkbox" checked="@editing.MarkAbsent" @onchange="args => editing.MarkAbsent = args.Value is true" />
+                    <span>Mark absent — clears the day's punches</span>
+                </label>
+                @if (!editing.MarkAbsent)
+                {
+                    <label>
+                        Check-in
+                        <input type="time" value="@editing.CheckIn" @onchange="args => editing.CheckIn = Text(args)" />
+                    </label>
+                    <label>
+                        Check-out
+                        <input type="time" value="@editing.CheckOut" @onchange="args => editing.CheckOut = Text(args)" />
+                    </label>
+                }
+                <label class="hr-form-wide">
+                    Reason
+                    <textarea rows="3" placeholder="Why this day is being changed — the employee is shown this"
+                              value="@editing.Reason" @onchange="args => editing.Reason = Text(args)"></textarea>
+                </label>
+            </div>
+        </div>
+
+        <div class="hr-modal-foot">
+            <small class="hr-hint">Saved as an approved correction. The original punches are kept.</small>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="CloseEdit">Cancel</button>
+                <button type="button" class="hr-button small" disabled="@IsSaving" @onclick="SaveEditAsync">
+                    @(IsSaving ? "Saving…" : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private MonthlyAttendanceReportDto? Report;
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private IReadOnlyList<EmployeeDirectoryRowDto> EmployeeOptions = [];
+
+    private string DepartmentCode = string.Empty;
+    private string EmployeeId = string.Empty;
+    private string DivisionCode = string.Empty;
+    private string Search = string.Empty;
+    private string MonthKey = DateTime.Today.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+    private readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Today);
+
+    private readonly HashSet<string> Selected = [];
+    private EditState? Editing;
+
+    private bool ShowMore;
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private bool CanExport;
+    private string? LoadError;
+    private string? Notice;
+    private string? EditError;
+
+    private static readonly string[] WeekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    private sealed class EditState
+    {
+        public required string EmployeeId { get; init; }
+        public required string Name { get; init; }
+        public required DateOnly Date { get; init; }
+        public string? CurrentCode { get; init; }
+        public TimeOnly? CurrentIn { get; init; }
+        public TimeOnly? CurrentOut { get; init; }
+        public bool MarkAbsent { get; set; }
+        public string CheckIn { get; set; } = string.Empty;
+        public string CheckOut { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanExport = await PortalCaller.HasAsync("REPORTS.EXPORT");
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+            await LoadEmployeeOptionsAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        Notice = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var (year, month) = SelectedMonth();
+
+            Report = await Reports.GetMonthlyAttendanceAsync(caller, new EmployeeReportQuery
+            {
+                Month = month,
+                Year = year,
+                DepartmentCode = DepartmentCode,
+                DivisionCode = DivisionCode,
+                EmployeeId = EmployeeId,
+                Status = "Active",
+                Search = Search
+            });
+
+            Selected.IntersectWith(Report.Rows.Select(row => row.EmployeeId));
+            LoadError = null;
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Report = null;
+            LoadError = $"This account does not hold {denied.Permission}, so the report cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task LoadEmployeeOptionsAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            EmployeeOptions = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery
+            {
+                DepartmentCode = DepartmentCode,
+                Status = "Active"
+            });
+        }
+        catch (Exception)
+        {
+            // The employee picker needs EMPLOYEES.VIEW; without it the report still filters by department.
+            EmployeeOptions = [];
+        }
+    }
+
+    private async Task ChangeDepartmentAsync(ChangeEventArgs args)
+    {
+        DepartmentCode = Text(args);
+        EmployeeId = string.Empty;
+        await LoadEmployeeOptionsAsync();
+    }
+
+    private async Task StepAsync(int months)
+    {
+        var (year, month) = SelectedMonth();
+        MonthKey = new DateTime(year, month, 1).AddMonths(months).ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        await LoadAsync();
+    }
+
+    private bool CanStepForward()
+    {
+        var (year, month) = SelectedMonth();
+        return new DateTime(year, month, 1) < new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    }
+
+    private (int Year, int Month) SelectedMonth() =>
+        DateTime.TryParseExact(MonthKey + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? (parsed.Year, parsed.Month)
+            : (DateTime.Today.Year, DateTime.Today.Month);
+
+    private IEnumerable<(string Key, string Label)> MonthOptions()
+    {
+        var current = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var options = Enumerable.Range(0, 24)
+            .Select(offset => current.AddMonths(-offset))
+            .Select(month => (month.ToString("yyyy-MM", CultureInfo.InvariantCulture), month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)))
+            .ToList();
+
+        if (options.All(option => option.Item1 != MonthKey))
+        {
+            var (year, month) = SelectedMonth();
+            options.Insert(0, (MonthKey, new DateTime(year, month, 1).ToString("MMMM yyyy", CultureInfo.InvariantCulture)));
+        }
+
+        return options;
+    }
+
+    private static int LeadingBlanks(MonthlyAttendanceReportDto report) =>
+        (int)new DateOnly(report.Year, report.Month, 1).DayOfWeek;
+
+    private static int TrailingBlanks(MonthlyAttendanceReportDto report) =>
+        (7 - (LeadingBlanks(report) + report.DaysInMonth) % 7) % 7;
+
+    private void Toggle(string employeeId, bool selected)
+    {
+        if (selected)
+        {
+            Selected.Add(employeeId);
+        }
+        else
+        {
+            Selected.Remove(employeeId);
+        }
+    }
+
+    private void SelectAll(MonthlyAttendanceReportDto report, bool selected)
+    {
+        Selected.Clear();
+        if (selected)
+        {
+            Selected.UnionWith(report.Rows.Select(row => row.EmployeeId));
+        }
+    }
+
+    // ---- Day edit (D-1) -------------------------------------------------------
+
+    private void OpenEdit(AttendanceReportRowDto row, AttendanceReportCellDto dayCell)
+    {
+        EditError = null;
+        Editing = new EditState
+        {
+            EmployeeId = row.EmployeeId,
+            Name = row.DisplayName,
+            Date = dayCell.Date,
+            CurrentCode = dayCell.Code,
+            CurrentIn = dayCell.CheckIn,
+            CurrentOut = dayCell.CheckOut,
+            CheckIn = dayCell.CheckIn?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? string.Empty,
+            CheckOut = dayCell.CheckOut?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? string.Empty
+        };
+    }
+
+    private void CloseEdit()
+    {
+        Editing = null;
+        EditError = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (Editing is not { } editing)
+        {
+            return;
+        }
+
+        IsSaving = true;
+        EditError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            await Attendance.ApplyHrCorrectionAsync(caller, new HrAttendanceDayEditRequest
+            {
+                EmployeeId = editing.EmployeeId,
+                Date = editing.Date,
+                MarkAbsent = editing.MarkAbsent,
+                CheckIn = ParseTime(editing.CheckIn),
+                CheckOut = ParseTime(editing.CheckOut),
+                Reason = editing.Reason
+            }, CancellationToken.None);
+
+            var message = $"Updated {editing.Name}'s attendance for {editing.Date.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}.";
+            Editing = null;
+            await LoadAsync();
+            Notice = message;
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            EditError = $"Editing attendance needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            EditError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    // ---- Master Roll / Export / Print ------------------------------------------
+
+    private IReadOnlyList<AttendanceReportRowDto> ExportRows(MonthlyAttendanceReportDto report) =>
+        Selected.Count == 0 ? report.Rows : report.Rows.Where(row => Selected.Contains(row.EmployeeId)).ToList();
+
+    private async Task MasterRollAsync()
+    {
+        if (Report is not { } report)
+        {
+            return;
+        }
+
+        var columns = new List<ExcelColumn>
+        {
+            new("Employee ID"), new("Name"), new("Department"), new("Designation"), new("Shift")
+        };
+        columns.AddRange(Enumerable.Range(1, report.DaysInMonth).Select(day => new ExcelColumn(day.ToString(CultureInfo.InvariantCulture), Width: 5)));
+        columns.AddRange([
+            new("P", ExcelFormat.Integer, 5), new("½", ExcelFormat.Integer, 5), new("A", ExcelFormat.Integer, 5),
+            new("L", ExcelFormat.Integer, 5), new("W/H", ExcelFormat.Integer, 6), new("Signature", Width: 18)
+        ]);
+
+        var rows = ExportRows(report).Select(row =>
+        {
+            var values = new List<object?> { row.EmployeeNumber, row.DisplayName, row.DepartmentName, row.Designation, row.ShiftLabel };
+            values.AddRange((row.Cells ?? []).Select(dayCell => (object?)dayCell.Code));
+            values.AddRange([row.Present, row.Partial, row.Absent, row.Leave, row.WeeklyOff + row.Holiday, null]);
+            return (IReadOnlyList<object?>)values;
+        }).ToList();
+
+        var sheet = new ExcelSheet("Master Roll", $"Attendance master roll — {report.MonthLabel}",
+            $"{rows.Count} employee(s) · P present · HDF/HDS half day · A absent · W weekly off · H holiday · leave by policy code", columns, rows);
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"master-roll-{report.Year}-{report.Month:00}.xlsx", sheet);
+    }
+
+    private async Task ExportAsync()
+    {
+        if (Report is not { } report)
+        {
+            return;
+        }
+
+        var columns = new List<ExcelColumn>
+        {
+            new("Employee ID"), new("Name"), new("Company"), new("Department"), new("Designation"), new("Shift")
+        };
+        columns.AddRange(Enumerable.Range(1, report.DaysInMonth).Select(day => new ExcelColumn(day.ToString(CultureInfo.InvariantCulture), Width: 13)));
+        columns.AddRange([
+            new("Present", ExcelFormat.Integer), new("Half Days", ExcelFormat.Integer), new("Absent", ExcelFormat.Integer),
+            new("Leave", ExcelFormat.Integer), new("Holiday", ExcelFormat.Integer), new("Weekly Off", ExcelFormat.Integer),
+            new("Not Recorded", ExcelFormat.Integer), new("Worked Hours", ExcelFormat.Decimal)
+        ]);
+
+        var rows = ExportRows(report).Select(row =>
+        {
+            var values = new List<object?> { row.EmployeeNumber, row.DisplayName, row.CompanyName, row.DepartmentName, row.Designation, row.ShiftLabel };
+            values.AddRange((row.Cells ?? []).Select(dayCell => (object?)CellText(dayCell)));
+            values.AddRange([row.Present, row.Partial, row.Absent, row.Leave, row.Holiday, row.WeeklyOff, row.Unrecorded, row.WorkedHours]);
+            return (IReadOnlyList<object?>)values;
+        }).ToList();
+
+        var sheet = new ExcelSheet("Attendance", $"Detailed attendance records — {report.MonthLabel}",
+            $"{rows.Count} employee(s) · exported {DateTime.Now:dd MMM yyyy, h:mm tt}", columns, rows);
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"attendance-{report.Year}-{report.Month:00}.xlsx", sheet);
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#att-print-area");
+
+    private void GoToAnalytics() => Navigation.NavigateTo(Path("attendance"));
+
+    // ---- Helpers ---------------------------------------------------------------
+
+    private static string CellText(AttendanceReportCellDto dayCell) =>
+        dayCell.CheckIn is null && dayCell.CheckOut is null
+            ? dayCell.Code
+            : $"{dayCell.Code} {Time(dayCell.CheckIn)}-{Time(dayCell.CheckOut)}";
+
+    private static string Time(TimeOnly? time) => time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "-";
+
+    private static TimeOnly? ParseTime(string text) =>
+        TimeOnly.TryParseExact(text, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ? parsed : null;
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+
+    private string Path(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

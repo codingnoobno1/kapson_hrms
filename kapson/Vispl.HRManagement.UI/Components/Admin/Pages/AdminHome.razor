@@ -1,0 +1,170 @@
+@page "/admin"
+@inject IAuthorizationService AuthorizationService
+
+<PageTitle>Admin Login | Vertex HR Management</PageTitle>
+<main class="vertex-login-shell">
+    <div class="vertex-login-frame">
+        <section class="vertex-login-intro">
+            <div class="vertex-login-shape shape-one"></div>
+            <div class="vertex-login-shape shape-two"></div>
+            <div class="vertex-login-intro-content">
+                <div class="vertex-login-brand">
+                    <span class="vertex-hr-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <div><strong><b>HR</b> Management</strong><small>Enterprise recruitment &amp; career-site platform</small></div>
+                </div>
+
+                <div class="vertex-login-welcome">
+                    <h1><strong>Welcome back</strong><span>to your workspace</span></h1>
+                    <p>Manage every client, career site and recruitment workflow from one secure admin portal.</p>
+                    <ul>
+                        <li><span aria-hidden="true">⌘</span>Multi-client career-site management</li>
+                        <li><span aria-hidden="true">◇</span>Jobs, masters, themes and media</li>
+                        <li><span aria-hidden="true">↗</span>Draft, preview and controlled publishing</li>
+                    </ul>
+                </div>
+
+                <div class="vertex-login-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            </div>
+        </section>
+
+        <section class="vertex-login-access">
+            @switch (State)
+            {
+                case SessionState.Administrator:
+                    <div class="vertex-login-form">
+                        <span class="vertex-login-kicker">SECURE ADMIN PORTAL</span>
+                        <h2>Welcome back</h2>
+                        <p>Your administrator session is active.</p>
+                        <a class="vertex-signin-button" href="/admin/dashboard">Continue to Admin</a>
+                    </div>
+                    break;
+
+                case SessionState.AdministratorMustChangePassword:
+                    <div class="vertex-login-form">
+                        <span class="vertex-login-kicker">SECURE ADMIN PORTAL</span>
+                        <h2>Set your password</h2>
+                        <p>Your administrator session is active, but a private password is required before you can continue.</p>
+                        <a class="vertex-signin-button" href="/admin/change-password">Set your password</a>
+                    </div>
+                    break;
+
+                @*
+                    The cookie is shared across portals. Without this branch, any signed-in HR or
+                    employee session was treated as an administrator here, sent to the dashboard,
+                    refused, and sent back — an endless loop with no sign-in form and no way out.
+                *@
+                case SessionState.OtherAccount:
+                    <div class="vertex-login-form">
+                        <span class="vertex-login-kicker">SECURE ADMIN PORTAL</span>
+                        <h2>Signed in with another account</h2>
+                        <p>
+                            You're signed in as <strong>@DisplayName</strong> (@AccountLabel), which can't open
+                            the admin portal. Sign out to sign in with an administrator account.
+                        </p>
+                        <span class="vertex-login-rule"></span>
+                        <form method="post" action="/identity/admin/logout">
+                            <AntiforgeryToken />
+                            <button class="vertex-signin-button" type="submit">Sign out and continue</button>
+                        </form>
+                        @if (AccountHome is not null)
+                        {
+                            <div class="vertex-login-help"><a href="@AccountHome">Back to the @AccountLabel</a></div>
+                        }
+                    </div>
+                    break;
+
+                default:
+                    <form class="vertex-login-form" method="post" action="/identity/admin/login">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        <span class="vertex-login-kicker">SECURE ADMIN PORTAL</span>
+                        <h2>Sign in to your account</h2>
+                        <p>Enter your administrator credentials to continue.</p>
+                        <span class="vertex-login-rule"></span>
+                        @if (!string.IsNullOrWhiteSpace(ErrorMessage)) { <div class="vertex-login-error">@ErrorMessage</div> }
+
+                        <label>
+                            <span>Admin ID</span>
+                            <span class="vertex-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 7l8 6 8-6" /></svg><input name="userName" autocomplete="username" placeholder="admin" required autofocus /></span>
+                        </label>
+                        <label>
+                            <span>Password</span>
+                            <span class="vertex-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0110 0v3M5 10h14v10H5zM12 14v3" /></svg><input name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required /></span>
+                        </label>
+
+                        <div class="vertex-login-session"><span><i></i>Protected SQL-backed administrator access</span><small>8-hour secure session</small></div>
+                        <button class="vertex-signin-button" type="submit">Sign in</button>
+                        <div class="vertex-login-help">First time here? Use the bootstrap credentials supplied by Vertex. You will be required to create a private password immediately.</div>
+                        <div class="vertex-login-legal">Protected by encrypted authentication · Privacy · Terms</div>
+                    </form>
+                    break;
+            }
+
+            <footer class="vertex-powered-by">
+                <span>Powered by</span>
+                <span class="vertex-kapsons-logo"><img src="https://kapsons.com/assets/images/logo-black_r.png" alt="Kapsons official logo" /></span>
+                <small>© @DateTime.UtcNow.Year All rights reserved.</small>
+            </footer>
+        </section>
+    </div>
+</main>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private enum SessionState { Anonymous, Administrator, AdministratorMustChangePassword, OtherAccount }
+
+    private SessionState State = SessionState.Anonymous;
+    private string DisplayName = string.Empty;
+    private string AccountLabel = "another portal";
+    private string? AccountHome;
+
+    private string? ErrorMessage => Error switch
+    {
+        "invalid" => "The admin ID or password is incorrect.",
+        "locked" => "This account is temporarily locked after repeated failed attempts.",
+        _ => null
+    };
+
+    // Decided by the same policies the admin pages enforce, so this page can never call a
+    // session "active" that the dashboard will then refuse.
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is null)
+        {
+            return;
+        }
+
+        var user = (await AuthenticationStateTask).User;
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            return;
+        }
+
+        if ((await AuthorizationService.AuthorizeAsync(user, "AdminPortal")).Succeeded)
+        {
+            State = SessionState.Administrator;
+            return;
+        }
+
+        if ((await AuthorizationService.AuthorizeAsync(user, "AdminAuthenticated")).Succeeded)
+        {
+            State = SessionState.AdministratorMustChangePassword;
+            return;
+        }
+
+        State = SessionState.OtherAccount;
+        DisplayName = user.FindFirst("display_name")?.Value ?? user.Identity?.Name ?? "an account";
+        (AccountLabel, AccountHome) = user.FindFirst("account_portal")?.Value switch
+        {
+            "Hr" => ("HR portal", "/hr/dashboard"),
+            "Employee" => ("employee app", null),
+            "Candidate" => ("candidate portal", null),
+            "Platform" => ("platform account without administrator access", null),
+            _ => ("another portal", null)
+        };
+    }
+}

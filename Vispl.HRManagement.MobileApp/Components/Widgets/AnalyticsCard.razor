@@ -1,0 +1,31 @@
+@* RW-28/RW-29 AnalyticsBarRow inside a card. Label left, track right, value
+   badge inset at the right end of the track. *@
+<section class="card">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <div class="analytics-title">
+            <AppIcon Name="@Icon" Size="18" />
+            <span>@Title</span>
+        </div>
+    }
+
+    @foreach (var row in Rows)
+    {
+        <div class="analytics-row">
+            <span class="analytics-label">@row.Label</span>
+            <span class="analytics-track">
+                <span class="analytics-fill" style="width:@(Percent(row))%"></span>
+                <span class="analytics-value">@row.Value</span>
+            </span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Icon { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<AnalyticsRowModel> Rows { get; set; } = [];
+
+    private static int Percent(AnalyticsRowModel row) =>
+        row.Maximum <= 0 ? 0 : Math.Clamp(row.Value * 100 / row.Maximum, 6, 100);
+}

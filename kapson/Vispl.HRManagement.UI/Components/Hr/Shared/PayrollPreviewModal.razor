@@ -1,0 +1,119 @@
+@using Vispl.HRManagement.Contracts.Admin
+
+@*
+    S09 — Salary Preview. A printable summary document with an approval gate: "Approve & Proceed"
+    locks the month (scopedocs/web-portal/08 §8).
+*@
+
+<div class="hr-modal-backdrop" @onclick="OnClose"></div>
+
+<div class="pay-modal wide" role="dialog" aria-modal="true" aria-label="Salary Preview">
+    <div class="pay-modal-head blue">
+        <h2>Salary Preview - @Workspace.MonthLabel</h2>
+        <button type="button" class="pay-modal-close" aria-label="Close" @onclick="OnClose">✕</button>
+    </div>
+
+    <div class="pay-preview-bar">
+        <strong>Payroll Preview - @Workspace.MonthLabel</strong>
+        <span class="pay-preview-tools">
+            <select disabled title="Only the summary view is designed">
+                <option>👁 Summary View</option>
+            </select>
+            <button type="button" class="pay-btn outline small" @onclick="OnPrint">🖨 Print</button>
+            <button type="button" class="pay-btn primary small" @onclick="OnExport">⬇ Export Excel</button>
+            <button type="button" class="pay-btn outline small green-text" disabled title="Sending payroll by email is not configured yet">✉ Send</button>
+        </span>
+    </div>
+
+    <div class="pay-modal-body grey">
+        @if (Error is not null)
+        {
+            <div class="hr-alert error compact">@Error</div>
+        }
+
+        <article id="pay-preview-document" class="pay-document">
+            <header class="pay-letterhead">
+                <div>
+                    <h3>@Workspace.TenantDisplayName</h3>
+                    <small>@Workspace.TenantDisplayName · Payroll Department</small>
+                </div>
+                <div class="pay-letterhead-period">
+                    <strong>@Workspace.MonthLabel</strong>
+                    <small>PAYROLL SUMMARY</small>
+                </div>
+            </header>
+
+            <div class="pay-doc-tiles">
+                <div><span>Total Employees</span><strong>@Workspace.Summary.TotalEmployees</strong></div>
+                <div><span>Total Gross Payroll</span><strong>@PayrollFormat.Rupees(Workspace.GrandTotal.Gross)</strong></div>
+                <div><span>Total Net Payable</span><strong class="pay-net">@PayrollFormat.Rupees(Workspace.GrandTotal.NetPayable)</strong></div>
+                <div><span>Total Deductions</span><strong class="pay-minus">@PayrollFormat.Rupees(Workspace.GrandTotal.Deductions)</strong></div>
+                <div><span>Generated</span><strong>@Workspace.Summary.Generated</strong></div>
+                <div><span>Pending</span><strong class="pay-amber">@Workspace.Summary.Pending</strong></div>
+            </div>
+
+            <table class="pay-table pay-doc-table">
+                <thead>
+                    <tr>
+                        <th>Employee</th><th>Dept</th><th>Division</th><th>Work Days</th><th>Basic</th>
+                        <th>Gross</th><th>Deductions</th><th>Net Payable</th><th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Workspace.Employees)
+                    {
+                        <tr @key="row.EmployeeId">
+                            <td>
+                                <span class="pay-person">
+                                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                                    <span><strong>@row.DisplayName</strong><small>@row.EmployeeNumber</small></span>
+                                </span>
+                            </td>
+                            <td>@row.DepartmentName</td>
+                            <td>@row.DivisionName</td>
+                            <td>@row.WorkedDays/@row.ExpectedDays</td>
+                            <td>@PayrollFormat.Rupees(row.Amounts.Basic)</td>
+                            <td class="strong">@PayrollFormat.Rupees(row.Amounts.Gross)</td>
+                            <td class="pay-minus">@PayrollFormat.Rupees(row.Amounts.Deductions)</td>
+                            <td class="pay-net">@PayrollFormat.Rupees(row.Amounts.NetPayable)</td>
+                            <td><span class="pay-status @row.Status.ToLowerInvariant()">● @row.Status</span></td>
+                        </tr>
+                    }
+                    @if (Workspace.Employees.Count == 0)
+                    {
+                        <tr><td colspan="9" class="pay-empty">Nobody is in scope for this month.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </article>
+    </div>
+
+    <div class="pay-modal-foot">
+        <small class="hr-hint">@ApproveHint()</small>
+        <span class="pay-modal-actions">
+            <button type="button" class="pay-btn grey" @onclick="OnClose">Cancel</button>
+            <button type="button" class="pay-btn green" disabled="@(ApproveHint() is not null || IsBusy)" @onclick="OnApprove">
+                @(IsBusy ? "Approving…" : "Approve & Proceed")
+            </button>
+        </span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PayrollWorkspaceDto Workspace { get; set; } = default!;
+    [Parameter] public bool CanApprove { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnApprove { get; set; }
+    [Parameter] public EventCallback OnPrint { get; set; }
+    [Parameter] public EventCallback OnExport { get; set; }
+
+    /// <summary>Why approval is not available, or null when it is. Approval covers the whole month.</summary>
+    private string? ApproveHint() =>
+        Workspace.Run.IsApproved ? "Already approved — the month is locked."
+        : !CanApprove ? "Approving payroll needs PAYROLL.APPROVE."
+        : Workspace.Summary.Generated == 0 ? "Generate salaries before approving."
+        : Workspace.Summary.Pending > 0 ? $"{Workspace.Summary.Pending} employee(s) still pending — generate them first."
+        : null;
+}

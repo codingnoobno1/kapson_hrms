@@ -1,0 +1,219 @@
+@page "/admin/masters"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject IMasterDataService MasterDataService
+
+<PageTitle>HR Masters | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="masters" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">CONFIGURATION</span>
+                <h1>HR Masters</h1>
+                <p>Configure all controlled-value lists used across the HR platform — employee, payroll, leave, organisation and recruitment.</p>
+            </div>
+            <div class="admin-context-bar-inline">
+                <label>Client
+                    <select value="@TenantKey" @onchange="ChangeTenant">
+                        @foreach (var t in Tenants) { <option value="@t.TenantKey">@t.DisplayName</option> }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        <div class="admin-masters-shell">
+
+            <!-- LEFT: grouped category sidebar -->
+            <aside class="admin-masters-sidebar">
+                @foreach (var (group, icon, cats) in MasterCategories.Groups)
+                {
+                    <div class="admin-masters-group">
+                        <span class="admin-masters-group-label">@icon @group</span>
+                        @foreach (var cat in cats)
+                        {
+                            <button type="button"
+                                    class="admin-masters-cat-btn @(SelectedCategory == cat ? "active" : null)"
+                                    @onclick="() => SelectCategory(cat)">
+                                <span class="admin-masters-cat-name">@MasterCategories.DisplayName(cat)</span>
+                                <span class="admin-masters-cat-count">@CountOf(cat)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </aside>
+
+            <!-- CENTRE: values list -->
+            <section class="admin-masters-list-panel admin-panel">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@VisibleItems.Count</span>
+                        <h2>@MasterCategories.DisplayName(SelectedCategory)</h2>
+                    </div>
+                    <button class="admin-button secondary" type="button" @onclick="NewOption">+ Add value</button>
+                </div>
+                <div class="admin-master-list">
+                    @foreach (var item in VisibleItems)
+                    {
+                        <button type="button"
+                                class="admin-master-item @(EditorModel.Id == item.Id ? "active" : null)"
+                                @onclick="() => EditOption(item)">
+                            <code>@item.Code</code>
+                            <span>
+                                <strong>@item.Name</strong>
+                                <small>Sort @item.SortOrder</small>
+                            </span>
+                            <em class="@(item.IsActive ? "active" : null)">@(item.IsActive ? "Active" : "Inactive")</em>
+                        </button>
+                    }
+                    @if (!VisibleItems.Any())
+                    {
+                        <div class="admin-empty-state">No values yet. Click <strong>Add value</strong> to create the first entry.</div>
+                    }
+                </div>
+            </section>
+
+            <!-- RIGHT: editor -->
+            <section class="admin-masters-editor-panel admin-panel">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@(EditorModel.Id == 0 ? "NEW" : EditorModel.Id.ToString())</span>
+                        <h2>@(EditorModel.Id == 0 ? "Add value" : "Edit value")</h2>
+                    </div>
+                </div>
+                <EditForm Model="EditorModel" OnValidSubmit="SaveAsync" FormName="master-editor">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="admin-validation" />
+                    <div class="admin-form-grid">
+                        <label>
+                            Code
+                            <InputText @bind-Value="EditorModel.Code" placeholder="EXAMPLE_CODE" />
+                            <small>Uppercase letters, numbers and underscores only.</small>
+                        </label>
+                        <label>
+                            Display name
+                            <InputText @bind-Value="EditorModel.Name" placeholder="Example value" />
+                        </label>
+                        <label>
+                            Sort order
+                            <InputNumber @bind-Value="EditorModel.SortOrder" />
+                        </label>
+                        <label class="admin-check">
+                            <InputCheckbox @bind-Value="EditorModel.IsActive" />
+                            <span>Available for selection</span>
+                        </label>
+                    </div>
+                    <div class="admin-form-actions admin-form-gap">
+                        <button class="admin-button primary" type="submit" disabled="@IsSaving">
+                            @(IsSaving ? "Saving…" : "Save value")
+                        </button>
+                        @if (EditorModel.Id != 0)
+                        {
+                            <button class="admin-button secondary" type="button" @onclick="NewOption">Clear / New</button>
+                        }
+                    </div>
+                </EditForm>
+                @if (EditorModel.Id != 0)
+                {
+                    <div class="admin-form-meta">
+                        <small>Last saved: @EditorModel.UpdatedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
+                    </div>
+                }
+            </section>
+
+        </div>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tenant")] public string? RequestedTenant { get; set; }
+    [SupplyParameterFromQuery(Name = "cat")] public string? RequestedCategory { get; set; }
+
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<MasterOptionDto> Items { get; set; } = [];
+    private string TenantKey { get; set; } = "kapson";
+    private string SelectedCategory { get; set; } = MasterCategories.Gender;
+    private MasterOptionDto EditorModel { get; set; } = new();
+    private bool IsSaving { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+
+    private List<MasterOptionDto> VisibleItems =>
+        Items.Where(i => i.Category == SelectedCategory)
+             .OrderBy(i => i.SortOrder).ThenBy(i => i.Name)
+             .ToList();
+
+    private int CountOf(string cat) => Items.Count(i => i.Category == cat);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = ResolveTenant(RequestedTenant);
+        await RefreshAsync();
+
+        var startCat = MasterCategories.All.Contains(RequestedCategory ?? "")
+            ? RequestedCategory!
+            : MasterCategories.Gender;
+        SelectCategory(startCat);
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        TenantKey = ResolveTenant(args.Value?.ToString());
+        await RefreshAsync();
+        SelectCategory(SelectedCategory);
+    }
+
+    private void SelectCategory(string category)
+    {
+        SelectedCategory = category;
+        StatusMessage = null;
+        var first = VisibleItems.FirstOrDefault();
+        if (first is null) NewOption(); else EditOption(first);
+    }
+
+    private void NewOption() => EditorModel = new()
+    {
+        TenantKey = TenantKey,
+        Category = SelectedCategory,
+        IsActive = true,
+        SortOrder = VisibleItems.Count + 1
+    };
+
+    private void EditOption(MasterOptionDto item) => EditorModel = new()
+    {
+        Id = item.Id, TenantKey = item.TenantKey, Category = item.Category,
+        Code = item.Code, Name = item.Name, SortOrder = item.SortOrder,
+        IsActive = item.IsActive, UpdatedUtc = item.UpdatedUtc
+    };
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            var id = await MasterDataService.SaveAsync(EditorModel);
+            await RefreshAsync();
+            EditOption(Items.Single(i => i.Id == id));
+            StatusClass = "success";
+            StatusMessage = $"{MasterCategories.DisplayName(SelectedCategory)} value saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task RefreshAsync() => Items = await MasterDataService.GetAllAsync(TenantKey);
+
+    private string ResolveTenant(string? requested) =>
+        Tenants.Any(t => t.TenantKey == requested) ? requested!
+        : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+}

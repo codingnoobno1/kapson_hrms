@@ -1,0 +1,313 @@
+@page "/hr/reports/salary-register"
+@page "/hr/{TenantKey}/reports/salary-register"
+@attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using System.Text
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IEmployeeReportService Reports
+@inject IExcelExporter Excel
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
+
+<PageTitle>Employees Salary Register | HR Portal</PageTitle>
+
+@*
+    Named-only destination (scopedocs/web-portal/10 §1). The register reads generated payroll lines
+    as stored — the figures a month was actually generated, paid or transferred at — not a
+    recalculation, so it stays true after grades or attendance change.
+*@
+<HrPageShell ActivePage="people" TenantKey="@TenantKey"
+             Kicker="EMPLOYEE REPORT" Title="Employees Salary Register"
+             Subtitle="The month's generated salaries, component by component, with payment status."
+             Error="@LoadError">
+    <Filters>
+        <label>
+            Month
+            <select value="@Month" @onchange="args => ChangeAsync(() => Month = int.Parse(Text(args)))">
+                @for (var month = 1; month <= 12; month++)
+                {
+                    <option value="@month">@CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month)</option>
+                }
+            </select>
+        </label>
+        <label>
+            Year
+            <select value="@Year" @onchange="args => ChangeAsync(() => Year = int.Parse(Text(args)))">
+                @for (var year = DateTime.Today.Year - 3; year <= DateTime.Today.Year + 1; year++)
+                {
+                    <option value="@year">@year</option>
+                }
+            </select>
+        </label>
+        <label>
+            Division
+            <select value="@DivisionCode" @onchange="args => ChangeAsync(() => DivisionCode = Text(args))">
+                <option value="">All divisions</option>
+                @foreach (var option in Options(MasterCategories.Division))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Department
+            <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
+                <option value="">All departments</option>
+                @foreach (var option in Options(MasterCategories.Department))
+                {
+                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Payment
+            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                <option value="">All</option>
+                <option value="@PayrollLineStatuses.Generated">Generated</option>
+                <option value="@PayrollLineStatuses.Paid">Paid</option>
+                <option value="@PayrollLineStatuses.Transferred">Transferred</option>
+            </select>
+        </label>
+        <label>
+            Search
+            <input type="search" placeholder="Name or number" value="@Search" @onchange="args => ChangeAsync(() => Search = Text(args))" />
+        </label>
+        <button class="hr-button small ghost" type="button" disabled="@(!CanExport || Register is null || Register.Rows.Count == 0)"
+                title="@(CanExport ? null : "Needs REPORTS.EXPORT")" @onclick="ExportAsync">⬇ Export</button>
+        <button class="hr-button small ghost" type="button" disabled="@(Register is null || Register.Rows.Count == 0)" @onclick="PrintAsync">🖨 Print</button>
+    </Filters>
+
+    <ChildContent>
+        @if (IsLoading)
+        {
+            <p class="hr-empty">Loading salary register…</p>
+        }
+        else if (Register is { } register)
+        {
+            @if (!register.RunExists)
+            {
+                <div class="hr-alert warning compact">
+                    No payroll has been generated for @register.MonthLabel.
+                    <a href="@Href("payroll/generate")">Generate it</a> first.
+                </div>
+            }
+            else
+            {
+                <div class="pay-banner @(register.IsApproved ? "approved" : "draft")">
+                    @if (register.IsApproved)
+                    {
+                        <text>✅ @register.MonthLabel payroll approved on @register.ApprovedUtc?.ToLocalTime().ToString("dd MMM yyyy").</text>
+                    }
+                    else
+                    {
+                        <text>⏳ @register.MonthLabel payroll is generated but not yet approved — figures may still change.</text>
+                    }
+                </div>
+
+                <section class="org-tiles">
+                    <div><span>Employees</span><strong>@register.Rows.Count</strong></div>
+                    <div><span>Gross</span><strong>@PayrollFormat.Rupees(register.Totals.Gross)</strong></div>
+                    <div><span>Deductions</span><strong class="pay-minus">@PayrollFormat.Rupees(register.Totals.Deductions)</strong></div>
+                    <div><span>Net payable</span><strong class="pay-net">@PayrollFormat.Rupees(register.Totals.NetPayable)</strong></div>
+                    <div><span>Paid or transferred</span><strong>@register.Rows.Count(row => row.Status != PayrollLineStatuses.Generated)</strong><small>of @register.Rows.Count</small></div>
+                </section>
+
+                <section class="hr-panel">
+                    @if (register.Rows.Count == 0)
+                    {
+                        <p class="hr-empty">No salary lines match these filters.</p>
+                    }
+                    else
+                    {
+                        <div id="rep-print-area" class="pay-table-scroll">
+                            <table class="pay-table">
+                                <thead>
+                                    <tr>
+                                        <th>Employee</th><th>Department</th><th>Division</th><th>Designation</th><th>Grade</th><th>Paid Days</th>
+                                        <th>Basic</th><th>HRA</th><th>Conv.</th><th>Other</th><th>Gross</th>
+                                        <th>PF</th><th>ESI</th><th>TDS</th><th>PT/Other</th><th>Deductions</th><th>Net</th>
+                                        <th>Status</th><th>Paid On</th><th>Mode</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in register.Rows)
+                                    {
+                                        <tr @key="row.EmployeeId">
+                                            <td>
+                                                <span class="pay-person">
+                                                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                                                    <span><strong>@row.DisplayName</strong><small>@row.EmployeeNumber</small></span>
+                                                </span>
+                                            </td>
+                                            <td>@row.DepartmentName</td>
+                                            <td>@row.DivisionName</td>
+                                            <td>@row.Designation</td>
+                                            <td>@row.GradeCode</td>
+                                            <td>@row.PayableDays/@row.DaysInMonth</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Basic)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Hra)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Conveyance)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.OtherAllowances)</td>
+                                            <td class="strong">@PayrollFormat.Rupees(row.Amounts.Gross)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Pf)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Esi)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.Tds)</td>
+                                            <td>@PayrollFormat.Rupees(row.Amounts.OtherDeductions)</td>
+                                            <td class="pay-minus">@PayrollFormat.Rupees(row.Amounts.Deductions)</td>
+                                            <td class="pay-net">@PayrollFormat.Rupees(row.Amounts.NetPayable)</td>
+                                            <td><span class="pay-status @row.Status.ToLowerInvariant()">● @row.Status</span></td>
+                                            <td>@(row.PaidOn?.ToString("dd MMM yyyy") ?? "—")</td>
+                                            <td>@(row.PaymentMode ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="pay-total">
+                                        <td>Total</td><td></td><td></td><td></td><td></td><td></td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Basic)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Hra)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Conveyance)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.OtherAllowances)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Gross)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Pf)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Esi)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.Tds)</td>
+                                        <td>@PayrollFormat.Rupees(register.Totals.OtherDeductions)</td>
+                                        <td class="pay-minus">@PayrollFormat.Rupees(register.Totals.Deductions)</td>
+                                        <td class="pay-net">@PayrollFormat.Rupees(register.Totals.NetPayable)</td>
+                                        <td></td><td></td><td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </section>
+            }
+        }
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private SalaryRegisterDto? Register;
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+
+    private int Month = DateTime.Today.Month;
+    private int Year = DateTime.Today.Year;
+    private string DivisionCode = string.Empty;
+    private string DepartmentCode = string.Empty;
+    private string Status = string.Empty;
+    private string Search = string.Empty;
+
+    private bool IsLoading = true;
+    private bool CanExport;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            CanExport = await PortalCaller.HasAsync("REPORTS.EXPORT");
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            Register = await Reports.GetSalaryRegisterAsync(caller, new EmployeeReportQuery
+            {
+                Month = Month,
+                Year = Year,
+                DivisionCode = DivisionCode,
+                DepartmentCode = DepartmentCode,
+                Status = Status,
+                Search = Search
+            });
+            LoadError = null;
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            Register = null;
+            LoadError = $"This account does not hold {denied.Permission}, so the salary register cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ChangeAsync(Action change)
+    {
+        change();
+        await LoadAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        if (Register is null)
+        {
+            return;
+        }
+
+        var rows = Register.Rows;
+        var total = PayrollAmountsDto.Sum(rows.Select(row => row.Amounts));
+        var monthLabel = new DateTime(Year, Month, 1).ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+
+        var sheet = new ExcelSheet("Salary register", $"Employees salary register — {monthLabel}",
+            $"{rows.Count} employee(s) · exported {DateTime.Now:dd MMM yyyy, h:mm tt}",
+            [
+                new("Employee Number"), new("Name"), new("Department"), new("Division"), new("Designation"), new("Grade"),
+                new("Paid Days", ExcelFormat.Decimal), new("Days In Month", ExcelFormat.Integer),
+                new("Basic", ExcelFormat.Money), new("HRA", ExcelFormat.Money), new("Conveyance", ExcelFormat.Money),
+                new("Other Allowances", ExcelFormat.Money), new("Gross", ExcelFormat.Money), new("PF", ExcelFormat.Money),
+                new("ESI", ExcelFormat.Money), new("TDS", ExcelFormat.Money), new("PT/Other", ExcelFormat.Money),
+                new("Deductions", ExcelFormat.Money), new("Net Payable", ExcelFormat.Money), new("Status"),
+                new("Paid On", ExcelFormat.Date), new("Payment Mode")
+            ],
+            rows.Select(row =>
+            {
+                var amounts = row.Amounts;
+                return ExcelDownload.Row(row.EmployeeNumber, row.DisplayName, row.DepartmentName, row.DivisionName, row.Designation, row.GradeCode,
+                    row.PayableDays, row.DaysInMonth, amounts.Basic, amounts.Hra, amounts.Conveyance, amounts.OtherAllowances, amounts.Gross,
+                    amounts.Pf, amounts.Esi, amounts.Tds, amounts.OtherDeductions, amounts.Deductions, amounts.NetPayable, row.Status, row.PaidOn, row.PaymentMode);
+            }).ToList(),
+            ExcelDownload.Row("Total", null, null, null, null, null, null, null, total.Basic, total.Hra, total.Conveyance, total.OtherAllowances,
+                total.Gross, total.Pf, total.Esi, total.Tds, total.OtherDeductions, total.Deductions, total.NetPayable, null, null, null));
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"salary-register-{Year}-{Month:00}.xlsx", sheet);
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("hrPayroll.print", "#rep-print-area");
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(option => option.Category == category && option.IsActive)
+            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+
+    private static string Text(ChangeEventArgs args) => args.Value?.ToString() ?? string.Empty;
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

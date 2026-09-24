@@ -1,0 +1,84 @@
+@inject NavigationManager Navigation
+
+<div class="problem-view">
+    <div class="problem-icon"><AppIcon Name="@Icon" Size="44" StrokeWidth="1.4" /></div>
+    <h2 class="problem-title">@Title</h2>
+    <p class="problem-body">@Body</p>
+
+    @if (Problem?.RequiredComponents.Count > 0)
+    {
+        <div class="problem-panel">
+            <span class="problem-panel-label">Still required on the server</span>
+            <ul class="problem-list">
+                @foreach (var component in Problem.RequiredComponents)
+                {
+                    <li>@component</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="problem-actions">
+        @if (OnRetry.HasDelegate)
+        {
+            <button class="btn-primary" type="button" @onclick="OnRetry">Try again</button>
+        }
+        @if (Outcome is ApiOutcome.Offline or ApiOutcome.Failed)
+        {
+            <button class="btn-ghost" type="button" @onclick="@(() => Navigation.NavigateTo("/settings"))">
+                Check connection
+            </button>
+        }
+        @if (Outcome is ApiOutcome.Unauthenticated)
+        {
+            <button class="btn-ghost" type="button" @onclick="@(() => Navigation.NavigateTo("/signin"))">
+                Sign in
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ApiOutcome Outcome { get; set; }
+    [Parameter] public ProblemInfo? Problem { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    private string Icon => Outcome switch
+    {
+        ApiOutcome.FeatureNotReady => "alert-circle",
+        ApiOutcome.Unauthenticated => "lock",
+        ApiOutcome.Forbidden => "ban",
+        ApiOutcome.NotFound => "search",
+        ApiOutcome.Offline => "wifi-off",
+        _ => "alert-triangle"
+    };
+
+    private string Title => Outcome switch
+    {
+        ApiOutcome.FeatureNotReady => Problem?.Module is { Length: > 0 } module
+            ? $"{module} is not ready"
+            : "Not ready yet",
+        ApiOutcome.Unauthenticated => "Sign in required",
+        ApiOutcome.Forbidden => Problem?.Code == "TENANT_CLAIM_REQUIRED"
+            ? "Company not resolved"
+            : "No permission",
+        ApiOutcome.NotFound => "Not found",
+        ApiOutcome.Offline => "Server unreachable",
+        _ => "Something went wrong"
+    };
+
+    private string Body => Outcome switch
+    {
+        ApiOutcome.FeatureNotReady =>
+            "The route exists on the server, but its business and persistence layers are not implemented yet.",
+        ApiOutcome.Unauthenticated =>
+            "This screen needs a bearer token. Sign in from the account screen once an identity authority is configured.",
+        ApiOutcome.Forbidden when Problem?.Code == "TENANT_CLAIM_REQUIRED" =>
+            "Your access token carries no tenant claim, so the server cannot scope the data to a company.",
+        ApiOutcome.Forbidden =>
+            "Your account does not hold the permission this screen requires.",
+        ApiOutcome.Offline =>
+            "The app could not reach the API. Check that the host is running and that the base address is correct.",
+        _ => Problem?.Detail ?? Problem?.Title ?? "The request could not be completed."
+    };
+}

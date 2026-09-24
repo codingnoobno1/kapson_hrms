@@ -1,0 +1,20 @@
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData">
+                <NotAuthorized>
+                    <RedirectToAdminLogin />
+                </NotAuthorized>
+                <Authorizing>
+                    <main class="not-found-page"><p>Checking access…</p></main>
+                </Authorizing>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <h1>Not found</h1>
+            <p>The requested page does not exist.</p>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

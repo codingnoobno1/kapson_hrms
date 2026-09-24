@@ -1,0 +1,198 @@
+[
+  {
+    "tenantKey": "kapson",
+    "code": "LEAVE_POLICY",
+    "title": "Leave Policy",
+    "icon": "🏖️",
+    "excerpt": "Comprehensive guide for all types of leave: entitlement, accrual, carry-forward, notice periods and the approval chain each request follows.",
+    "sections": [
+      {
+        "heading": "Leave Types & Entitlements",
+        "intro": "Our company offers comprehensive leave benefits to all employees:",
+        "points": [],
+        "subsections": [
+          {
+            "label": "1. Casual Leave (CL)",
+            "points": [
+              "Entitlement: 8-10 days per year",
+              "Used for personal requirements and emergencies",
+              "Can be carried forward up to 5 days to next year",
+              "Requires 1 day prior notice"
+            ]
+          },
+          {
+            "label": "2. Earned Leave (EL)",
+            "points": [
+              "Entitlement: 15-18 days per year",
+              "Used for vacation and rest purposes",
+              "Can be carried forward up to 10 days to next year",
+              "Minimum 1 week advance notice required"
+            ]
+          },
+          {
+            "label": "3. Sick Leave (SL)",
+            "points": [
+              "Entitlement: 7-10 days per year",
+              "For medical emergencies and illness",
+              "Medical certificate required beyond 2 consecutive days"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Applying for Leave",
+        "points": [
+          "Apply through the employee app or the HR portal; the system calculates chargeable days for you.",
+          "Give the notice period your leave type requires, except for sick leave taken on the day.",
+          "Leave of more than the configured threshold needs supporting documentation."
+        ]
+      },
+      {
+        "heading": "Approval",
+        "points": [
+          "Your reporting manager decides first; HR reviews anything that crosses a policy limit.",
+          "You are notified as soon as a decision is recorded, with the reason if it is rejected.",
+          "Approved leave can be withdrawn before it starts; after that it needs a cancellation request."
+        ]
+      }
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "ATTENDANCE_POLICY",
+    "title": "Attendance Policy",
+    "icon": "⏰",
+    "excerpt": "Guidelines for office timing, checking in and out, grace periods, late arrivals, missed punches and how corrections are requested.",
+    "sections": [
+      {
+        "heading": "Working hours",
+        "points": [
+          "Your shift defines your expected start and end time; it is shown on your attendance screen.",
+          "A grace period applies after your shift start before an arrival counts as late.",
+          "Hours are counted from the recorded punches, not from a self-declared timesheet."
+        ]
+      },
+      {
+        "heading": "Corrections",
+        "points": [
+          "A missed punch is raised as an exception on your record the day after it happens.",
+          "Request a correction with the actual times and a reason; your manager approves or rejects it.",
+          "Corrections into a closed payroll period are refused — raise them before the period locks."
+        ]
+      }
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "WORK_FROM_HOME",
+    "title": "Work From Home",
+    "icon": "🏠",
+    "excerpt": "Comprehensive guide for all types of remote working: eligibility, how to request a day, availability expectations and equipment.",
+    "sections": [
+      {
+        "heading": "Eligibility",
+        "points": [
+          "Roles that do not require a store or warehouse presence may work from home where the manager agrees.",
+          "Remote days are agreed in advance, not taken on the day, except in an emergency.",
+          "Attendance is recorded the same way whether you are in the office or at home."
+        ]
+      },
+      {
+        "heading": "While working remotely",
+        "points": [
+          "Be reachable on the company channels during your shift hours.",
+          "Company data stays on company systems; do not copy it to personal storage.",
+          "Report any equipment fault the same day so it can be replaced."
+        ]
+      }
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "CODE_OF_CONDUCT",
+    "title": "Code of Conduct",
+    "icon": "⚖️",
+    "excerpt": "Comprehensive guide for all types of workplace conduct: professional behaviour, conflicts of interest, confidentiality and escalation.",
+    "sections": [
+      {
+        "heading": "Conduct",
+        "points": [
+          "Treat colleagues, candidates and customers with respect; harassment of any kind is not tolerated.",
+          "Declare anything that could be a conflict of interest before it becomes one.",
+          "Company property and company time are used for company work."
+        ]
+      },
+      {
+        "heading": "Confidentiality",
+        "points": [
+          "Employee, candidate and customer data is confidential and is accessed only where your role requires it.",
+          "Do not share internal figures, salaries or personal data outside the people entitled to see them.",
+          "Confidentiality continues to apply after you leave."
+        ]
+      },
+      {
+        "heading": "Raising a concern",
+        "points": [
+          "Raise concerns with your manager, or with HR where that is not appropriate.",
+          "Concerns raised in good faith are protected; retaliation is itself a breach of this policy."
+        ]
+      }
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "BENEFITS_COMPENSATION",
+    "title": "Benefits & Compensation",
+    "icon": "💰",
+    "excerpt": "Comprehensive guide for all types of pay and benefit: salary structure, statutory deductions, reimbursements and the payroll calendar.",
+    "sections": [
+      {
+        "heading": "Pay",
+        "points": [
+          "Salary is paid monthly on the last working day of the month by bank transfer.",
+          "Your structure — basic, allowances and deductions — is set by your grade and shown on your payslip.",
+          "Statutory deductions (PF, ESI, TDS) are applied where they apply to you."
+        ]
+      },
+      {
+        "heading": "Claims",
+        "points": [
+          "Submit reimbursement claims with receipts within the window for the expense type.",
+          "Approved claims are paid with the next open payroll run.",
+          "Claims for a closed financial year cannot be submitted."
+        ]
+      }
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "code": "HEALTH_SAFETY",
+    "title": "Health & Safety",
+    "icon": "🛡️",
+    "excerpt": "Comprehensive guide for all types of safety obligation: reporting incidents, emergency procedure, store and warehouse safety, and first aid.",
+    "sections": [
+      {
+        "heading": "Your responsibilities",
+        "points": [
+          "Follow the safety procedure for your site; ask if you have not been shown it.",
+          "Report every incident and near miss on the day it happens, however small.",
+          "Do not operate equipment you have not been trained on."
+        ]
+      },
+      {
+        "heading": "Emergencies",
+        "points": [
+          "Know your nearest exit, assembly point and first aider.",
+          "In an evacuation, leave immediately and do not return until told it is clear.",
+          "Emergency contact numbers are posted at every site entrance."
+        ]
+      }
+    ],
+    "isPublished": true
+  }
+]

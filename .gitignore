@@ -1,0 +1,29 @@
+# Separate repository - never track here
+Crew-Management-dev/
+
+# Build output
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+
+# Local credentials - never commit
+accountconfig.md
+.env
+appsettings.*.local.json
+
+# Archives / backups
+*.rar
+*.zip
+*.7z
+
+# Local tool state and caches
+.claude/
+kapson/.dotnet-home/
+kapson/.build/
+node_modules/
+*.log
+
+# Office lock files
+~$*

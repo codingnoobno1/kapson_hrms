@@ -1,0 +1,15 @@
+@* RW-25/RW-26 KpiGradientCard in a three-across row, cycling blue → cyan → amber. *@
+<div class="kpi-row">
+    @foreach (var kpi in Kpis.Take(3))
+    {
+        <div class="kpi-card kpi-@kpi.Tone">
+            <AppIcon Name="@kpi.Icon" Size="22" StrokeWidth="1.6" Class="kpi-icon" />
+            <span class="kpi-caption">@kpi.Caption</span>
+            <span class="kpi-value">@kpi.Value</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<KpiModel> Kpis { get; set; } = [];
+}

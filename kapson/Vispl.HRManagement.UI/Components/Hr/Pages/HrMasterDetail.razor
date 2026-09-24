@@ -1,0 +1,598 @@
+@page "/hr/settings/masters/{MasterKey}"
+@page "/hr/{TenantKey}/settings/masters/{MasterKey}"
+@attribute [Authorize(Policy = "HrPortal")]
+@inject IMasterDataService MasterDataService
+@inject HrPortalCaller PortalCaller
+
+@*
+    One page for every "GenericMaster" card in HrMasterRegistry — not one page per master. The
+    route parameter (MasterKey) selects the registry entry; the entry's Categories select which
+    slice of the tenant's IMasterDataService values to show. Adding a 27th master to the design
+    means adding one line to HrMasterRegistry, not a new .razor file.
+
+    Laid out exactly as the client-locked Designation screen: blue title and breadcrumb, a card per
+    category with refresh / search / more / + Add / Set Order, an S.No. table with status pills and
+    edit / delete icons, and dialogs for add, edit and delete.
+
+    Reads go through IMasterDataService directly, exactly as /admin/masters does — this is the
+    same service and the same rows, not a second copy of the rule (CR-1 in
+    docs/employee-app/portal-integration.md). Writes are gated on MASTERS.MANAGE.
+
+    Delete retires a value (inactive) instead of removing the row: employee, payroll and leave
+    records hold these codes, and a removed code would leave them pointing at nothing.
+*@
+
+<PageTitle>@(Entry?.Title ?? "Setting") | HR Portal</PageTitle>
+
+<HrSettingsPage TenantKey="@TenantKey" Title="@(Entry?.Title ?? "Not found")" Error="@PageError">
+    @if (Entry is null)
+    {
+        <section class="hr-panel hr-crud-card">
+            <p class="hr-empty">
+                There's no configuration screen named "@MasterKey".
+                <a href="@BackLink()">Back to System Settings</a>.
+            </p>
+        </section>
+    }
+    else if (Entry.Kind != HrMasterKind.GenericMaster)
+    {
+        <section class="hr-panel hr-crud-card">
+            <div class="hr-crud-head"><h2>@Entry.Title</h2></div>
+            <div class="hr-alert warning compact">
+                @(Entry.Kind == HrMasterKind.NotBuilt
+                    ? $"This configuration screen isn't available yet — {Entry.Title} has no backend module behind it."
+                    : $"{Entry.Title} is configured through its own module rather than a simple value list.")
+            </div>
+            <p class="hr-empty"><a href="@BackLink()">Back to System Settings</a></p>
+        </section>
+    }
+    else
+    {
+        @foreach (var category in Entry.Categories)
+        {
+            var label = CardTitle(category);
+            var isOrdering = OrderingCategory == category;
+            var rows = isOrdering ? OrderDraft : VisibleRows(category);
+            var all = Values.TryGetValue(category, out var list) ? list : [];
+            var parentCategory = MasterCategories.ParentOf(category);
+            var showDescription = Entry.ShowDescription;
+            var columnCount = 4 + (CanManage ? 1 : 0) + (parentCategory is null ? 0 : 1) + (showDescription ? 1 : 0);
+
+            <section class="hr-panel hr-crud-card">
+                <div class="hr-crud-head">
+                    <h2>@label</h2>
+                    <div class="hr-crud-tools">
+                        @if (isOrdering)
+                        {
+                            <span class="hr-crud-hint">Use the arrows, then save.</span>
+                            <button class="hr-button small ghost" type="button" @onclick="CancelOrdering" disabled="@IsSaving">Cancel</button>
+                            <button class="hr-button small" type="button" @onclick="SaveOrderAsync" disabled="@IsSaving">
+                                @(IsSaving ? "Saving…" : "Save order")
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="hr-icon-button" type="button" title="Refresh" aria-label="Refresh"
+                                    @onclick="LoadAsync" disabled="@IsBusy"><HrIcon Name="refresh" /></button>
+                            <button class="hr-icon-button @(SearchCategory == category ? "active" : "")" type="button"
+                                    title="Search" aria-label="Search" @onclick="() => ToggleSearch(category)"><HrIcon Name="search" /></button>
+                            <div class="hr-overflow">
+                                <button class="hr-icon-button @(OverflowCategory == category ? "active" : "")" type="button"
+                                        title="More options" aria-label="More options"
+                                        @onclick="() => OverflowCategory = OverflowCategory == category ? null : category"><HrIcon Name="more-vertical" /></button>
+                                @if (OverflowCategory == category)
+                                {
+                                    <div class="hr-overflow-menu">
+                                        <label class="hr-check">
+                                            <input type="checkbox" checked="@ShowInactive" @onchange="args => ShowInactive = args.Value is true" />
+                                            <span>Show inactive</span>
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                            @if (CanManage)
+                            {
+                                <button class="hr-button small" type="button" @onclick="() => OpenNew(category)">
+                                    <HrIcon Name="plus" Size="14" StrokeWidth="2.4" /> Add @label
+                                </button>
+                                <button class="hr-button small ghost" type="button" @onclick="() => StartOrdering(category)"
+                                        disabled="@(all.Count < 2 || OrderingCategory is not null)">
+                                    <HrIcon Name="move" Size="14" /> Set Order
+                                </button>
+                            }
+                        }
+                    </div>
+                </div>
+
+                @if (SearchCategory == category && !isOrdering)
+                {
+                    <input class="hr-crud-search" type="search" placeholder="Search"
+                           value="@Search" @oninput="args => Search = args.Value?.ToString() ?? string.Empty" />
+                }
+
+                @if (ListError is not null)
+                {
+                    <div class="hr-alert error compact">@ListError</div>
+                }
+
+                @if (IsBusy)
+                {
+                    <div class="hr-table-skeleton">
+                        @for (var index = 0; index < 5; index++)
+                        {
+                            <span></span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="hr-table-scroll">
+                        <table class="hr-table hr-crud-table">
+                            <thead>
+                                <tr>
+                                    <th class="hr-col-narrow">S.No.</th>
+                                    <th>@ItemLabel(category) Name</th>
+                                    <th>Code</th>
+                                    @if (parentCategory is not null)
+                                    {
+                                        <th>@(Entry.ParentLabel ?? MasterCategories.DisplayName(parentCategory))</th>
+                                    }
+                                    @if (showDescription)
+                                    {
+                                        <th>Description</th>
+                                    }
+                                    <th>Status</th>
+                                    @if (CanManage)
+                                    {
+                                        <th class="hr-col-actions">@(isOrdering ? "Move" : "Actions")</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (rows.Count == 0)
+                                {
+                                    <tr class="hr-crud-empty-row">
+                                        <td colspan="@columnCount">
+                                            @(all.Count == 0
+                                                ? $"No {label.ToLowerInvariant()} values yet."
+                                                : "Nothing matches — clear the search or show inactive values.")
+                                        </td>
+                                    </tr>
+                                }
+
+                                @for (var index = 0; index < rows.Count; index++)
+                                {
+                                    var rowIndex = index;
+                                    var option = rows[rowIndex];
+
+                                    <tr>
+                                        <td class="hr-col-narrow">@(rowIndex + 1)</td>
+                                        <td>@option.Name</td>
+                                        <td>@option.Code</td>
+                                        @if (parentCategory is not null)
+                                        {
+                                            <td>@ParentName(parentCategory, option.ParentCode)</td>
+                                        }
+                                        @if (showDescription)
+                                        {
+                                            <td class="hr-crud-description">@option.Description</td>
+                                        }
+                                        <td>
+                                            <span class="hr-status-pill @(option.IsActive ? "active" : "inactive")">
+                                                @(option.IsActive ? "ACTIVE" : "INACTIVE")
+                                            </span>
+                                        </td>
+                                        @if (CanManage)
+                                        {
+                                            <td class="hr-col-actions">
+                                                @if (isOrdering)
+                                                {
+                                                    <button class="hr-action-icon" type="button" aria-label="Move @option.Name up"
+                                                            disabled="@(rowIndex == 0)" @onclick="() => Move(rowIndex, -1)"><HrIcon Name="arrow-up" /></button>
+                                                    <button class="hr-action-icon" type="button" aria-label="Move @option.Name down"
+                                                            disabled="@(rowIndex == rows.Count - 1)" @onclick="() => Move(rowIndex, 1)"><HrIcon Name="arrow-down" /></button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="hr-action-icon" type="button" title="Edit" aria-label="Edit @option.Name"
+                                                            @onclick="() => OpenEdit(option)"><HrIcon Name="edit" Size="17" /></button>
+                                                    <button class="hr-action-icon danger" type="button" title="Delete" aria-label="Delete @option.Name"
+                                                            disabled="@(!option.IsActive)" @onclick="() => AskDelete(option)"><HrIcon Name="trash" Size="17" /></button>
+                                                }
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (!CanManage)
+                    {
+                        <p class="hr-crud-hint" style="margin-top:10px">Read-only — changing these values needs MASTERS.MANAGE.</p>
+                    }
+                }
+            </section>
+        }
+    }
+</HrSettingsPage>
+
+@if (Editor is { } editor)
+{
+    var editorTitle = $"{(editor.Id == 0 ? "Add" : "Edit")} {CardTitle(editor.Category)}";
+
+    <div class="hr-modal-backdrop" @onclick="CloseEditor"></div>
+
+    <div class="hr-modal" role="dialog" aria-modal="true" aria-label="@editorTitle">
+        <div class="hr-modal-head">
+            <h2>@editorTitle</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseEditor">✕</button>
+        </div>
+
+        <EditForm Model="editor" OnValidSubmit="SaveAsync" FormName="hr-master-editor" class="hr-modal-form">
+            <DataAnnotationsValidator />
+
+            <div class="hr-modal-body">
+                @if (SaveError is not null)
+                {
+                    <div class="hr-alert error compact">@SaveError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <div class="hr-form-grid">
+                    <label>
+                        @ItemLabel(editor.Category) Name
+                        <InputText @bind-Value="editor.Name" />
+                    </label>
+                    <label>
+                        Code
+                        <InputText @bind-Value="editor.Code" placeholder="CAPITALS_OR_DIGITS" disabled="@(editor.Id != 0)" />
+                        @if (editor.Id != 0)
+                        {
+                            <small class="hr-hint">A code can't change once records use it.</small>
+                        }
+                    </label>
+                    @if (MasterCategories.ParentOf(editor.Category) is { } editorParent)
+                    {
+                        <label>
+                            @(Entry?.ParentLabel ?? MasterCategories.DisplayName(editorParent))
+                            <InputSelect @bind-Value="editor.ParentCode">
+                                <option value="">Select @((Entry?.ParentLabel ?? MasterCategories.DisplayName(editorParent)).ToLowerInvariant())</option>
+                                @foreach (var parent in ParentOptions(editorParent, editor.ParentCode))
+                                {
+                                    <option value="@parent.Code">@parent.Name@(parent.IsActive ? "" : " (inactive)")</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    }
+                    @if (Entry?.ShowDescription == true)
+                    {
+                        <label class="hr-form-wide">
+                            Description
+                            <InputTextArea @bind-Value="editor.Description" rows="3" />
+                        </label>
+                    }
+                    <label class="hr-check">
+                        <InputCheckbox @bind-Value="editor.IsActive" />
+                        <span>Active</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="hr-modal-foot">
+                <span></span>
+                <div class="hr-modal-actions">
+                    <button type="button" class="hr-button small ghost" @onclick="CloseEditor">Cancel</button>
+                    <button type="submit" class="hr-button small" disabled="@IsSaving">@(IsSaving ? "Saving…" : "Save")</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (PendingDelete is { } doomed)
+{
+    <div class="hr-modal-backdrop" @onclick="() => PendingDelete = null"></div>
+
+    <div class="hr-modal hr-modal-small" role="dialog" aria-modal="true" aria-label="Delete @CardTitle(doomed.Category)">
+        <div class="hr-modal-head">
+            <h2>Delete @CardTitle(doomed.Category)</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="() => PendingDelete = null">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            <p>
+                Delete <strong>@doomed.Name</strong> (@doomed.Code)? It will no longer be offered anywhere.
+                Records that already use it keep it, so it is marked inactive rather than erased — turn
+                on “Show inactive” to see or restore it.
+            </p>
+        </div>
+        <div class="hr-modal-foot">
+            <span></span>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="() => PendingDelete = null">Cancel</button>
+                <button type="button" class="hr-button small danger" disabled="@IsSaving" @onclick="ConfirmDeleteAsync">
+                    @(IsSaving ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+    [Parameter] public string MasterKey { get; set; } = string.Empty;
+
+    private HrMasterEntry? Entry;
+    private readonly Dictionary<string, List<MasterOptionDto>> Values = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+
+    private MasterOptionDto? Editor;
+    private MasterOptionDto? PendingDelete;
+    private List<MasterOptionDto> OrderDraft = [];
+
+    private string? OrderingCategory;
+    private string? SearchCategory;
+    private string? OverflowCategory;
+    private string Search = string.Empty;
+    private bool ShowInactive;
+
+    private bool CanManage;
+    private bool IsBusy = true;
+    private bool IsSaving;
+    private string? PageError;
+    private string? ListError;
+    private string? SaveError;
+    private string _resolvedTenantKey = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Entry = HrMasterRegistry.Find(MasterKey);
+        OrderingCategory = null;
+        SearchCategory = null;
+        Search = string.Empty;
+
+        if (Entry is null || Entry.Kind != HrMasterKind.GenericMaster)
+        {
+            IsBusy = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        IsBusy = true;
+        PageError = null;
+        ListError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            _resolvedTenantKey = caller.TenantKey;
+            CanManage = await PortalCaller.HasAsync("MASTERS.MANAGE");
+
+            var all = await MasterDataService.GetAllAsync(_resolvedTenantKey, CancellationToken.None);
+            AllOptions = all;
+
+            Values.Clear();
+            foreach (var category in Entry!.Categories)
+            {
+                Values[category] = all
+                    .Where(item => string.Equals(item.Category, category, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(item => item.SortOrder)
+                    .ThenBy(item => item.Name)
+                    .ToList();
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Not signed in, or no tenant on the account — the whole page is meaningless, not just a card.
+            PageError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>A single-category card is titled as the menu card; a multi-category page names each list.</summary>
+    private string CardTitle(string category) =>
+        Entry is { Categories.Count: 1 } ? Entry.Title : MasterCategories.DisplayName(category);
+
+    /// <summary>What one value is called in the Name column and the editor ("Skill Name").</summary>
+    private string ItemLabel(string category) =>
+        Entry is { Categories.Count: 1, ItemLabel: { } itemLabel } ? itemLabel : CardTitle(category);
+
+    private string ParentName(string parentCategory, string? parentCode) =>
+        string.IsNullOrWhiteSpace(parentCode)
+            ? "—"
+            : AllOptions.FirstOrDefault(item => item.Category == parentCategory && item.Code == parentCode)?.Name ?? parentCode;
+
+    /// <summary>Active parents, plus the current one if it has since been retired, so an edit never silently drops it.</summary>
+    private IEnumerable<MasterOptionDto> ParentOptions(string parentCategory, string? currentCode) =>
+        AllOptions
+            .Where(item => item.Category == parentCategory && (item.IsActive || item.Code == currentCode))
+            .OrderBy(item => item.SortOrder)
+            .ThenBy(item => item.Name);
+
+    private List<MasterOptionDto> VisibleRows(string category)
+    {
+        var rows = Values.TryGetValue(category, out var list) ? list : [];
+        var term = SearchCategory == category ? Search.Trim() : string.Empty;
+        var parentCategory = MasterCategories.ParentOf(category);
+
+        return rows
+            .Where(option => ShowInactive || option.IsActive)
+            .Where(option => term.Length == 0
+                || option.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || option.Code.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || option.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) == true
+                || (parentCategory is not null && ParentName(parentCategory, option.ParentCode).Contains(term, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private void ToggleSearch(string category)
+    {
+        SearchCategory = SearchCategory == category ? null : category;
+        Search = string.Empty;
+    }
+
+    private void OpenNew(string category)
+    {
+        SaveError = null;
+        var count = Values.TryGetValue(category, out var list) ? list.Count : 0;
+
+        Editor = new MasterOptionDto
+        {
+            TenantKey = _resolvedTenantKey,
+            Category = category,
+            IsActive = true,
+            SortOrder = count + 1
+        };
+    }
+
+    private void OpenEdit(MasterOptionDto option)
+    {
+        SaveError = null;
+        Editor = Copy(option);
+    }
+
+    private void CloseEditor()
+    {
+        Editor = null;
+        SaveError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Editor is null)
+        {
+            return;
+        }
+
+        IsSaving = true;
+        SaveError = null;
+
+        try
+        {
+            Editor.Code = Editor.Code.Trim().ToUpperInvariant();
+            Editor.Name = Editor.Name.Trim();
+            await MasterDataService.SaveAsync(Editor, CancellationToken.None);
+            Editor = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private void AskDelete(MasterOptionDto option) => PendingDelete = option;
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (PendingDelete is not { } doomed)
+        {
+            return;
+        }
+
+        IsSaving = true;
+
+        try
+        {
+            var retired = Copy(doomed);
+            retired.IsActive = false;
+            await MasterDataService.SaveAsync(retired, CancellationToken.None);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            PendingDelete = null;
+            IsSaving = false;
+        }
+    }
+
+    private void StartOrdering(string category)
+    {
+        OverflowCategory = null;
+        SearchCategory = null;
+        OrderDraft = (Values.TryGetValue(category, out var list) ? list : []).ToList();
+        OrderingCategory = category;
+    }
+
+    private void CancelOrdering() => OrderingCategory = null;
+
+    private void Move(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= OrderDraft.Count)
+        {
+            return;
+        }
+
+        (OrderDraft[index], OrderDraft[target]) = (OrderDraft[target], OrderDraft[index]);
+    }
+
+    /// <summary>Saves only the values whose position actually changed.</summary>
+    private async Task SaveOrderAsync()
+    {
+        IsSaving = true;
+        ListError = null;
+
+        try
+        {
+            for (var index = 0; index < OrderDraft.Count; index++)
+            {
+                if (OrderDraft[index].SortOrder == index + 1)
+                {
+                    continue;
+                }
+
+                var moved = Copy(OrderDraft[index]);
+                moved.SortOrder = index + 1;
+                await MasterDataService.SaveAsync(moved, CancellationToken.None);
+            }
+
+            OrderingCategory = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private static MasterOptionDto Copy(MasterOptionDto option) => new()
+    {
+        Id = option.Id,
+        TenantKey = option.TenantKey,
+        Category = option.Category,
+        Code = option.Code,
+        Name = option.Name,
+        SortOrder = option.SortOrder,
+        ParentCode = option.ParentCode,
+        Description = option.Description,
+        IsActive = option.IsActive,
+        UpdatedUtc = option.UpdatedUtc
+    };
+
+    private string BackLink() =>
+        string.IsNullOrWhiteSpace(TenantKey) ? "/hr/settings" : $"/hr/{TenantKey}/settings";
+}

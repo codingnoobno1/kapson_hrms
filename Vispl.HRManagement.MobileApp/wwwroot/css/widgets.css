@@ -1,0 +1,293 @@
+/* ---------------------------------------------------------------------------
+   Widget library — RW-17 to RW-40.
+   Tokens come from app.css. No literals here except the sample-data banner,
+   which is app chrome rather than part of the approved design.
+   --------------------------------------------------------------------------- */
+
+/* Sample-data banner */
+.sample-banner {
+    position: sticky;
+    top: var(--header-height);
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-sample-background);
+    color: var(--color-sample-text);
+    font-size: 12px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--color-sample-border);
+}
+
+.sample-banner-link {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--color-sample-text);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.badge-off { background: var(--color-text-secondary); }
+
+/* RW-17 BottomSheetScaffold */
+.sheet-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.sheet-scrim { position: absolute; inset: 0; background: var(--color-scrim); border: none; padding: 0; }
+
+.sheet {
+    position: relative;
+    background: var(--color-background);
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    box-shadow: var(--elevation-sheet);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    animation: sheet-in .18s ease-out;
+}
+
+@keyframes sheet-in {
+    from { transform: translateY(12%); opacity: .6; }
+    to { transform: none; opacity: 1; }
+}
+
+.sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+}
+
+.sheet-title { display: flex; align-items: center; gap: var(--space-2); font-size: 16px; font-weight: 600; }
+
+.sheet-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: none;
+    font-size: 1rem;
+    cursor: pointer;
+    color: var(--color-text-primary);
+}
+
+.sheet-body { overflow-y: auto; padding: var(--space-4) var(--space-4) var(--space-7); }
+
+.sheet-summary {
+    background: var(--color-divider);
+    border-radius: var(--radius-card);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-2);
+}
+
+.sheet-summary-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+/* RW-27 CollapsibleSectionCard */
+.collapsible-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    border: none;
+    background: none;
+    padding: 0 0 var(--space-3);
+    font: inherit;
+    cursor: pointer;
+    color: var(--color-text-primary);
+}
+
+.collapsible-title { display: flex; align-items: center; gap: var(--space-2); font-size: 15px; font-weight: 600; flex: 1; text-align: left; }
+.collapsible-chevron { transition: transform .16s ease; color: var(--color-text-secondary); }
+.collapsible-chevron.open { transform: rotate(180deg); }
+
+/* RW-16 SearchField */
+.search-field { position: relative; margin-bottom: var(--space-3); }
+
+.search-field-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: .9rem;
+    color: var(--color-text-secondary);
+    pointer-events: none;
+}
+
+.search-field .input-search { padding-left: 38px; }
+
+/* RW-21 BulletDetailCard */
+.bullet-lead { font-size: 14px; font-weight: 600; margin: 0 0 var(--space-2); }
+.dash-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+
+.dash-list li {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    padding-left: var(--space-3);
+    position: relative;
+    margin-bottom: var(--space-1);
+}
+
+.dash-list li::before { content: "-"; position: absolute; left: 0; }
+.dash-list:last-child { margin-bottom: 0; }
+
+/* RW-22 DescriptionCard */
+.description-text { font-size: 13px; line-height: 1.5; color: var(--color-text-secondary); margin: 0; }
+
+/* RW-23 AddressCard */
+.address-label { font-size: 13px; font-weight: 600; margin: 0 0 var(--space-1); }
+.address-line { font-size: 13px; color: var(--color-text-secondary); margin: 0 0 var(--space-3); }
+.address-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.address-col-label { display: block; font-size: 11px; color: var(--color-text-secondary); }
+.address-col-value { display: block; font-size: 13px; font-weight: 600; }
+
+/* RW-28 / RW-29 AnalyticsCard */
+.analytics-title { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; font-weight: 600; margin-bottom: var(--space-3); }
+.analytics-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.analytics-label { flex: none; width: 40%; font-size: 13px; }
+
+.analytics-track {
+    position: relative;
+    flex: 1;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    background: var(--color-divider);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.analytics-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--color-widget-chart-accent);
+    border-radius: var(--radius-pill);
+}
+
+.analytics-value {
+    position: absolute;
+    right: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    background: var(--color-surface);
+    border-radius: var(--radius-pill);
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+}
+
+/* RW-30 RatingStars */
+.rating { display: inline-flex; align-items: center; gap: var(--space-1); margin: var(--space-2) 0; }
+.rating-star { color: var(--color-rating); fill: currentColor; stroke-width: 1; }
+.rating-text { font-size: 12px; font-weight: 600; }
+
+/* Line icon set. Sized by the component's own width/height, so nothing here
+   sets a size — these rules only settle alignment and colour. */
+.icon {
+    flex: none;
+    display: inline-block;
+    vertical-align: -0.18em;
+}
+
+/* Meta rows pair a small glyph with text, so the glyph takes the muted colour
+   of the text it sits beside rather than the body colour. */
+.list-item-meta .icon,
+.job-meta .icon,
+.interview-meta .icon,
+.notification-time .icon {
+    color: var(--color-text-secondary);
+}
+
+.kpi-icon { color: var(--color-on-brand); opacity: .95; }
+.nav-icon { color: inherit; }
+.drawer-item-icon { color: inherit; }
+.section-header-icon { color: var(--color-text-secondary); }
+
+.problem-icon .icon,
+.empty-state-icon .icon {
+    color: var(--color-text-secondary);
+    opacity: .45;
+}
+
+/* RW-31 ContactChip */
+.contact-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+
+.contact-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: var(--radius-control);
+    background: var(--color-contact-tint);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    text-decoration: none;
+}
+
+/* RW-33 JobCard */
+.job-card .card-head { margin-bottom: var(--space-1); align-items: flex-start; }
+.job-sub { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.job-expiry { flex: none; font-size: 11px; color: var(--color-text-secondary); }
+.job-meta { font-size: 12px; color: var(--color-text-primary); margin-bottom: var(--space-2); }
+.job-dot { color: var(--color-text-secondary); margin: 0 var(--space-1); }
+.job-salary { font-weight: 700; }
+.job-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
+.job-updated { font-size: 11px; color: var(--color-text-secondary); text-align: right; }
+
+/* RW-38 ApplicantCard */
+.applicant-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.applicant-identity { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.applicant-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+.applicant-actions button { flex: 1; padding: 9px var(--space-3); font-size: 13px; }
+
+/* RW-40 NotificationCard */
+.notification-card { padding: var(--space-3) var(--space-4); }
+.notification-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.notification-title { font-size: 14px; font-weight: 600; }
+.notification-card.unread .notification-title { font-weight: 800; }
+.notification-when { flex: none; font-size: 11px; color: var(--color-text-secondary); display: flex; gap: var(--space-3); }
+.notification-body { font-size: 13px; color: var(--color-text-secondary); margin: 0; }
+
+/* RW-32 AvatarView image fill */
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Toolbar */
+.toolbar-right { display: flex; justify-content: flex-end; margin-bottom: var(--space-2); }
+
+/* A one-time secret handed over on screen: monospace so an O and a 0 cannot be confused,
+   and selectable because the whole point is passing it on. */
+.credential {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm, 8px);
+    background: var(--color-surface-alt, #eef4ff);
+    color: var(--color-text-primary, #0f172a);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    user-select: all;
+    overflow-wrap: anywhere;
+}

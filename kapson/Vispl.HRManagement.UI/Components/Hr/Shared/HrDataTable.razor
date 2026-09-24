@@ -1,0 +1,89 @@
+@typeparam TRow
+
+@*
+    One table shape for every dashboard drill-down.
+
+    Loading, empty and error are states of the same component rather than three things each
+    caller reinvents — the prototype showed none of them, and they are most of what a real
+    table does.
+*@
+
+<section class="hr-panel">
+    <div class="hr-panel-head">
+        <h2>@Title</h2>
+        <div class="hr-panel-meta">
+            @if (Meta is not null)
+            {
+                <small>@Meta</small>
+            }
+            @if (Total is { } total && total > 0)
+            {
+                <span class="hr-count">@total</span>
+            }
+        </div>
+    </div>
+
+    @if (Caveat is not null)
+    {
+        <div class="hr-alert warning compact">@Caveat</div>
+    }
+
+    @if (Error is not null)
+    {
+        <div class="hr-alert error compact">@Error</div>
+    }
+    else if (IsLoading)
+    {
+        <div class="hr-table-skeleton">
+            @for (var index = 0; index < 4; index++)
+            {
+                <span></span>
+            }
+        </div>
+    }
+    else if (Rows is null || Rows.Count == 0)
+    {
+        <p class="hr-empty">@EmptyMessage</p>
+    }
+    else
+    {
+        <div class="hr-table-scroll">
+            <table class="hr-table">
+                <thead>
+                    <tr>@Header</tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Rows)
+                    {
+                        <tr>@Row(row)</tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @*
+        Outside the empty check on purpose: a filter that matches nothing still needs the
+        control that gets you back to the page that had rows.
+    *@
+    @if (Footer is not null && Error is null && !IsLoading)
+    {
+        <div class="hr-table-footer">@Footer</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Meta { get; set; }
+    [Parameter] public int? Total { get; set; }
+    [Parameter] public string? Caveat { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "Nothing to show.";
+    [Parameter] public IReadOnlyList<TRow>? Rows { get; set; }
+    [Parameter, EditorRequired] public RenderFragment Header { get; set; } = default!;
+    [Parameter, EditorRequired] public RenderFragment<TRow> Row { get; set; } = default!;
+
+    /// <summary>Paging, or anything else that belongs under the rows rather than beside them.</summary>
+    [Parameter] public RenderFragment? Footer { get; set; }
+}

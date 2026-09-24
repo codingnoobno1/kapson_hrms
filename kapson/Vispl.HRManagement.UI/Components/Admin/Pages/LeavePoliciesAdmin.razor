@@ -1,0 +1,282 @@
+@page "/admin/leave-policies"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject ILeaveConfigurationService LeaveConfiguration
+
+<PageTitle>Leave Policies | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="leave-policies" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">WORKFORCE</span>
+                <h1>Leave Policies</h1>
+                <p>The rules the leave engine enforces: entitlement, accrual, carry-forward, notice and evidence. Changes apply to requests raised from now on — requests already submitted keep the days they were charged.</p>
+            </div>
+            <div class="admin-context-bar-inline">
+                <label>Client
+                    <select value="@TenantKey" @onchange="ChangeTenant">
+                        @foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        <div class="admin-masters-shell admin-leave-shell">
+
+            <section class="admin-masters-list-panel admin-panel">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@Policies.Count</span>
+                        <h2>Policies</h2>
+                    </div>
+                    <button class="admin-button secondary" type="button" @onclick="NewPolicy">+ Add policy</button>
+                </div>
+                <div class="admin-master-list">
+                    @foreach (var policy in Policies)
+                    {
+                        <button type="button"
+                                class="admin-master-item @(IsSelected(policy) ? "active" : null)"
+                                @onclick="() => EditPolicy(policy)">
+                            <code>@policy.Code</code>
+                            <span>
+                                <strong>@policy.Name</strong>
+                                <small>
+                                    @policy.AnnualEntitlement.ToString("0.#") @policy.Unit.ToLowerInvariant() a year
+                                    @if (!policy.IsActive) { <text> · inactive</text> }
+                                    @if (policy.OpenRequestCount > 0) { <text> · @policy.OpenRequestCount open</text> }
+                                </small>
+                            </span>
+                        </button>
+                    }
+                    @if (Policies.Count == 0)
+                    {
+                        <p class="admin-empty">No leave policies yet. Add one to let employees apply.</p>
+                    }
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                <EditForm Model="EditorModel" OnValidSubmit="SaveAsync">
+                    <DataAnnotationsValidator />
+                    <div class="admin-section-title">
+                        <div>
+                            <h2>@(EditorModel.Id == 0 ? "New policy" : EditorModel.Name)</h2>
+                        </div>
+                    </div>
+
+                    @if (EditorModel.Id != 0 && EditorModel.OpenRequestCount > 0)
+                    {
+                        <div class="admin-alert warning">
+                            @EditorModel.OpenRequestCount leave request(s) on this policy are still awaiting a decision.
+                            They keep the days already computed for them; only new requests will use the rules below.
+                        </div>
+                    }
+
+                    <div class="admin-form-grid">
+                        <label>Code
+                            <InputText @bind-Value="EditorModel.Code" disabled="@(EditorModel.Id != 0)" placeholder="AL" />
+                            <small>Permanent once saved. Employees apply against this code.</small>
+                        </label>
+                        <label>Display name
+                            <InputText @bind-Value="EditorModel.Name" placeholder="Annual Leave" />
+                        </label>
+
+                        <label>Unit
+                            <InputSelect @bind-Value="EditorModel.Unit">
+                                @foreach (var unit in LeavePolicyOptions.Units) { <option value="@unit">@unit</option> }
+                            </InputSelect>
+                        </label>
+                        <label>Version
+                            <InputText @bind-Value="EditorModel.Version" placeholder="2026.1" />
+                            <small>Bump this when the rules change, so an old decision can still be explained.</small>
+                        </label>
+
+                        <label>Annual entitlement
+                            <InputNumber @bind-Value="EditorModel.AnnualEntitlement" step="0.5" />
+                        </label>
+                        <label>Accrual
+                            <InputSelect @bind-Value="EditorModel.AccrualMode">
+                                @foreach (var mode in LeavePolicyOptions.AccrualModes) { <option value="@mode.Code">@mode.Code</option> }
+                            </InputSelect>
+                            <small>@AccrualDescription</small>
+                        </label>
+
+                        <label>Carry-forward cap
+                            <InputNumber @bind-Value="EditorModel.CarryForwardCap" step="0.5" />
+                            <small>Days that may cross into next year. Zero means the balance lapses.</small>
+                        </label>
+                        <label>Notice days
+                            <InputNumber @bind-Value="EditorModel.NoticeDays" />
+                            <small>Short notice warns the employee; it does not block the request.</small>
+                        </label>
+
+                        <label class="span-two">Evidence required above
+                            <InputNumber @bind-Value="EditorModel.DocumentRequiredAboveDays" step="0.5" placeholder="Leave blank for no evidence rule" />
+                            <small>A request longer than this is refused without an attachment.</small>
+                        </label>
+
+                        <label>Colour on the employee app
+                            <InputSelect @bind-Value="EditorModel.ToneKey">
+                                @foreach (var tone in Vispl.HRManagement.Contracts.Mobile.Workforce.LeaveTones.All)
+                                {
+                                    <option value="@tone">@(char.ToUpperInvariant(tone[0]) + tone[1..])</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>Icon
+                            <InputText @bind-Value="EditorModel.Emoji" maxlength="8" />
+                        </label>
+
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.AllowsHalfDay" />
+                            <span>Allow half days<small>The first or last day of a range may be charged at 0.5.</small></span>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.CountsNonWorkingDays" />
+                            <span>Charge weekends and holidays<small>On for continuous statutory leave such as maternity. Off for ordinary leave.</small></span>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.AllowsNegativeBalance" />
+                            <span>Allow the balance to go negative<small>Needed for leave without pay. Leave off for entitled leave.</small></span>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.IsActive" />
+                            <span>Active<small>An inactive policy cannot be applied for. It cannot be switched off while requests are pending.</small></span>
+                        </label>
+
+                        <label class="span-two">Eligibility
+                            <InputTextArea @bind-Value="EditorModel.EligibilityText" placeholder="Who may take this leave." />
+                        </label>
+                        <label class="span-two">Accrual rule
+                            <InputTextArea @bind-Value="EditorModel.AccrualRuleText" placeholder="How the entitlement becomes available." />
+                        </label>
+                        <label class="span-two">Carry-forward rule
+                            <InputTextArea @bind-Value="EditorModel.CarryForwardRuleText" placeholder="What happens to an unused balance at year end." />
+                        </label>
+                        <label class="span-two">Notice rule
+                            <InputTextArea @bind-Value="EditorModel.NoticeRuleText" placeholder="How much warning is normally expected." />
+                        </label>
+                    </div>
+
+                    <ValidationSummary />
+
+                    <div class="admin-form-actions">
+                        <button class="admin-button" type="submit" disabled="@IsSaving">
+                            @(IsSaving ? "Saving…" : "Save policy")
+                        </button>
+                    </div>
+                </EditForm>
+            </section>
+        </div>
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants = [];
+    private IReadOnlyList<LeavePolicyAdminDto> Policies = [];
+    private LeavePolicyAdminDto EditorModel = new();
+    private string TenantKey = "kapson";
+    private string? StatusMessage;
+    private string StatusClass = "success";
+    private bool IsSaving;
+
+    private bool IsSelected(LeavePolicyAdminDto policy) =>
+        EditorModel.Id != 0 && EditorModel.Id == policy.Id;
+
+    private string AccrualDescription =>
+        LeavePolicyOptions.AccrualModes
+            .FirstOrDefault(mode => mode.Code == EditorModel.AccrualMode).Description
+        ?? string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await RefreshAsync();
+        NewPolicy();
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        var requested = args.Value?.ToString();
+        TenantKey = Tenants.Any(tenant => tenant.TenantKey == requested)
+            ? requested!
+            : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+
+        StatusMessage = null;
+        await RefreshAsync();
+        NewPolicy();
+    }
+
+    private void NewPolicy() => EditorModel = new LeavePolicyAdminDto
+    {
+        TenantKey = TenantKey,
+        Unit = "Days",
+        AccrualMode = "Annual",
+        Version = $"{DateTime.UtcNow.Year}.1",
+        AllowsHalfDay = true,
+        IsActive = true
+    };
+
+    private void EditPolicy(LeavePolicyAdminDto policy)
+    {
+        StatusMessage = null;
+        EditorModel = new LeavePolicyAdminDto
+        {
+            Id = policy.Id,
+            TenantKey = policy.TenantKey,
+            Code = policy.Code,
+            Name = policy.Name,
+            Unit = policy.Unit,
+            Version = policy.Version,
+            AnnualEntitlement = policy.AnnualEntitlement,
+            AccrualMode = policy.AccrualMode,
+            CarryForwardCap = policy.CarryForwardCap,
+            NoticeDays = policy.NoticeDays,
+            DocumentRequiredAboveDays = policy.DocumentRequiredAboveDays,
+            AllowsHalfDay = policy.AllowsHalfDay,
+            AllowsNegativeBalance = policy.AllowsNegativeBalance,
+            CountsNonWorkingDays = policy.CountsNonWorkingDays,
+            EligibilityText = policy.EligibilityText,
+            AccrualRuleText = policy.AccrualRuleText,
+            CarryForwardRuleText = policy.CarryForwardRuleText,
+            NoticeRuleText = policy.NoticeRuleText,
+            IsActive = policy.IsActive,
+            OpenRequestCount = policy.OpenRequestCount,
+            ToneKey = policy.ToneKey,
+            Emoji = policy.Emoji
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            EditorModel.TenantKey = TenantKey;
+            var id = await LeaveConfiguration.SavePolicyAsync(EditorModel);
+            await RefreshAsync();
+
+            var saved = Policies.FirstOrDefault(policy => policy.Id == id);
+            if (saved is not null) { EditPolicy(saved); }
+
+            StatusClass = "success";
+            StatusMessage = $"{EditorModel.Name} saved. New requests will use these rules.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task RefreshAsync() =>
+        Policies = await LeaveConfiguration.GetPoliciesAsync(TenantKey);
+}

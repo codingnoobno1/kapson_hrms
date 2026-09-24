@@ -1,0 +1,119 @@
+@*
+    A line with a filled area under it, for a trend over a handful of periods.
+
+    Points are marked and labelled: with six months on the axis, reading the value off the line
+    is guesswork, and the prototype's own trend chart marks every point.
+*@
+
+@if (Points.Count == 0)
+{
+    <p class="hr-empty">@EmptyMessage</p>
+}
+else
+{
+    <svg class="hr-trend-chart" viewBox="0 0 @Width @Height" role="img" aria-label="@AriaLabel"
+         preserveAspectRatio="xMidYMid meet">
+
+        @foreach (var tick in Ticks)
+        {
+            var y = YFor(tick);
+            <line x1="@PadLeft" y1="@y" x2="@(Width - PadRight)" y2="@y"
+                  stroke="@HrChartPalette.Grid" stroke-width="1" />
+            <svg:text x="@(PadLeft - 8)" y="@(y + 4)" text-anchor="end" class="hr-chart-tick">@Format(tick)</svg:text>
+        }
+
+        @if (Maximum > 0)
+        {
+            <path d="@AreaPath" fill="@LineColour" fill-opacity="0.12" />
+            <path d="@LinePath" fill="none" stroke="@LineColour" stroke-width="2"
+                  stroke-linejoin="round" stroke-linecap="round" />
+        }
+
+        @foreach (var (point, index) in Points.Select((point, index) => (point, index)))
+        {
+            var x = XFor(index);
+            var y = YFor(point.Value);
+
+            <circle cx="@x" cy="@y" r="4" fill="#fff" stroke="@LineColour" stroke-width="2">
+                <title>@point.Label: @Format(point.Value)</title>
+            </circle>
+
+            <svg:text x="@x" y="@(Height - 12)" text-anchor="middle" class="hr-chart-label">@point.Label</svg:text>
+        }
+
+        <line x1="@PadLeft" y1="@(Height - PadBottom)" x2="@(Width - PadRight)" y2="@(Height - PadBottom)"
+              stroke="@HrChartPalette.Axis" stroke-width="1" />
+    </svg>
+}
+
+@code {
+    public sealed record TrendPoint(string Label, decimal Value);
+
+    [Parameter, EditorRequired] public IReadOnlyList<TrendPoint> Points { get; set; } = [];
+    [Parameter] public string LineColour { get; set; } = HrChartPalette.Used;
+    [Parameter] public string AriaLabel { get; set; } = "Trend";
+    [Parameter] public string EmptyMessage { get; set; } = "No history yet.";
+
+    private const int Height = 250;
+    private const int PadLeft = 44;
+    private const int PadRight = 16;
+    private const int PadTop = 16;
+    private const int PadBottom = 34;
+
+    private int Width => Math.Max(PadLeft + PadRight + (Points.Count * 72), 360);
+    private double PlotHeight => Height - PadTop - PadBottom;
+
+    /// <summary>
+    /// A flat series of zeroes still needs an axis, so the maximum floors at one rather than
+    /// collapsing the plot to a single line at the bottom.
+    /// </summary>
+    private decimal Maximum
+    {
+        get
+        {
+            var peak = Points.Count == 0 ? 0 : Points.Max(point => point.Value);
+            if (peak <= 0) { return 0; }
+
+            var magnitude = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)peak)));
+            return Math.Max(Math.Ceiling(peak / magnitude) * magnitude, 1);
+        }
+    }
+
+    private IEnumerable<decimal> Ticks
+    {
+        get
+        {
+            var max = Maximum;
+            if (max <= 0)
+            {
+                yield return 0;
+                yield break;
+            }
+
+            for (var step = 0; step <= 4; step++)
+            {
+                yield return max * step / 4;
+            }
+        }
+    }
+
+    private double XFor(int index) =>
+        Points.Count <= 1
+            ? PadLeft + ((Width - PadLeft - PadRight) / 2d)
+            : PadLeft + (index * (double)(Width - PadLeft - PadRight) / (Points.Count - 1));
+
+    private double YFor(decimal value) =>
+        Maximum <= 0 ? Height - PadBottom : Height - PadBottom - ((double)(value / Maximum) * PlotHeight);
+
+    private string LinePath =>
+        string.Join(" ", Points.Select((point, index) =>
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"{(index == 0 ? "M" : "L")} {XFor(index):0.##} {YFor(point.Value):0.##}")));
+
+    private string AreaPath =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{LinePath} L {XFor(Points.Count - 1):0.##} {Height - PadBottom} L {XFor(0):0.##} {Height - PadBottom} Z");
+
+    private static string Format(decimal value) =>
+        value == Math.Truncate(value) ? value.ToString("0") : value.ToString("0.#");
+}

@@ -1,0 +1,480 @@
+@page "/hr/settings/masters/designation"
+@page "/hr/{TenantKey}/settings/masters/designation"
+@attribute [Authorize(Policy = "HrPortal")]
+@inject IDesignationService Designations
+@inject IMasterDataService Masters
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Designation | HR Portal</PageTitle>
+
+<div class="hr-app">
+    <HrNav ActivePage="settings" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <h1 class="hr-title-blue">Designation</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Path("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <a href="@Path("settings")">System Settings</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <strong>Designation</strong>
+        </nav>
+
+        @if (PageError is not null)
+        {
+            <div class="hr-alert error">@PageError</div>
+        }
+        else
+        {
+            <section class="hr-panel hr-crud-card">
+                <div class="hr-crud-head">
+                    <h2>Designation</h2>
+                    <div class="hr-crud-tools">
+                        @if (IsOrdering)
+                        {
+                            <span class="hr-crud-hint">Use the arrows, then save.</span>
+                            <button class="hr-button small ghost" type="button" @onclick="CancelOrdering" disabled="@IsSaving">Cancel</button>
+                            <button class="hr-button small" type="button" @onclick="SaveOrderAsync" disabled="@IsSaving">
+                                @(IsSaving ? "Saving…" : "Save order")
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="hr-icon-button" type="button" title="Refresh" aria-label="Refresh"
+                                    @onclick="LoadAsync" disabled="@IsLoading"><HrIcon Name="refresh" /></button>
+                            <button class="hr-icon-button @(ShowSearch ? "active" : "")" type="button" title="Search"
+                                    aria-label="Search" @onclick="ToggleSearch"><HrIcon Name="search" /></button>
+                            <div class="hr-overflow">
+                                <button class="hr-icon-button @(ShowOverflow ? "active" : "")" type="button"
+                                        title="More options" aria-label="More options"
+                                        @onclick="() => ShowOverflow = !ShowOverflow"><HrIcon Name="more-vertical" /></button>
+                                @if (ShowOverflow)
+                                {
+                                    <div class="hr-overflow-menu">
+                                        <label class="hr-check">
+                                            <input type="checkbox" checked="@ShowInactive" @onchange="ToggleInactive" />
+                                            <span>Show inactive</span>
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                            @if (CanManage)
+                            {
+                                <button class="hr-button small" type="button" @onclick="OpenNew"><HrIcon Name="plus" Size="14" StrokeWidth="2.4" /> Add Designation</button>
+                                <button class="hr-button small ghost" type="button" @onclick="StartOrdering"
+                                        disabled="@(Items.Count < 2)"><HrIcon Name="move" Size="14" /> Set Order</button>
+                            }
+                        }
+                    </div>
+                </div>
+
+                @if (ShowSearch && !IsOrdering)
+                {
+                    <input class="hr-crud-search" type="search" placeholder="Search by name, code, grade or department"
+                           value="@Search" @oninput="args => Search = args.Value?.ToString() ?? string.Empty" />
+                }
+
+                @if (ListError is not null)
+                {
+                    <div class="hr-alert error compact">@ListError</div>
+                }
+
+                @if (IsLoading)
+                {
+                    <div class="hr-table-skeleton">
+                        @for (var index = 0; index < 5; index++)
+                        {
+                            <span></span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    var rows = Visible;
+
+                    if (rows.Count == 0)
+                    {
+                        <p class="hr-empty">
+                            @(Items.Count == 0
+                                ? "No designations yet."
+                                : "No designations match — clear the search or show inactive ones.")
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="hr-table-scroll">
+                            <table class="hr-table hr-crud-table">
+                                <thead>
+                                    <tr>
+                                        <th class="hr-col-narrow">S.No.</th>
+                                        <th>Designation Name</th>
+                                        <th>Code</th>
+                                        <th>Grade</th>
+                                        <th>Department</th>
+                                        <th>Description</th>
+                                        <th>Status</th>
+                                        <th class="hr-col-actions">@(IsOrdering ? "Move" : "Actions")</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (var index = 0; index < rows.Count; index++)
+                                    {
+                                        var rowIndex = index;
+                                        var item = rows[rowIndex];
+
+                                        <tr>
+                                            <td class="hr-col-narrow">@(rowIndex + 1)</td>
+                                            <td>@item.Name</td>
+                                            <td>@item.Code</td>
+                                            <td>@(item.GradeName ?? item.GradeCode)</td>
+                                            <td>@(item.DepartmentName ?? item.DepartmentCode)</td>
+                                            <td class="hr-crud-description">@item.Description</td>
+                                            <td>
+                                                <span class="hr-status-pill @(item.IsActive ? "active" : "inactive")">
+                                                    @(item.IsActive ? "ACTIVE" : "INACTIVE")
+                                                </span>
+                                            </td>
+                                            <td class="hr-col-actions">
+                                                @if (IsOrdering)
+                                                {
+                                                    <button class="hr-action-icon" type="button" aria-label="Move @item.Name up"
+                                                            disabled="@(rowIndex == 0)" @onclick="() => Move(rowIndex, -1)"><HrIcon Name="arrow-up" /></button>
+                                                    <button class="hr-action-icon" type="button" aria-label="Move @item.Name down"
+                                                            disabled="@(rowIndex == rows.Count - 1)" @onclick="() => Move(rowIndex, 1)"><HrIcon Name="arrow-down" /></button>
+                                                }
+                                                else if (CanManage)
+                                                {
+                                                    <button class="hr-action-icon" type="button" title="Edit" aria-label="Edit @item.Name"
+                                                            @onclick="() => OpenEdit(item)"><HrIcon Name="edit" Size="17" /></button>
+                                                    <button class="hr-action-icon danger" type="button" title="Delete" aria-label="Delete @item.Name"
+                                                            @onclick="() => AskDelete(item)"><HrIcon Name="trash" Size="17" /></button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </section>
+        }
+    </main>
+</div>
+
+@if (Editor is { } editor)
+{
+    <div class="hr-modal-backdrop" @onclick="CloseEditor"></div>
+
+    <div class="hr-modal" role="dialog" aria-modal="true"
+         aria-label="@(string.IsNullOrEmpty(editor.Id) ? "Add Designation" : "Edit Designation")">
+        <div class="hr-modal-head">
+            <h2>@(string.IsNullOrEmpty(editor.Id) ? "Add Designation" : "Edit Designation")</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="CloseEditor">✕</button>
+        </div>
+
+        <EditForm Model="editor" OnValidSubmit="SaveAsync" FormName="designation-editor" class="hr-modal-form">
+            <DataAnnotationsValidator />
+
+            <div class="hr-modal-body">
+                @if (SaveError is not null)
+                {
+                    <div class="hr-alert error compact">@SaveError</div>
+                }
+                <ValidationSummary class="hr-validation" />
+
+                <div class="hr-form-grid">
+                    <label>
+                        Designation Name
+                        <InputText @bind-Value="editor.Name" placeholder="Store Manager" />
+                    </label>
+                    <label>
+                        Code
+                        <InputText @bind-Value="editor.Code" placeholder="SM" />
+                    </label>
+                    <label>
+                        Grade
+                        <InputSelect @bind-Value="editor.GradeCode">
+                            <option value="">Select grade</option>
+                            @foreach (var grade in Grades)
+                            {
+                                <option value="@grade.Code">@grade.Name@(grade.IsActive ? "" : " (inactive)")</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Department
+                        <InputSelect @bind-Value="editor.DepartmentCode">
+                            <option value="">Select department</option>
+                            @foreach (var department in Departments)
+                            {
+                                <option value="@department.Code">@department.Name@(department.IsActive ? "" : " (inactive)")</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label class="hr-form-wide">
+                        Description
+                        <InputTextArea @bind-Value="editor.Description" rows="3"
+                                       placeholder="What this role is responsible for" />
+                    </label>
+                    <label class="hr-check">
+                        <InputCheckbox @bind-Value="editor.IsActive" />
+                        <span>Active</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="hr-modal-foot">
+                <span></span>
+                <div class="hr-modal-actions">
+                    <button type="button" class="hr-button small ghost" @onclick="CloseEditor">Cancel</button>
+                    <button type="submit" class="hr-button small" disabled="@IsSaving">
+                        @(IsSaving ? "Saving…" : "Save")
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@if (PendingDelete is { } doomed)
+{
+    <div class="hr-modal-backdrop" @onclick="() => PendingDelete = null"></div>
+
+    <div class="hr-modal hr-modal-small" role="dialog" aria-modal="true" aria-label="Delete Designation">
+        <div class="hr-modal-head">
+            <h2>Delete Designation</h2>
+            <button type="button" class="hr-modal-close" aria-label="Close" @onclick="() => PendingDelete = null">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            <p>Delete <strong>@doomed.Name</strong> (@doomed.Code)? This cannot be undone.</p>
+        </div>
+        <div class="hr-modal-foot">
+            <span></span>
+            <div class="hr-modal-actions">
+                <button type="button" class="hr-button small ghost" @onclick="() => PendingDelete = null">Cancel</button>
+                <button type="button" class="hr-button small danger" disabled="@IsSaving" @onclick="ConfirmDeleteAsync">
+                    @(IsSaving ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+
+    private IReadOnlyList<DesignationDto> Items = [];
+    private List<DesignationDto> OrderDraft = [];
+    private IReadOnlyList<MasterOptionDto> Grades = [];
+    private IReadOnlyList<MasterOptionDto> Departments = [];
+
+    private SaveDesignationRequest? Editor;
+    private DesignationDto? PendingDelete;
+
+    private string _tenantKey = string.Empty;
+    private bool CanManage;
+    private bool IsLoading = true;
+    private bool IsSaving;
+    private bool IsOrdering;
+    private bool ShowSearch;
+    private bool ShowOverflow;
+    private bool ShowInactive;
+    private string Search = string.Empty;
+    private string? PageError;
+    private string? ListError;
+    private string? SaveError;
+
+    private IReadOnlyList<DesignationDto> Visible =>
+        IsOrdering
+            ? OrderDraft
+            : Items.Where(item => ShowInactive || item.IsActive).Where(Matches).ToList();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        IsLoading = true;
+        ListError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            _tenantKey = caller.TenantKey;
+            CanManage = await PortalCaller.HasAsync("MASTERS.MANAGE");
+
+            Items = await Designations.GetAllAsync(_tenantKey);
+
+            var options = await Masters.GetAllAsync(_tenantKey);
+            Grades = OptionsFor(options, MasterCategories.Grade);
+            Departments = OptionsFor(options, MasterCategories.Department);
+        }
+        catch (InvalidOperationException ex) when (string.IsNullOrEmpty(_tenantKey))
+        {
+            PageError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private static IReadOnlyList<MasterOptionDto> OptionsFor(IReadOnlyList<MasterOptionDto> options, string category) =>
+        options
+            .Where(option => option.Category == category)
+            .OrderBy(option => option.SortOrder)
+            .ThenBy(option => option.Name)
+            .ToList();
+
+    private bool Matches(DesignationDto item)
+    {
+        if (string.IsNullOrWhiteSpace(Search))
+        {
+            return true;
+        }
+
+        var term = Search.Trim();
+
+        return new[] { item.Name, item.Code, item.GradeName, item.GradeCode, item.DepartmentName, item.DepartmentCode, item.Description }
+            .Any(value => value?.Contains(term, StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private void ToggleSearch()
+    {
+        ShowSearch = !ShowSearch;
+        if (!ShowSearch)
+        {
+            Search = string.Empty;
+        }
+    }
+
+    private void ToggleInactive(ChangeEventArgs args) => ShowInactive = args.Value is true;
+
+    private void OpenNew()
+    {
+        SaveError = null;
+        Editor = new SaveDesignationRequest { IsActive = true };
+    }
+
+    private void OpenEdit(DesignationDto item)
+    {
+        SaveError = null;
+        Editor = new SaveDesignationRequest
+        {
+            Id = item.Id,
+            Code = item.Code,
+            Name = item.Name,
+            GradeCode = item.GradeCode,
+            DepartmentCode = item.DepartmentCode,
+            Description = item.Description,
+            IsActive = item.IsActive
+        };
+    }
+
+    private void CloseEditor()
+    {
+        Editor = null;
+        SaveError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Editor is null)
+        {
+            return;
+        }
+
+        IsSaving = true;
+        SaveError = null;
+
+        try
+        {
+            await Designations.SaveAsync(_tenantKey, Editor);
+            Editor = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private void AskDelete(DesignationDto item) => PendingDelete = item;
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (PendingDelete is not { } doomed)
+        {
+            return;
+        }
+
+        IsSaving = true;
+
+        try
+        {
+            await Designations.DeleteAsync(_tenantKey, doomed.Id);
+            PendingDelete = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            PendingDelete = null;
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private void StartOrdering()
+    {
+        ShowOverflow = false;
+        OrderDraft = Items.ToList();
+        IsOrdering = true;
+    }
+
+    private void CancelOrdering() => IsOrdering = false;
+
+    private void Move(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= OrderDraft.Count)
+        {
+            return;
+        }
+
+        (OrderDraft[index], OrderDraft[target]) = (OrderDraft[target], OrderDraft[index]);
+    }
+
+    private async Task SaveOrderAsync()
+    {
+        IsSaving = true;
+
+        try
+        {
+            await Designations.ReorderAsync(_tenantKey, OrderDraft.Select(item => item.Id).ToList());
+            IsOrdering = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            ListError = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private string Path(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

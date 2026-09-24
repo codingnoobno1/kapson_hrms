@@ -1,0 +1,45 @@
+@page "/"
+@inject ScreenData Data
+
+@* REF-01 HR Dashboard *@
+<PageTitle>Home</PageTitle>
+
+@if (isLoading)
+{
+    <LoadingView Text="Loading dashboard…" />
+}
+else if (model is not null)
+{
+    <KpiCardRow Kpis="model.Kpis" />
+
+    <CollapsibleSectionCard Title="Interview Schedule" Icon="calendar" Count="model.Interviews.Count">
+        @foreach (var interview in model.Interviews)
+        {
+            <InterviewCard Interview="interview" />
+        }
+    </CollapsibleSectionCard>
+
+    <SectionHeader Title="Applicants Analytics" Icon="bar-chart" />
+    <AnalyticsCard Title="Job Title Wise" Icon="briefcase" Rows="model.JobTitleAnalytics" />
+}
+else if (result is not null)
+{
+    <h1 class="page-title">Home</h1>
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@code {
+    private ScreenResult<DashboardModel>? result;
+    private DashboardModel? model;
+    private bool isLoading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        result = await Data.GetDashboardAsync();
+        model = result.Data;
+        isLoading = false;
+    }
+}

@@ -1,0 +1,13 @@
+@* RW-12 SectionHeader. Sits on the page ground, above and outside its card. *@
+<h2 class="section-header">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <AppIcon Name="@Icon" Size="18" Class="section-header-icon" />
+    }
+    <span>@Title</span>
+</h2>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = string.Empty;
+}

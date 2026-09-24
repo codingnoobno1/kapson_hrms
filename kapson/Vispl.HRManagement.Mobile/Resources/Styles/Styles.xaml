@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:behaviors="clr-namespace:Vispl.HRManagement.Mobile.Shared.Behaviors">
+    <Style TargetType="ContentPage">
+        <Setter Property="BackgroundColor" Value="{StaticResource Surface}" />
+    </Style>
+
+    <!--
+        No visual setters on purpose — this only reaches every otherwise-unstyled Button (filter
+        chips, segmented toggles, the back arrow, the header "+") with the spec's press-scale.
+        An element with an explicit Style="{StaticResource ...}" does not inherit this implicit
+        one, which is why PrimaryButton/SecondaryButton below repeat the same Behaviors block.
+    -->
+    <Style TargetType="Button">
+        <Style.Behaviors>
+            <behaviors:PressScaleBehavior />
+        </Style.Behaviors>
+    </Style>
+    <Style TargetType="Label">
+        <Setter Property="TextColor" Value="{StaticResource Ink900}" />
+    </Style>
+    <Style x:Key="PageTitle" TargetType="Label">
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="TextColor" Value="{StaticResource Navy900}" />
+    </Style>
+    <Style x:Key="SectionTitle" TargetType="Label">
+        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="TextColor" Value="{StaticResource Ink900}" />
+    </Style>
+    <Style x:Key="BodyText" TargetType="Label">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="TextColor" Value="{StaticResource Ink700}" />
+    </Style>
+    <Style x:Key="Caption" TargetType="Label">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextColor" Value="{StaticResource Ink500}" />
+    </Style>
+    <Style x:Key="PrimaryButton" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource Primary600}" />
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="HeightRequest" Value="52" />
+        <Setter Property="Padding" Value="20,0" />
+        <Style.Behaviors>
+            <behaviors:PressScaleBehavior />
+        </Style.Behaviors>
+    </Style>
+    <Style x:Key="SecondaryButton" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="{StaticResource BlueTint}" />
+        <Setter Property="TextColor" Value="{StaticResource Primary600}" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="HeightRequest" Value="44" />
+        <Style.Behaviors>
+            <behaviors:PressScaleBehavior />
+        </Style.Behaviors>
+    </Style>
+    <Style x:Key="InputBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="White" />
+        <Setter Property="Stroke" Value="{StaticResource Line}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="14,4" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="14" /></Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="Card" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="White" />
+        <Setter Property="Stroke" Value="{StaticResource Line}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="StrokeShape">
+            <Setter.Value><RoundRectangle CornerRadius="18" /></Setter.Value>
+        </Setter>
+        <Setter Property="Shadow">
+            <Setter.Value><Shadow Brush="#1A355C8B" Offset="0,5" Radius="14" Opacity="0.16" /></Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

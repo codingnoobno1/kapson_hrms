@@ -1,0 +1,406 @@
+@page "/admin/policies"
+@attribute [Authorize(Policy = "AdminPortal")]
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@inject ITenantService TenantService
+@inject IPolicyService PolicyService
+
+@*
+    Company policies — the cards on the HR dashboard's "Company Policies & Leave Rules" panel.
+    Same service the dashboard reads through, so a policy published here is the policy HR sees.
+
+    Editing the text bumps the version, which un-acknowledges everyone: that is the point of the
+    feature, so the editor says so out loud rather than letting it happen quietly.
+*@
+
+<PageTitle>Company Policies | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="policies" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">CONFIGURATION</span>
+                <h1>Company Policies</h1>
+                <p>Write, version and publish the policies shown on the HR dashboard.</p>
+            </div>
+            <div class="admin-context-bar-inline">
+                <label>Client
+                    <select value="@TenantKey" @onchange="ChangeTenant">
+                        @foreach (var tenant in Tenants)
+                        {
+                            <option value="@tenant.TenantKey">@tenant.DisplayName</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        <div class="admin-masters-shell">
+            <aside class="admin-masters-sidebar">
+                <div class="admin-masters-group">
+                    <span class="admin-masters-group-label">📋 Policies</span>
+                    @foreach (var policy in Items)
+                    {
+                        <button type="button"
+                                class="admin-masters-cat-btn @(Editor.Id == policy.Id ? "active" : null)"
+                                @onclick="() => Edit(policy)">
+                            <span class="admin-masters-cat-name">@policy.Icon @policy.Title</span>
+                            <span class="admin-masters-cat-count">@(policy.IsPublished ? "Live" : "Draft")</span>
+                        </button>
+                    }
+                    @if (Items.Count == 0)
+                    {
+                        <div class="admin-empty-state">No policies yet.</div>
+                    }
+                </div>
+                <button class="admin-button secondary admin-form-gap" type="button" @onclick="NewPolicy">
+                    + Add policy
+                </button>
+            </aside>
+
+            <section class="admin-masters-editor-panel admin-panel" style="grid-column: span 2;">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@(string.IsNullOrEmpty(Editor.Id) ? "NEW" : $"v{EditingVersion}")</span>
+                        <h2>@(string.IsNullOrEmpty(Editor.Id) ? "Add policy" : "Edit policy")</h2>
+                    </div>
+                    @if (!string.IsNullOrEmpty(Editor.Id))
+                    {
+                        <button class="admin-button danger" type="button" @onclick="ConfirmDelete" disabled="@IsSaving">
+                            Delete
+                        </button>
+                    }
+                </div>
+
+                @if (PendingDeleteId is not null)
+                {
+                    <div class="admin-alert error">
+                        Delete <strong>@Editor.Title</strong>? This removes the policy and every
+                        acknowledgement recorded against it. This cannot be undone.
+                        <div class="admin-form-actions admin-form-gap">
+                            <button class="admin-button danger" type="button" @onclick="DeleteAsync" disabled="@IsSaving">
+                                @(IsSaving ? "Deleting…" : "Yes, delete it")
+                            </button>
+                            <button class="admin-button secondary" type="button" @onclick="() => PendingDeleteId = null">
+                                Keep it
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <EditForm Model="Editor" OnValidSubmit="SaveAsync" FormName="policy-editor">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="admin-validation" />
+
+                    <div class="admin-form-grid">
+                        <label>
+                            Code
+                            <InputText @bind-Value="Editor.Code" placeholder="LEAVE_POLICY" />
+                            <small>Uppercase letters, numbers and underscores. Stable — it identifies the policy.</small>
+                        </label>
+                        <label>
+                            Title
+                            <InputText @bind-Value="Editor.Title" placeholder="Leave Policy" />
+                        </label>
+                        <label>
+                            Icon
+                            <InputText @bind-Value="Editor.Icon" placeholder="🏖️" />
+                            <small>One emoji, shown on the card.</small>
+                        </label>
+                        <label class="admin-check">
+                            <InputCheckbox @bind-Value="Editor.IsPublished" />
+                            <span>Published — visible on the HR dashboard</span>
+                        </label>
+                    </div>
+
+                    <label class="admin-field-label">Excerpt</label>
+                    <InputTextArea @bind-Value="Editor.Excerpt" rows="2"
+                                   placeholder="The two lines shown on the card before someone opens it." />
+
+                    <div class="admin-section-title admin-form-gap">
+                        <div><h2>Sections</h2></div>
+                        <button class="admin-button secondary" type="button" @onclick="AddSection">+ Add section</button>
+                    </div>
+
+                    @if (Sections.Count == 0)
+                    {
+                        <div class="admin-empty-state">
+                            No sections yet. A policy with no sections shows its excerpt and nothing else.
+                        </div>
+                    }
+
+                    @for (var index = 0; index < Sections.Count; index++)
+                    {
+                        var sectionIndex = index;
+                        var block = Sections[sectionIndex];
+
+                        <div class="admin-panel admin-form-gap">
+                            <div class="admin-section-title">
+                                <div><h2>Section @(sectionIndex + 1)</h2></div>
+                                <button class="admin-button secondary" type="button"
+                                        @onclick="() => RemoveSection(sectionIndex)">Remove section</button>
+                            </div>
+
+                            <div class="admin-form-grid">
+                                <label>
+                                    Heading
+                                    <input value="@block.Heading"
+                                           @onchange="args => block.Heading = args.Value?.ToString() ?? string.Empty"
+                                           placeholder="Leave Types &amp; Entitlements" />
+                                </label>
+                                <label>
+                                    Lead line (optional)
+                                    <input value="@block.Intro"
+                                           @onchange="args => block.Intro = args.Value?.ToString() ?? string.Empty"
+                                           placeholder="Our company offers comprehensive leave benefits:" />
+                                </label>
+                            </div>
+
+                            <label class="admin-field-label">Bullet points — one per line</label>
+                            <textarea rows="3" value="@block.PointsText"
+                                      @onchange="args => block.PointsText = args.Value?.ToString() ?? string.Empty"></textarea>
+
+                            <div class="admin-section-title admin-form-gap">
+                                <div><h2>Numbered blocks</h2></div>
+                                <button class="admin-button secondary" type="button"
+                                        @onclick="() => AddSubsection(sectionIndex)">+ Add block</button>
+                            </div>
+
+                            @for (var subIndex = 0; subIndex < block.Subsections.Count; subIndex++)
+                            {
+                                var currentSub = subIndex;
+                                var sub = block.Subsections[currentSub];
+
+                                <div class="admin-form-grid">
+                                    <label>
+                                        Label
+                                        <input value="@sub.Label"
+                                               @onchange="args => sub.Label = args.Value?.ToString() ?? string.Empty"
+                                               placeholder="1. Casual Leave (CL)" />
+                                    </label>
+                                    <button class="admin-button secondary" type="button"
+                                            @onclick="() => RemoveSubsection(sectionIndex, currentSub)">Remove block</button>
+                                </div>
+                                <textarea rows="3" value="@sub.PointsText"
+                                          @onchange="args => sub.PointsText = args.Value?.ToString() ?? string.Empty"
+                                          placeholder="Entitlement: 8-10 days per year"></textarea>
+                            }
+                        </div>
+                    }
+
+                    <div class="admin-form-actions admin-form-gap">
+                        <button class="admin-button primary" type="submit" disabled="@IsSaving">
+                            @(IsSaving ? "Saving…" : "Save policy")
+                        </button>
+                        @if (!string.IsNullOrEmpty(Editor.Id))
+                        {
+                            <button class="admin-button secondary" type="button" @onclick="NewPolicy">Clear / New</button>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(Editor.Id))
+                    {
+                        <div class="admin-form-meta">
+                            <small>
+                                Changing the title, excerpt or any section bumps this policy to the next
+                                version, which marks it unread for everyone again.
+                            </small>
+                        </div>
+                    }
+                </EditForm>
+            </section>
+        </div>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tenant")] public string? RequestedTenant { get; set; }
+
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<PolicySummaryDto> Items { get; set; } = [];
+    private string TenantKey { get; set; } = "kapson";
+
+    private SavePolicyRequest Editor { get; set; } = new();
+    private List<SectionEditor> Sections { get; set; } = [];
+    private string EditingVersion = "1";
+
+    private bool IsSaving;
+    private string? PendingDeleteId;
+    private string? StatusMessage;
+    private string StatusClass = "success";
+
+    /// <summary>
+    /// Editing shape only. Points are edited as text — one per line — because a repeater of
+    /// single-line inputs for every bullet is far more clicking for the same result.
+    /// </summary>
+    private sealed class SectionEditor
+    {
+        public string Heading { get; set; } = string.Empty;
+        public string Intro { get; set; } = string.Empty;
+        public string PointsText { get; set; } = string.Empty;
+        public List<SubsectionEditor> Subsections { get; set; } = [];
+    }
+
+    private sealed class SubsectionEditor
+    {
+        public string Label { get; set; } = string.Empty;
+        public string PointsText { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = ResolveTenant(RequestedTenant);
+        await RefreshAsync();
+        NewPolicy();
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        TenantKey = ResolveTenant(args.Value?.ToString());
+        await RefreshAsync();
+        NewPolicy();
+    }
+
+    private async Task RefreshAsync() => Items = await PolicyService.GetAllForAdminAsync(TenantKey);
+
+    private void NewPolicy()
+    {
+        Editor = new SavePolicyRequest { IsPublished = true };
+        Sections = [];
+        EditingVersion = "1";
+        PendingDeleteId = null;
+        StatusMessage = null;
+    }
+
+    private async Task Edit(PolicySummaryDto policy)
+    {
+        PendingDeleteId = null;
+        StatusMessage = null;
+
+        var detail = await PolicyService.GetDetailForAdminAsync(TenantKey, policy.Id);
+
+        Editor = new SavePolicyRequest
+        {
+            Id = policy.Id,
+            Code = policy.Code,
+            Title = policy.Title,
+            Icon = policy.Icon,
+            Excerpt = policy.Excerpt,
+            IsPublished = policy.IsPublished
+        };
+
+        EditingVersion = policy.Version;
+
+        Sections = (detail?.Sections ?? [])
+            .Select(section => new SectionEditor
+            {
+                Heading = section.Heading,
+                Intro = section.Intro ?? string.Empty,
+                PointsText = string.Join(Environment.NewLine, section.Points),
+                Subsections = (section.Subsections ?? [])
+                    .Select(sub => new SubsectionEditor
+                    {
+                        Label = sub.Label,
+                        PointsText = string.Join(Environment.NewLine, sub.Points)
+                    })
+                    .ToList()
+            })
+            .ToList();
+    }
+
+    private void AddSection() => Sections.Add(new SectionEditor());
+
+    private void RemoveSection(int index) => Sections.RemoveAt(index);
+
+    private void AddSubsection(int sectionIndex) =>
+        Sections[sectionIndex].Subsections.Add(new SubsectionEditor());
+
+    private void RemoveSubsection(int sectionIndex, int subIndex) =>
+        Sections[sectionIndex].Subsections.RemoveAt(subIndex);
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+
+            Editor.Sections = Sections
+                .Select(section => new PolicySectionDto(
+                    section.Heading.Trim(),
+                    SplitLines(section.PointsText),
+                    string.IsNullOrWhiteSpace(section.Intro) ? null : section.Intro.Trim(),
+                    section.Subsections
+                        .Select(sub => new PolicySubsectionDto(sub.Label.Trim(), SplitLines(sub.PointsText)))
+                        .ToList()))
+                .ToList();
+
+            var id = await PolicyService.SaveAsync(TenantKey, Editor);
+            await RefreshAsync();
+
+            var saved = Items.FirstOrDefault(item => item.Id == id);
+            if (saved is not null)
+            {
+                await Edit(saved);
+            }
+
+            StatusClass = "success";
+            StatusMessage = $"'{Editor.Title}' saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private void ConfirmDelete() => PendingDeleteId = Editor.Id;
+
+    private async Task DeleteAsync()
+    {
+        if (PendingDeleteId is not { } id)
+        {
+            return;
+        }
+
+        try
+        {
+            IsSaving = true;
+            var title = Editor.Title;
+            var deleted = await PolicyService.DeleteAsync(TenantKey, id);
+
+            await RefreshAsync();
+            NewPolicy();
+
+            StatusClass = deleted ? "success" : "error";
+            StatusMessage = deleted ? $"'{title}' deleted." : "That policy no longer exists.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+            PendingDeleteId = null;
+        }
+    }
+
+    private static List<string> SplitLines(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+    private string ResolveTenant(string? requested) =>
+        Tenants.Any(tenant => tenant.TenantKey == requested)
+            ? requested!
+            : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+}

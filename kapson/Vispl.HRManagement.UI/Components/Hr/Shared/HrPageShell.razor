@@ -1,0 +1,53 @@
+@*
+    The frame every HR portal page sits in: the nav, the heading block, and the one place a
+    page-level failure is reported. Pages supply their own filter bar and body.
+
+    A page that cannot load says so here and renders nothing else. A panel that cannot load
+    says so on the panel — that distinction is the whole point of keeping Error page-level.
+*@
+
+<div class="hr-app">
+    <HrNav ActivePage="@ActivePage" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <div class="hr-page-heading">
+            <div>
+                <span class="hr-kicker">@Kicker</span>
+                <h1>@Title</h1>
+                @if (!string.IsNullOrWhiteSpace(Subtitle))
+                {
+                    <p>@Subtitle</p>
+                }
+            </div>
+
+            @if (Filters is not null)
+            {
+                <div class="hr-filter-bar">@Filters</div>
+            }
+        </div>
+
+        @if (Error is not null)
+        {
+            <div class="hr-alert error">@Error</div>
+        }
+        else
+        {
+            @ChildContent
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ActivePage { get; set; } = "";
+    [Parameter] public string? TenantKey { get; set; }
+
+    [Parameter] public string Kicker { get; set; } = "WORKFORCE";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+
+    /// <summary>A failure that makes the whole page meaningless. Panels report their own.</summary>
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public RenderFragment? Filters { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

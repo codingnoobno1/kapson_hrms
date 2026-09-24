@@ -1,0 +1,53 @@
+@page "/kapson/careers"
+@page "/career/{TenantKey}/careers"
+@inject ICareerSiteService CareerSiteService
+@inject IJobOpeningService JobOpeningService
+@inject IThemeTemplateService ThemeTemplateService
+
+@if (Site is null)
+{
+    <PageTitle>Career site unavailable</PageTitle>
+    <main class="not-found-page"><h1>Career site unavailable</h1><p>No published configuration was found.</p></main>
+}
+else
+{
+    <PageTitle>Open positions | @Site.CompanyName</PageTitle>
+    <div class="public-site template-@Site.TemplateKey" style="@ThemeStyle">
+        <PublicHeader Site="Site" />
+        <main>
+            <section class="page-hero careers-hero"><div class="public-container"><span class="eyebrow eyebrow-light">OPEN POSITIONS</span><h1>@Site.CareersTitle</h1><p>@Site.CareersSummary</p></div></section>
+            <section class="careers-listing">
+                <div class="public-container">
+                    <div class="listing-toolbar"><div><strong>@Jobs.Count</strong> positions currently open</div><div class="filter-chips"><span>All departments</span><span>All locations</span><span>All work modes</span></div></div>
+                    <div class="job-list">
+                        @foreach (var job in Jobs)
+                        {
+                            <article class="job-row">
+                                <div class="job-row-main"><span class="job-department">@job.Department</span><h2><a href="@JobUrl(job.Slug)">@job.Title</a></h2><p>@job.Summary</p></div>
+                                <div class="job-row-meta"><span>@job.Location</span><span>@job.EmploymentType</span><span>@job.WorkMode</span><span>@job.Experience</span></div>
+                                <a class="round-link" href="@JobUrl(job.Slug)" aria-label="View @job.Title">→</a>
+                            </article>
+                        }
+                    </div>
+                </div>
+            </section>
+        </main>
+        <PublicFooter Site="Site" />
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantKey { get; set; } = "kapson";
+    private CareerSiteConfigurationDto? Site { get; set; }
+    private ThemeTemplateDto? Theme { get; set; }
+    private IReadOnlyList<JobOpeningDto> Jobs { get; set; } = [];
+    private string CareersUrl => TenantKey == "kapson" ? "/kapson/careers" : $"/career/{TenantKey}/careers";
+    private string JobUrl(string slug) => $"{CareersUrl}/{slug}";
+    private string ThemeStyle => Site is null ? string.Empty : $"--ink:{Site.PrimaryColor};--ink-soft:{Site.PrimaryColor};--gold:{Site.AccentColor};--cream:{Site.SurfaceColor};--body-font:{Theme?.FontFamily ?? "Inter, sans-serif"};--heading-font:{Theme?.HeadingFontFamily ?? "Georgia, serif"};--site-radius:{Theme?.BorderRadius ?? 20}px;";
+    protected override async Task OnParametersSetAsync()
+    {
+        TenantKey = string.IsNullOrWhiteSpace(TenantKey) ? "kapson" : TenantKey.ToLowerInvariant();
+        Site = await CareerSiteService.GetPublishedAsync(TenantKey); Jobs = await JobOpeningService.GetPublishedAsync(TenantKey);
+        Theme = Site is null ? null : await ThemeTemplateService.GetByKeyAsync(Site.TemplateKey);
+    }
+}

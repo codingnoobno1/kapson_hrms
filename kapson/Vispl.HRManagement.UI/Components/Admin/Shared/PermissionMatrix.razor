@@ -1,0 +1,38 @@
+<div class="permission-matrix">
+    <div class="access-field-heading">
+        <strong>Permission grants</strong>
+        <span>@(ReadOnly ? "Included by this protected role." : "Grant only the capabilities this job needs.")</span>
+    </div>
+    @foreach (var group in Catalog.GroupBy(permission => permission.Group))
+    {
+        <section class="permission-group">
+            <header><strong>@group.Key</strong><span>@group.Count() permissions</span></header>
+            <div>
+                @foreach (var permission in group)
+                {
+                    var permissionKey = permission.Key;
+                    <label class="permission-option @(PermissionKeys.Contains(permissionKey) ? "selected" : null)">
+                        <input type="checkbox" disabled="@ReadOnly" checked="@PermissionKeys.Contains(permissionKey)" @onchange="args => TogglePermission(permissionKey, args)" />
+                        <span><strong>@permission.Name</strong><small>@permission.Description</small></span>
+                    </label>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<string> PermissionKeys { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<PermissionDefinitionDto> Catalog { get; set; } = [];
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback<List<string>> PermissionKeysChanged { get; set; }
+
+    private async Task TogglePermission(string permissionKey, ChangeEventArgs args)
+    {
+        if (ReadOnly) return;
+        var selected = args.Value is bool value && value;
+        if (selected && !PermissionKeys.Contains(permissionKey)) PermissionKeys.Add(permissionKey);
+        if (!selected) PermissionKeys.Remove(permissionKey);
+        await PermissionKeysChanged.InvokeAsync(PermissionKeys);
+    }
+}

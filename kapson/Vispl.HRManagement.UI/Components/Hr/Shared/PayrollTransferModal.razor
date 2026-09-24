@@ -1,0 +1,215 @@
+@using Vispl.HRManagement.Contracts.Admin
+
+@*
+    S11 — Transfer Salary to Bank. An employee without a salary account can be seen but never
+    selected: a transfer must not go to nowhere (doc 10 §8). The reference number is assigned by
+    the server when the transfer is recorded.
+*@
+
+<div class="hr-modal-backdrop" @onclick="OnClose"></div>
+
+<div class="pay-modal wide" role="dialog" aria-modal="true" aria-label="Transfer Salary to Bank">
+    <div class="pay-modal-head blue">
+        <h2>Transfer Salary to Bank</h2>
+        <button type="button" class="pay-modal-close" aria-label="Close" @onclick="OnClose">✕</button>
+    </div>
+
+    <div class="pay-modal-body">
+        @if (Error is not null)
+        {
+            <div class="hr-alert error compact">@Error</div>
+        }
+        @if (!Workspace.Run.IsApproved)
+        {
+            <div class="hr-alert warning compact">Approve @Workspace.MonthLabel payroll from Preview before transferring salaries.</div>
+        }
+
+        <div class="pay-mini-tiles four">
+            <div><span>Total Employees</span><strong>@Generated.Count</strong><small>Generated Salary</small></div>
+            <div><span>Total Amount</span><strong>@PayrollFormat.Rupees(Generated.Sum(row => row.Amounts.NetPayable))</strong><small>To Be Transferred</small></div>
+            <div><span>Already Transferred</span><strong>@Workspace.AlreadyTransferredThisMonth</strong><small>This Month</small></div>
+            <div><span>Pending Transfer</span><strong>@Generated.Count</strong><small>Awaiting Transfer</small></div>
+        </div>
+
+        <h3 class="pay-section-title">Transfer Details</h3>
+        <div class="pay-transfer-grid">
+            <label>
+                Transfer Date
+                <input type="date" value="@PayrollFormat.DateInput(TransferDate)"
+                       @onchange="args => TransferDate = PayrollFormat.ParseDateInput(args.Value) ?? TransferDate" />
+            </label>
+            <label>
+                Bank Account
+                <select value="@AccountId" @onchange="args => AccountId = args.Value?.ToString() ?? string.Empty">
+                    @if (Workspace.CompanyAccounts.Count == 0)
+                    {
+                        <option value="">No company account — add one on Bank Accounts</option>
+                    }
+                    @foreach (var account in Workspace.CompanyAccounts)
+                    {
+                        <option @key="account.Id" value="@account.Id">@account.AccountLabel</option>
+                    }
+                </select>
+            </label>
+            <label>
+                Transfer Mode
+                <select value="@Mode" @onchange="args => Mode = args.Value?.ToString() ?? Mode">
+                    @foreach (var mode in BankTransferModes.All)
+                    {
+                        <option @key="mode" value="@mode">@mode</option>
+                    }
+                </select>
+            </label>
+            <label>
+                Reference No.
+                <input type="text" readonly placeholder="Assigned when the transfer is recorded" />
+            </label>
+        </div>
+
+        <div class="pay-transfer-filters">
+            <input type="search" placeholder="🔍 Search employee..." value="@Search" @oninput="args => Search = args.Value?.ToString() ?? string.Empty" />
+            <select value="@Filter" @onchange="args => Filter = args.Value?.ToString() ?? string.Empty">
+                <option value="">All Employees</option>
+                <option value="@PayrollLineStatuses.Generated">Generated</option>
+                <option value="@PayrollLineStatuses.Pending">Pending</option>
+                <option value="@PayrollLineStatuses.Transferred">Transferred</option>
+                <option value="@PayrollLineStatuses.Paid">Paid</option>
+                <option value="no-account">No bank account</option>
+            </select>
+            <span class="hr-hint">Select employees to transfer</span>
+        </div>
+
+        <div class="pay-checklist tall">
+            <label class="pay-check-head">
+                <input type="checkbox" checked="@(Selectable.Count > 0 && Selectable.All(row => Selected.Contains(row.EmployeeId)))"
+                       disabled="@(Selectable.Count == 0)" @onchange="args => SelectAll(args.Value is true)" />
+                Select All Generated Employees
+                <span>@Selected.Count selected</span>
+            </label>
+            @foreach (var row in Visible)
+            {
+                var canSelect = IsSelectable(row);
+                <label class="pay-check-row @(canSelect ? null : "locked")" @key="row.EmployeeId" title="@LockReason(row)">
+                    <input type="checkbox" checked="@Selected.Contains(row.EmployeeId)" disabled="@(!canSelect)"
+                           @onchange="args => Toggle(row.EmployeeId, args.Value is true)" />
+                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                    <span class="pay-check-name"><strong>@row.DisplayName</strong><small>@row.EmployeeNumber - @row.DepartmentName - @row.Designation</small></span>
+                    @if (row.BankAccount is { } bank)
+                    {
+                        <span class="pay-bank-chip">@PayrollFormat.BankShort(bank.BankName) @bank.MaskedAccountNumber</span>
+                    }
+                    else
+                    {
+                        <span class="pay-bank-chip missing">No bank account</span>
+                    }
+                    <span class="pay-net">@PayrollFormat.Rupees(row.Amounts.NetPayable)</span>
+                    <span class="pay-status @row.Status.ToLowerInvariant()">● @row.Status</span>
+                </label>
+            }
+            @if (Visible.Count == 0)
+            {
+                <p class="pay-empty">No employee matches.</p>
+            }
+        </div>
+
+        <div class="pay-transfer-total">
+            <div><strong>Total Transfer Amount</strong><small>@Selected.Count Employees · @Mode</small></div>
+            <span>@PayrollFormat.Rupees(SelectedTotal)</span>
+        </div>
+    </div>
+
+    <div class="pay-modal-foot">
+        <span></span>
+        <span class="pay-modal-actions">
+            <button type="button" class="pay-btn grey" @onclick="OnClose">✕ Cancel</button>
+            <button type="button" class="pay-btn amber-soft" disabled="@(!CanSubmit || IsBusy)" @onclick="() => OnAdvice.InvokeAsync(BuildRequest())">⬇ Download Advice</button>
+            <button type="button" class="pay-btn primary" disabled="@(!CanSubmit || IsBusy)" @onclick="() => OnExecute.InvokeAsync(BuildRequest())">
+                @(IsBusy ? "Working…" : "⇄ Execute Transfer")
+            </button>
+        </span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PayrollWorkspaceDto Workspace { get; set; } = default!;
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<ExecuteBankTransferRequest> OnExecute { get; set; }
+    [Parameter] public EventCallback<ExecuteBankTransferRequest> OnAdvice { get; set; }
+
+    private readonly HashSet<string> Selected = [];
+    private DateOnly TransferDate = DateOnly.FromDateTime(DateTime.Today);
+    private string AccountId = string.Empty;
+    private string Mode = "IMPS";
+    private string Search = string.Empty;
+    private string Filter = string.Empty;
+
+    private IReadOnlyList<EmployeePayrollRowDto> Generated =>
+        Workspace.Employees.Where(row => row.Status == PayrollLineStatuses.Generated).ToList();
+
+    private IReadOnlyList<EmployeePayrollRowDto> Selectable => Generated.Where(IsSelectable).ToList();
+
+    private IReadOnlyList<EmployeePayrollRowDto> Visible =>
+        Workspace.Employees
+            .Where(row => row.PendingReason is null)
+            .Where(row => Filter.Length == 0 ||
+                          (Filter == "no-account" ? row.BankAccount is null : row.Status == Filter))
+            .Where(row => string.IsNullOrWhiteSpace(Search) ||
+                          row.DisplayName.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                          row.EmployeeNumber.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private decimal SelectedTotal =>
+        Generated.Where(row => Selected.Contains(row.EmployeeId)).Sum(row => row.Amounts.NetPayable);
+
+    private bool CanSubmit => Selected.Count > 0 && AccountId.Length > 0 && Workspace.Run.IsApproved;
+
+    protected override void OnParametersSet()
+    {
+        if (AccountId.Length == 0 || Workspace.CompanyAccounts.All(account => account.Id != AccountId))
+        {
+            AccountId = (Workspace.CompanyAccounts.FirstOrDefault(account => account.IsDefault) ?? Workspace.CompanyAccounts.FirstOrDefault())?.Id
+                        ?? string.Empty;
+        }
+
+        Selected.RemoveWhere(id => Selectable.All(row => row.EmployeeId != id));
+    }
+
+    private static bool IsSelectable(EmployeePayrollRowDto row) =>
+        row.Status == PayrollLineStatuses.Generated && row.BankAccount is not null;
+
+    private static string? LockReason(EmployeePayrollRowDto row) =>
+        row.BankAccount is null ? "No salary bank account — add one on Bank Accounts"
+        : row.Status != PayrollLineStatuses.Generated ? $"{row.Status} — only generated, unpaid salaries can be transferred"
+        : null;
+
+    private void Toggle(string employeeId, bool on)
+    {
+        if (on)
+        {
+            Selected.Add(employeeId);
+        }
+        else
+        {
+            Selected.Remove(employeeId);
+        }
+    }
+
+    private void SelectAll(bool on)
+    {
+        Selected.Clear();
+        if (on)
+        {
+            Selected.UnionWith(Selectable.Select(row => row.EmployeeId));
+        }
+    }
+
+    private ExecuteBankTransferRequest BuildRequest() => new()
+    {
+        EmployeeIds = Selected.ToList(),
+        TransferDate = TransferDate,
+        CompanyBankAccountId = AccountId,
+        TransferMode = Mode
+    };
+}

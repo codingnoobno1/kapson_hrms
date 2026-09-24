@@ -1,0 +1,365 @@
+@page "/admin/accounts"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject IAccessAccountService AccountService
+@inject IAccessRoleService RoleService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Accounts | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="accounts" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">IDENTITY &amp; ACCESS</span>
+                <h1>HR and employee accounts</h1>
+                <p>Provision client-scoped sign-in accounts, assign one or more compatible roles, reset temporary passwords and control access without deleting history.</p>
+            </div>
+            <button class="admin-button primary" type="button" @onclick="NewAccount">Create account</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        @if (Tenants.Count == 0)
+        {
+            <section class="admin-panel admin-empty-state">
+                <h2>Create a client first</h2>
+                <p>Accounts are always owned by a licensed client.</p>
+                <a class="admin-button primary" href="/admin/tenants">Open clients</a>
+            </section>
+        }
+        else
+        {
+            <div class="access-context-bar">
+                <label>
+                    <span>Licensed client</span>
+                    <select value="@SelectedTenantKey" @onchange="TenantChangedAsync">
+                        @foreach (var tenant in Tenants)
+                        {
+                            <option value="@tenant.TenantKey">@tenant.DisplayName (@tenant.TenantKey)</option>
+                        }
+                    </select>
+                </label>
+                <div class="access-portal-switch" role="group" aria-label="Account portal">
+                    <button type="button" class="@(SelectedPortal == AccountPortal.Hr ? "active" : null)" @onclick="() => SetPortalAsync(AccountPortal.Hr)">HR portal</button>
+                    <button type="button" class="@(SelectedPortal == AccountPortal.Employee ? "active" : null)" @onclick="() => SetPortalAsync(AccountPortal.Employee)">Employee portal</button>
+                </div>
+                <span class="access-context-summary"><strong>@Accounts.Count</strong> @SelectedPortal.ToString().ToLowerInvariant() account@(Accounts.Count == 1 ? "" : "s")</span>
+            </div>
+
+            <div class="access-management-layout">
+                <section class="admin-panel access-list-panel">
+                    <div class="admin-section-title">
+                        <div><span>01</span><h2>Accounts</h2></div>
+                        <a href="/admin/roles?tenant=@SelectedTenantKey&amp;portal=@SelectedPortal.ToString().ToLowerInvariant()">Manage roles →</a>
+                    </div>
+
+                    @if (IsLoading)
+                    {
+                        <div class="access-loading">Loading accounts…</div>
+                    }
+                    else if (Accounts.Count == 0)
+                    {
+                        <div class="access-empty">
+                            <strong>No @SelectedPortal.ToString().ToLowerInvariant() accounts yet</strong>
+                            <span>Create the first account and assign a system or custom role.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="access-account-list">
+                            @foreach (var account in Accounts)
+                            {
+                                <button type="button" class="access-account-row @(SelectedAccount?.Id == account.Id ? "selected" : null)" @onclick="() => EditAccount(account)">
+                                    <span class="access-avatar">@Initials(account.DisplayName)</span>
+                                    <span class="access-account-copy">
+                                        <strong>@account.DisplayName</strong>
+                                        <small>@@@account.UserName · @account.Email</small>
+                                        <span class="access-role-line">@(account.RoleNames.Count == 0 ? "No role assigned" : string.Join(" · ", account.RoleNames))</span>
+                                    </span>
+                                    <span class="access-state-stack">
+                                        <em class="@(account.IsActive ? "active" : "inactive")">@(account.IsActive ? "Active" : "Disabled")</em>
+                                        @if (account.MobileAccessEnabled) { <em class="mobile">Mobile</em> }
+                                        @if (account.IsLocked) { <em class="locked">Locked</em> }
+                                        @if (account.MustChangePassword) { <small>password change due</small> }
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="admin-panel access-editor-panel">
+                    <div class="admin-section-title">
+                        <div><span>02</span><h2>@(SelectedAccount is null ? "Create account" : "Account details")</h2></div>
+                        @if (SelectedAccount is not null)
+                        {
+                            <small>Created @SelectedAccount.CreatedUtc.ToString("dd MMM yyyy")</small>
+                        }
+                    </div>
+
+                    @if (SelectedAccount is null)
+                    {
+                        <EditForm Model="CreateModel" OnValidSubmit="CreateAsync" FormName="create-access-account">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary class="admin-validation" />
+                            <div class="access-form-intro">
+                                <span>@SelectedPortal portal</span>
+                                <p>A temporary password is accepted once, then the user must create a private password.</p>
+                            </div>
+                            <div class="admin-form-grid">
+                                <label>Full name<InputText @bind-Value="CreateModel.DisplayName" placeholder="e.g. Ananya Sharma" /></label>
+                                <label>Username<InputText @bind-Value="CreateModel.UserName" placeholder="ananya.sharma" /></label>
+                                <label>Email address<InputText @bind-Value="CreateModel.Email" type="email" placeholder="ananya@company.com" /></label>
+                                <label>Employee number (optional)<InputText @bind-Value="CreateModel.EmployeeNumber" placeholder="EMP-00124" /></label>
+                                <label class="span-two">Temporary password<InputText @bind-Value="CreateModel.TemporaryPassword" type="password" autocomplete="new-password" placeholder="Minimum 10 characters" /></label>
+                            </div>
+                            <AccessRolePicker Roles="Roles" Portal="SelectedPortal" @bind-SelectedRoleIds="CreateModel.RoleIds" />
+                            <label class="admin-check access-active-check"><InputCheckbox @bind-Value="CreateModel.IsActive" /><span>Account is active immediately</span></label>
+                            <label class="admin-check access-active-check"><InputCheckbox @bind-Value="CreateModel.MobileAccessEnabled" /><span>May sign in to a mobile app</span></label>
+                            <div class="admin-form-actions admin-form-gap">
+                                <button class="admin-button primary" type="submit" disabled="@IsSaving">Create secure account</button>
+                            </div>
+                        </EditForm>
+                    }
+                    else
+                    {
+                        <EditForm Model="UpdateModel" OnValidSubmit="UpdateAsync" FormName="edit-access-account">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary class="admin-validation" />
+                            <div class="access-account-identity">
+                                <span class="access-avatar large">@Initials(SelectedAccount.DisplayName)</span>
+                                <div><strong>@SelectedAccount.UserName</strong><small>@SelectedAccount.Portal portal · @SelectedAccount.TenantKey</small></div>
+                            </div>
+                            <div class="admin-form-grid">
+                                <label>Full name<InputText @bind-Value="UpdateModel.DisplayName" /></label>
+                                <label>Email address<InputText @bind-Value="UpdateModel.Email" type="email" /></label>
+                                <label class="span-two">Employee number (optional)<InputText @bind-Value="UpdateModel.EmployeeNumber" /></label>
+                            </div>
+                            <AccessRolePicker Roles="Roles" Portal="SelectedPortal" @bind-SelectedRoleIds="UpdateModel.RoleIds" />
+                            <label class="admin-check access-active-check"><InputCheckbox @bind-Value="UpdateModel.IsActive" /><span>Account is active</span></label>
+                            <label class="admin-check access-active-check"><InputCheckbox @bind-Value="UpdateModel.MobileAccessEnabled" /><span>May sign in to a mobile app</span></label>
+                            <div class="admin-form-actions admin-form-gap">
+                                <button class="admin-button primary" type="submit" disabled="@IsSaving">Save account</button>
+                                <button class="admin-button secondary" type="button" @onclick="ToggleActiveAsync" disabled="@IsSaving">@(SelectedAccount.IsActive ? "Disable access" : "Enable access")</button>
+                                <button class="admin-button secondary" type="button" @onclick="ToggleMobileAccessAsync" disabled="@IsSaving">@(SelectedAccount.MobileAccessEnabled ? "Revoke mobile access" : "Grant mobile access")</button>
+                                @if (SelectedAccount.IsLocked)
+                                {
+                                    <button class="admin-button secondary" type="button" @onclick="UnlockAsync" disabled="@IsSaving">Unlock account</button>
+                                }
+                            </div>
+                        </EditForm>
+
+                        <div class="access-security-card">
+                            <div><strong>Issue a new temporary password</strong><span>This invalidates the previous password and requires a change after sign-in.</span></div>
+                            <div class="access-reset-row">
+                                <input @bind="ResetModel.TemporaryPassword" type="password" autocomplete="new-password" placeholder="New temporary password" />
+                                <button class="admin-button secondary" type="button" @onclick="ResetPasswordAsync" disabled="@IsSaving">Reset password</button>
+                            </div>
+                        </div>
+                    }
+                </section>
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<AccessAccountDto> Accounts { get; set; } = [];
+    private IReadOnlyList<AccessRoleDto> Roles { get; set; } = [];
+    private string SelectedTenantKey { get; set; } = string.Empty;
+    private AccountPortal SelectedPortal { get; set; } = AccountPortal.Hr;
+    private AccessAccountDto? SelectedAccount { get; set; }
+    private CreateAccessAccountRequest CreateModel { get; set; } = new();
+    private UpdateAccessAccountRequest UpdateModel { get; set; } = new();
+    private ResetAccountPasswordRequest ResetModel { get; set; } = new();
+    private bool IsLoading { get; set; }
+    private bool IsSaving { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = (await TenantService.GetAllAsync()).Where(tenant => tenant.IsActive).ToList();
+        if (Tenants.Count == 0) return;
+        SelectedTenantKey = Tenants[0].TenantKey;
+        await LoadAsync();
+        NewAccount();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            IsLoading = true;
+            Roles = await RoleService.GetAllAsync(SelectedTenantKey, SelectedPortal);
+            Accounts = await AccountService.GetAllAsync(SelectedTenantKey, SelectedPortal);
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsLoading = false; }
+    }
+
+    private async Task TenantChangedAsync(ChangeEventArgs args)
+    {
+        SelectedTenantKey = args.Value?.ToString() ?? SelectedTenantKey;
+        SelectedAccount = null;
+        await LoadAsync();
+        NewAccount();
+    }
+
+    private async Task SetPortalAsync(AccountPortal portal)
+    {
+        if (SelectedPortal == portal) return;
+        SelectedPortal = portal;
+        SelectedAccount = null;
+        await LoadAsync();
+        NewAccount();
+    }
+
+    private void NewAccount()
+    {
+        SelectedAccount = null;
+        var preferredRole = Roles.FirstOrDefault(role => role.IsSystem && role.IsActive &&
+            (SelectedPortal == AccountPortal.Hr ? role.RoleCode == "HR_ADMINISTRATOR" : role.RoleCode == "EMPLOYEE"));
+        CreateModel = new CreateAccessAccountRequest
+        {
+            TenantKey = SelectedTenantKey,
+            Portal = SelectedPortal,
+            IsActive = true,
+            RoleIds = preferredRole is null ? [] : [preferredRole.Id]
+        };
+        StatusMessage = null;
+    }
+
+    private void EditAccount(AccessAccountDto account)
+    {
+        SelectedAccount = account;
+        UpdateModel = new UpdateAccessAccountRequest
+        {
+            Id = account.Id,
+            DisplayName = account.DisplayName,
+            Email = account.Email,
+            EmployeeNumber = account.EmployeeNumber,
+            IsActive = account.IsActive,
+            MobileAccessEnabled = account.MobileAccessEnabled,
+            RoleIds = [.. account.RoleIds]
+        };
+        ResetModel = new ResetAccountPasswordRequest { AccountId = account.Id };
+        StatusMessage = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            var account = await AccountService.CreateAsync(CreateModel, await ActorIdAsync());
+            await LoadAsync();
+            EditAccount(Accounts.Single(item => item.Id == account.Id));
+            ShowSuccess("Account created. Share the temporary password securely; a private password will be required at first sign-in.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task UpdateAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            var account = await AccountService.UpdateAsync(UpdateModel, await ActorIdAsync());
+            await LoadAsync();
+            EditAccount(Accounts.Single(item => item.Id == account.Id));
+            ShowSuccess("Account details and role assignments saved.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task ToggleActiveAsync()
+    {
+        if (SelectedAccount is null) return;
+        try
+        {
+            IsSaving = true;
+            await AccountService.SetActiveAsync(SelectedAccount.Id, !SelectedAccount.IsActive, await ActorIdAsync());
+            var id = SelectedAccount.Id;
+            await LoadAsync();
+            EditAccount(Accounts.Single(item => item.Id == id));
+            ShowSuccess(SelectedAccount.IsActive ? "Account access enabled." : "Account access disabled.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    /// <summary>
+    /// Grants or revokes mobile sign-in for this account, without touching whether it can use
+    /// the web portal. Revoking also kills any live app session at its next token refresh.
+    /// </summary>
+    private async Task ToggleMobileAccessAsync()
+    {
+        if (SelectedAccount is null) return;
+        try
+        {
+            IsSaving = true;
+            await AccountService.SetMobileAccessAsync(
+                SelectedAccount.Id, !SelectedAccount.MobileAccessEnabled, await ActorIdAsync());
+
+            var id = SelectedAccount.Id;
+            await LoadAsync();
+            EditAccount(Accounts.Single(item => item.Id == id));
+
+            ShowSuccess(SelectedAccount.MobileAccessEnabled
+                ? "Mobile access granted. They can sign in to the app with this login."
+                : "Mobile access revoked. Any signed-in device is cut off at its next refresh.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task UnlockAsync()
+    {
+        if (SelectedAccount is null) return;
+        try
+        {
+            IsSaving = true;
+            await AccountService.UnlockAsync(SelectedAccount.Id, await ActorIdAsync());
+            var id = SelectedAccount.Id;
+            await LoadAsync();
+            EditAccount(Accounts.Single(item => item.Id == id));
+            ShowSuccess("Account unlocked and failed sign-in count cleared.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            await AccountService.ResetPasswordAsync(ResetModel, await ActorIdAsync());
+            ResetModel.TemporaryPassword = string.Empty;
+            ShowSuccess("Temporary password issued. The user must replace it at next sign-in.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task<string?> ActorIdAsync() =>
+        (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User
+            .FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+    private void ShowSuccess(string message) { StatusClass = "success"; StatusMessage = message; }
+    private void ShowError(string message) { StatusClass = "error"; StatusMessage = message; }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Take(2).Select(part => char.ToUpperInvariant(part[0])));
+    }
+}

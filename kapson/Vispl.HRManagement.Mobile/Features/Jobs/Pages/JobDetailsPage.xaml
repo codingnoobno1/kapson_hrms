@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Jobs.Pages.JobDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Jobs.ViewModels"
+    x:DataType="vm:JobDetailsViewModel"
+    Shell.NavBarIsVisible="False"
+    Shell.TabBarIsVisible="False">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,*">
+        <Grid Padding="18,16" ColumnDefinitions="Auto,*,Auto" BackgroundColor="White" ColumnSpacing="12">
+            <Button Text="‹" Clicked="BackClicked" WidthRequest="42" HeightRequest="42" Padding="0" CornerRadius="21" BackgroundColor="{StaticResource Surface}" TextColor="{StaticResource Navy800}" FontSize="28" />
+            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="-2">
+                <Label Text="Job details" FontSize="18" FontAttributes="Bold" />
+                <Label Text="Recruitment opening" Style="{StaticResource Caption}" />
+            </VerticalStackLayout>
+            <Button Grid.Column="2" Text="Edit" Style="{StaticResource SecondaryButton}" WidthRequest="76" />
+        </Grid>
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="18" Spacing="14">
+                <Border Style="{StaticResource Card}" BackgroundColor="{StaticResource Navy800}" StrokeThickness="0">
+                    <VerticalStackLayout Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="{Binding Job.Title}" TextColor="White" FontSize="24" FontAttributes="Bold" />
+                            <controls:StatusPill Grid.Column="1" Status="{Binding Job.Status}" VerticalOptions="Start" />
+                        </Grid>
+                        <Label Text="{Binding Job.Department}" TextColor="#BCD0EE" FontSize="14" />
+                        <Label Text="{Binding Job.Location}" TextColor="White" FontSize="14" />
+                        <HorizontalStackLayout Spacing="8">
+                            <Border Padding="10,5" BackgroundColor="#1AFFFFFF" StrokeThickness="0"><Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape><Label Text="{Binding Job.EmploymentType}" TextColor="White" FontSize="12" /></Border>
+                            <Border Padding="10,5" BackgroundColor="#1AFFFFFF" StrokeThickness="0"><Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape><Label Text="{Binding Job.Experience}" TextColor="White" FontSize="12" /></Border>
+                        </HorizontalStackLayout>
+                        <Label Text="{Binding Job.Salary}" TextColor="{StaticResource Gold500}" FontSize="17" FontAttributes="Bold" Margin="0,4,0,0" />
+                    </VerticalStackLayout>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout Spacing="9">
+                        <Label Text="Job summary" Style="{StaticResource SectionTitle}" />
+                        <Label Text="{Binding Job.Summary}" Style="{StaticResource BodyText}" LineHeight="1.35" />
+                    </VerticalStackLayout>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Key responsibilities" Style="{StaticResource SectionTitle}" />
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Job.Responsibilities}" Spacing="8">
+                            <BindableLayout.ItemTemplate><DataTemplate x:DataType="x:String"><Label Text="{Binding ., StringFormat='•  {0}'}" Style="{StaticResource BodyText}" /></DataTemplate></BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Required qualifications" Style="{StaticResource SectionTitle}" />
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Job.Requirements}" Spacing="8">
+                            <BindableLayout.ItemTemplate><DataTemplate x:DataType="x:String"><Label Text="{Binding ., StringFormat='•  {0}'}" Style="{StaticResource BodyText}" /></DataTemplate></BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+                <Button Text="Manage opening" Style="{StaticResource PrimaryButton}" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

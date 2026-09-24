@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Applicants.Pages.ApplicantDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Applicants.ViewModels"
+    x:DataType="vm:ApplicantDetailsViewModel"
+    Shell.NavBarIsVisible="False"
+    Shell.TabBarIsVisible="False">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,*">
+        <Grid Padding="18,16" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" BackgroundColor="White">
+            <Button Text="‹" Clicked="BackClicked" WidthRequest="42" HeightRequest="42" Padding="0" CornerRadius="21" BackgroundColor="{StaticResource Surface}" TextColor="{StaticResource Navy800}" FontSize="28" />
+            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="-2">
+                <Label Text="Applicant profile" FontSize="18" FontAttributes="Bold" />
+                <Label Text="Full application details" Style="{StaticResource Caption}" />
+            </VerticalStackLayout>
+            <Button Grid.Column="2" Text="•••" BackgroundColor="Transparent" TextColor="{StaticResource Navy800}" FontSize="18" />
+        </Grid>
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="18" Spacing="14">
+                <Border Style="{StaticResource Card}" BackgroundColor="{StaticResource Navy800}" StrokeThickness="0">
+                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="64,*,Auto" ColumnSpacing="14" RowSpacing="5">
+                        <Border Grid.RowSpan="3" WidthRequest="60" HeightRequest="60" BackgroundColor="{StaticResource Primary500}" StrokeThickness="0">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="30" /></Border.StrokeShape>
+                            <Label Text="◎" TextColor="White" FontSize="29" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+                        </Border>
+                        <Label Grid.Column="1" Text="{Binding Applicant.Name}" TextColor="White" FontSize="21" FontAttributes="Bold" />
+                        <controls:StatusPill Grid.Column="2" Status="{Binding Applicant.Status}" />
+                        <Label Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Applicant.JobTitle}" TextColor="#BCD0EE" FontSize="14" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding Applicant.AppliedAt, StringFormat='Applied {0:dd MMM yyyy}'}" TextColor="#BCD0EE" FontSize="12" />
+                        <Label Grid.Row="2" Grid.Column="2" Text="{Binding Applicant.Rating, StringFormat='★ {0:0.0}/5'}" TextColor="{StaticResource Gold500}" FontAttributes="Bold" />
+                    </Grid>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="Contact information" Style="{StaticResource SectionTitle}" />
+                        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                            <Label Text="Email" Style="{StaticResource Caption}" /><Label Grid.Column="1" Text="{Binding Applicant.Email}" Style="{StaticResource BodyText}" />
+                            <Label Grid.Row="1" Text="Phone" Style="{StaticResource Caption}" /><Label Grid.Row="1" Grid.Column="1" Text="{Binding Applicant.Phone}" Style="{StaticResource BodyText}" />
+                            <Label Grid.Row="2" Text="Location" Style="{StaticResource Caption}" /><Label Grid.Row="2" Grid.Column="1" Text="{Binding Applicant.Location}" Style="{StaticResource BodyText}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="Professional details" Style="{StaticResource SectionTitle}" />
+                        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                            <Label Text="Experience" Style="{StaticResource Caption}" /><Label Grid.Column="1" Text="{Binding Applicant.Experience}" Style="{StaticResource BodyText}" />
+                            <Label Grid.Row="1" Text="Education" Style="{StaticResource Caption}" /><Label Grid.Row="1" Grid.Column="1" Text="{Binding Applicant.Education}" Style="{StaticResource BodyText}" />
+                            <Label Grid.Row="2" Text="Department" Style="{StaticResource Caption}" /><Label Grid.Row="2" Grid.Column="1" Text="{Binding Applicant.Department}" Style="{StaticResource BodyText}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <Button Text="Invite interview" Style="{StaticResource PrimaryButton}" />
+                    <Button Grid.Column="1" Text="Update stage" Style="{StaticResource SecondaryButton}" />
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

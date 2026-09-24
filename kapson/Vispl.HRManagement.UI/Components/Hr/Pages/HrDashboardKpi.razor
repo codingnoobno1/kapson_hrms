@@ -1,0 +1,148 @@
+@page "/hr/dashboard/kpi/{Key}"
+@page "/hr/{TenantKey}/dashboard/kpi/{Key}"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IHrDashboardService Dashboard
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>@(Model?.Title ?? KpiTitle(Key)) | HR Portal</PageTitle>
+
+<div class="hr-app">
+    <HrNav ActivePage="dashboard" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <div class="hr-page-heading">
+            <div>
+                <span class="hr-kicker">WORKFORCE</span>
+                <h1>@(Model?.Title ?? KpiTitle(Key))</h1>
+                <p>Everyone this tile counts, as of @((Model?.Scope.AsOf ?? DateOnly.FromDateTime(DateTime.Today)).ToString("dd MMM yyyy")).</p>
+            </div>
+            <a class="hr-button small ghost" href="@DashboardPath()">‹ Back to dashboard</a>
+        </div>
+
+        @if (LoadError is not null)
+        {
+            <div class="hr-alert error">@LoadError</div>
+        }
+        else
+        {
+            <p class="hr-scope-line">
+                @(Model?.Rows.Count ?? 0) @(Key == DashboardKpiKeys.PendingApproval ? "requests" : "people") ·
+                @(Model?.Scope.CompanyCode ?? "all companies") ·
+                @(Model?.Scope.UnitCode ?? "all units") ·
+                as of @((Model?.Scope.AsOf ?? DateOnly.FromDateTime(DateTime.Today)).ToString("dd MMM yyyy"))
+            </p>
+
+            <div class="hr-filter-bar">
+                <label>
+                    Search
+                    <input type="search" placeholder="Name, department or designation…"
+                           value="@Search" @oninput="OnSearch" />
+                </label>
+            </div>
+
+            <HrDataTable TRow="DashboardKpiMemberDto"
+                         Title="@(Model?.Title ?? KpiTitle(Key))"
+                         IsLoading="IsLoading"
+                         EmptyMessage="Nobody matches this tile right now."
+                         Rows="FilteredRows()">
+                <Header>
+                    <th>Employee</th>
+                    <th>Department</th>
+                    <th>Designation</th>
+                    <th>Detail</th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@(row.DepartmentCode ?? "—")</td>
+                    <td>@(row.Designation ?? "—")</td>
+                    <td><span class="hr-tag tone-@row.Tone">@row.Detail</span></td>
+                </Row>
+            </HrDataTable>
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+    [Parameter] public string Key { get; set; } = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "company")] public string? CompanyCode { get; set; }
+    [SupplyParameterFromQuery(Name = "unit")] public string? UnitCode { get; set; }
+    [SupplyParameterFromQuery(Name = "asOf")] public string? AsOfRaw { get; set; }
+
+    private DashboardKpiMembersDto? Model;
+    private string? LoadError;
+    private bool IsLoading = true;
+    private string Search = string.Empty;
+
+    private string DashboardPath() =>
+        string.IsNullOrWhiteSpace(TenantKey) ? "/hr/dashboard" : $"/hr/{TenantKey}/dashboard";
+
+    private static string KpiTitle(string key) => key switch
+    {
+        DashboardKpiKeys.TotalEmployees => "Total Employees",
+        DashboardKpiKeys.PresentToday => "Present Today",
+        DashboardKpiKeys.OnLeave => "On Leave",
+        DashboardKpiKeys.Absent => "Not In Yet",
+        DashboardKpiKeys.LateComing => "Late Coming",
+        DashboardKpiKeys.PendingApproval => "Pending Approval",
+        _ => "Dashboard"
+    };
+
+    private void OnSearch(ChangeEventArgs args) => Search = args.Value?.ToString() ?? string.Empty;
+
+    private IReadOnlyList<DashboardKpiMemberDto> FilteredRows()
+    {
+        if (Model is null)
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(Search))
+        {
+            return Model.Rows;
+        }
+
+        return Model.Rows
+            .Where(row =>
+                row.DisplayName.Contains(Search, StringComparison.OrdinalIgnoreCase) ||
+                (row.DepartmentCode?.Contains(Search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (row.Designation?.Contains(Search, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        IsLoading = true;
+        LoadError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            var query = new DashboardScopeQuery
+            {
+                CompanyCode = string.IsNullOrWhiteSpace(CompanyCode) ? null : CompanyCode,
+                UnitCode = string.IsNullOrWhiteSpace(UnitCode) ? null : UnitCode,
+                AsOf = DateOnly.TryParse(AsOfRaw, out var parsed) ? parsed : null
+            };
+
+            Model = await Dashboard.GetKpiMembersAsync(caller, Key, query, CancellationToken.None);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account does not hold {denied.Permission}, so this list cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}

@@ -1,0 +1,278 @@
+@page "/admin/holidays"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject ILeaveConfigurationService LeaveConfiguration
+@inject IMasterDataService MasterDataService
+
+<PageTitle>Holiday Calendar | Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="holidays" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">WORKFORCE</span>
+                <h1>Holiday Calendar</h1>
+                <p>Days excluded from chargeable leave. A holiday inside a leave range is not charged, unless the policy charges non-working days.</p>
+            </div>
+            <div class="admin-context-bar-inline">
+                <label>Client
+                    <select value="@TenantKey" @onchange="ChangeTenant">
+                        @foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }
+                    </select>
+                </label>
+                <label>Year
+                    <select value="@Year" @onchange="ChangeYear">
+                        @foreach (var year in SelectableYears) { <option value="@year">@year</option> }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        <div class="admin-masters-shell admin-leave-shell">
+
+            <section class="admin-masters-list-panel admin-panel">
+                <div class="admin-section-title">
+                    <div>
+                        <span>@Holidays.Count</span>
+                        <h2>@Year</h2>
+                    </div>
+                    <button class="admin-button secondary" type="button" @onclick="NewHoliday">+ Add holiday</button>
+                </div>
+
+                <div class="admin-master-list">
+                    @foreach (var month in Holidays.GroupBy(item => item.Date.Month).OrderBy(group => group.Key))
+                    {
+                        <div class="admin-masters-group">
+                            <span class="admin-masters-group-label">@MonthName(month.Key)</span>
+                            @foreach (var holiday in month.OrderBy(item => item.Date))
+                            {
+                                <button type="button"
+                                        class="admin-master-item @(EditorModel.Id == holiday.Id ? "active" : null)"
+                                        @onclick="() => EditHoliday(holiday)">
+                                    <code>@holiday.Date.ToString("dd MMM")</code>
+                                    <span>
+                                        <strong>@holiday.Name</strong>
+                                        <small>
+                                            @holiday.Date.DayOfWeek
+                                            @if (string.IsNullOrWhiteSpace(holiday.LocationCode))
+                                            {
+                                                <text> · all locations</text>
+                                            }
+                                            else
+                                            {
+                                                <text> · @holiday.LocationCode only</text>
+                                            }
+                                            @if (IsWeekend(holiday.Date)) { <text> · already a weekend</text> }
+                                        </small>
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                    @if (Holidays.Count == 0)
+                    {
+                        <p class="admin-empty">No holidays recorded for @Year. Leave taken this year will charge every weekday.</p>
+                    }
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                <EditForm Model="EditorModel" OnValidSubmit="SaveAsync">
+                    <DataAnnotationsValidator />
+                    <div class="admin-section-title">
+                        <div>
+                            <h2>@(EditorModel.Id == 0 ? "New holiday" : EditorModel.Name)</h2>
+                        </div>
+                    </div>
+
+                    <div class="admin-form-grid">
+                        <label>Date
+                            <InputDate @bind-Value="EditorModel.Date" />
+                            @if (IsWeekend(EditorModel.Date))
+                            {
+                                <small>This falls on a @EditorModel.Date.DayOfWeek, which is already excluded from ordinary leave.</small>
+                            }
+                        </label>
+                        <label>Name
+                            <InputText @bind-Value="EditorModel.Name" placeholder="Republic Day" />
+                        </label>
+
+                        <label class="span-two">Location
+                            <InputSelect @bind-Value="EditorModel.LocationCode">
+                                <option value="">All locations</option>
+                                @foreach (var location in Locations)
+                                {
+                                    <option value="@location.Code">@location.Name</option>
+                                }
+                            </InputSelect>
+                            <small>A location-specific holiday only applies to employees based there.</small>
+                        </label>
+                    </div>
+
+                    <ValidationSummary />
+
+                    <div class="admin-form-actions">
+                        <button class="admin-button" type="submit" disabled="@IsSaving">
+                            @(IsSaving ? "Saving…" : "Save holiday")
+                        </button>
+                        @if (EditorModel.Id != 0)
+                        {
+                            @if (ConfirmingDelete)
+                            {
+                                <span class="admin-confirm">
+                                    Remove @EditorModel.Name?
+                                    <button class="admin-button danger" type="button" @onclick="DeleteAsync">Yes, remove</button>
+                                    <button class="admin-button secondary" type="button" @onclick="() => ConfirmingDelete = false">Cancel</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <button class="admin-button secondary" type="button" @onclick="() => ConfirmingDelete = true">Remove</button>
+                            }
+                        }
+                    </div>
+
+                    @if (EditorModel.Id != 0)
+                    {
+                        <p class="admin-form-note">
+                            Removing a holiday does not change leave already requested — those days were fixed when the
+                            request was raised. It only affects requests made from now on.
+                        </p>
+                    }
+                </EditForm>
+            </section>
+        </div>
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants = [];
+    private IReadOnlyList<LeaveHolidayAdminDto> Holidays = [];
+    private IReadOnlyList<MasterOptionDto> Locations = [];
+    private LeaveHolidayAdminDto EditorModel = new();
+    private string TenantKey = "kapson";
+    private int Year = DateTime.UtcNow.Year;
+    private string? StatusMessage;
+    private string StatusClass = "success";
+    private bool IsSaving;
+    private bool ConfirmingDelete;
+
+    private static IReadOnlyList<int> SelectableYears { get; } =
+        Enumerable.Range(DateTime.UtcNow.Year - 2, 6).ToList();
+
+    private static string MonthName(int month) =>
+        System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month);
+
+    private static bool IsWeekend(DateOnly date) =>
+        date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync();
+        TenantKey = Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await RefreshAsync();
+        NewHoliday();
+    }
+
+    private async Task ChangeTenant(ChangeEventArgs args)
+    {
+        var requested = args.Value?.ToString();
+        TenantKey = Tenants.Any(tenant => tenant.TenantKey == requested)
+            ? requested!
+            : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+
+        StatusMessage = null;
+        await RefreshAsync();
+        NewHoliday();
+    }
+
+    private async Task ChangeYear(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var year)) { Year = year; }
+        StatusMessage = null;
+        await RefreshAsync();
+        NewHoliday();
+    }
+
+    private void NewHoliday()
+    {
+        ConfirmingDelete = false;
+        EditorModel = new LeaveHolidayAdminDto
+        {
+            TenantKey = TenantKey,
+            Date = new DateOnly(Year, 1, 1)
+        };
+    }
+
+    private void EditHoliday(LeaveHolidayAdminDto holiday)
+    {
+        StatusMessage = null;
+        ConfirmingDelete = false;
+        EditorModel = new LeaveHolidayAdminDto
+        {
+            Id = holiday.Id,
+            TenantKey = holiday.TenantKey,
+            Date = holiday.Date,
+            Name = holiday.Name,
+            LocationCode = holiday.LocationCode
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            EditorModel.TenantKey = TenantKey;
+            var id = await LeaveConfiguration.SaveHolidayAsync(EditorModel);
+
+            // A holiday moved into another year belongs on that year's page.
+            Year = EditorModel.Date.Year;
+            await RefreshAsync();
+
+            var saved = Holidays.FirstOrDefault(holiday => holiday.Id == id);
+            if (saved is not null) { EditHoliday(saved); }
+
+            StatusClass = "success";
+            StatusMessage = $"{EditorModel.Name} saved.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            var removed = EditorModel.Name;
+            await LeaveConfiguration.DeleteHolidayAsync(TenantKey, EditorModel.Id);
+            await RefreshAsync();
+            NewHoliday();
+
+            StatusClass = "success";
+            StatusMessage = $"{removed} removed from the {Year} calendar.";
+        }
+        catch (Exception ex)
+        {
+            StatusClass = "error";
+            StatusMessage = ex.Message;
+        }
+        finally { IsSaving = false; ConfirmingDelete = false; }
+    }
+
+    private async Task RefreshAsync()
+    {
+        Holidays = await LeaveConfiguration.GetHolidaysAsync(TenantKey, Year);
+        Locations = await MasterDataService.GetActiveAsync(TenantKey, MasterCategories.Location);
+    }
+}

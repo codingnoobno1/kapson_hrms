@@ -1,0 +1,25 @@
+@page "/hr/settings"
+@page "/hr/{TenantKey}/settings"
+@attribute [Authorize(Policy = "HrPortal")]
+
+@*
+    The "APP Configuration" tab of the client-locked mega-menu design
+    (scopedocs/web-portal/08-app-menu-design-layout.md §4), as a standalone routed page — a
+    bookmarkable, directly-linkable equivalent of the same tab inside the mega-menu overlay
+    (HrNav.razor). Both render <HrMasterCardGrid>, so there is exactly one place this grid is
+    implemented.
+*@
+
+<PageTitle>System Settings | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="settings" TenantKey="@TenantKey"
+             Kicker="SYSTEM SETTINGS" Title="App Configuration"
+             Subtitle="Controlled values and structures used across the HR platform.">
+    <ChildContent>
+        <HrMasterCardGrid TenantKey="@TenantKey" />
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+}

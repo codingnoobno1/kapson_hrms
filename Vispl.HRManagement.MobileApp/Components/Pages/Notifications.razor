@@ -1,0 +1,95 @@
+@page "/notifications"
+@inject ScreenData Data
+
+@* REF-08 Notifications — General, and REF-09 — Interview Schedule. *@
+<PageTitle>Notifications</PageTitle>
+
+<SegmentedTabBar Segments="Tabs" Selected="@tab" SelectedChanged="OnTabChanged" />
+
+@if (isLoading)
+{
+    <SkeletonList Count="4" Label="Loading" />
+}
+else if (tab == "general")
+{
+    @if (notifications is not null && notifications.Count > 0)
+    {
+        <div class="stagger">
+            @foreach (var item in notifications)
+            {
+                <NotificationCard Notification="item" />
+            }
+        </div>
+    }
+    else if (notifications is not null)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><AppIcon Name="bell" Size="40" StrokeWidth="1.4" /></div>
+            <h2>No notifications</h2>
+            <p>Nothing has arrived yet.</p>
+        </div>
+    }
+    else if (notificationResult is not null)
+    {
+        <ProblemView Outcome="notificationResult.Outcome" Problem="notificationResult.Problem" OnRetry="LoadAsync" />
+    }
+}
+else
+{
+    @if (interviews is not null && interviews.Count > 0)
+    {
+        <div class="stagger">
+            @foreach (var interview in interviews)
+            {
+                <InterviewCard Interview="interview" />
+            }
+        </div>
+    }
+    else if (interviewResult is not null)
+    {
+        <ProblemView Outcome="interviewResult.Outcome" Problem="interviewResult.Problem" OnRetry="LoadAsync" />
+    }
+}
+
+@code {
+    private static readonly SegmentedTabBar.Segment[] Tabs =
+    [
+        new("general", "General", "message-circle"),
+        new("interviews", "Interview Schedule", "calendar")
+    ];
+
+    private string tab = "general";
+    private bool isLoading = true;
+
+    private ScreenResult<IReadOnlyList<NotificationModel>>? notificationResult;
+    private IReadOnlyList<NotificationModel>? notifications;
+
+    private ScreenResult<IReadOnlyList<InterviewModel>>? interviewResult;
+    private IReadOnlyList<InterviewModel>? interviews;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnTabChanged(string key)
+    {
+        tab = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+
+        if (tab == "general")
+        {
+            notificationResult = await Data.GetNotificationsAsync();
+            notifications = notificationResult.Data;
+        }
+        else
+        {
+            interviewResult = await Data.GetInterviewsAsync();
+            interviews = interviewResult.Data;
+        }
+
+        isLoading = false;
+    }
+}

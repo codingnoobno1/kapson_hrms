@@ -1,0 +1,101 @@
+@page "/admin/tenants"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+
+<PageTitle>Clients | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div><span class="admin-kicker">PLATFORM ADMINISTRATION</span><h1>Clients and tenants</h1><p>Each licensed company receives isolated SQL configuration, masters, media, jobs and a career-site URL.</p></div>
+            <button class="admin-button primary" type="button" @onclick="NewTenant">Add client</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="admin-alert @StatusClass">@StatusMessage</div> }
+
+        <div class="admin-tenant-layout">
+            <section class="admin-panel">
+                <div class="admin-section-title"><div><span>@Tenants.Count</span><h2>Licensed clients</h2></div></div>
+                <div class="admin-tenant-list">
+                    @foreach (var tenant in Tenants)
+                    {
+                        <button type="button" class="admin-tenant-item @(EditorModel.Id == tenant.Id ? "active" : null)" @onclick="() => EditTenant(tenant)">
+                            <span class="admin-tenant-avatar">@tenant.DisplayName[..1].ToUpperInvariant()</span>
+                            <span><strong>@tenant.DisplayName</strong><small>@tenant.TenantKey · @(tenant.PrimaryDomain ?? "No custom domain")</small></span>
+                            <em class="@(tenant.IsActive ? "active" : null)">@(tenant.IsActive ? "Active" : "Inactive")</em>
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <section class="admin-panel">
+                <div class="admin-section-title"><div><span>@(EditorModel.Id == 0 ? "NEW" : EditorModel.Id)</span><h2>@(EditorModel.Id == 0 ? "Add licensed client" : "Client settings")</h2></div></div>
+                <EditForm Model="EditorModel" OnValidSubmit="SaveAsync" FormName="tenant-editor">
+                    <DataAnnotationsValidator /><ValidationSummary class="admin-validation" />
+                    <div class="admin-form-grid">
+                        <label>Tenant key<InputText @bind-Value="EditorModel.TenantKey" disabled="@(EditorModel.Id != 0)" placeholder="acme-industries" /></label>
+                        <label>Company display name<InputText @bind-Value="EditorModel.DisplayName" /></label>
+                        <label class="span-two">Primary domain (optional)<InputText @bind-Value="EditorModel.PrimaryDomain" placeholder="careers.acme.com" /></label>
+                        <label class="span-two">Time zone<InputText @bind-Value="EditorModel.TimeZoneId" placeholder="India Standard Time" />
+                            <small>Calendar-day decisions — gate pass validity, working days — are resolved in this zone, not in UTC.</small>
+                        </label>
+                        <label class="span-two admin-checkline">
+                            <InputCheckbox @bind-Value="EditorModel.HrPortalEnabled" />
+                            <span>HR web portal enabled<small>Lets this client sign in at /hr. Switching it off closes the portal for everyone at this client, including sessions already open. Their recruitment site and mobile apps are unaffected.</small></span>
+                        </label>
+                        <label class="admin-check span-two"><InputCheckbox @bind-Value="EditorModel.IsActive" /><span>Client licence is active</span></label>
+                    </div>
+                    <div class="admin-form-actions admin-form-gap"><button class="admin-button primary" type="submit" disabled="@IsSaving">Save client</button></div>
+                </EditForm>
+                @if (EditorModel.Id != 0)
+                {
+                    <div class="admin-quick-links">
+                        <a href="/admin/career-site?tenant=@EditorModel.TenantKey">Configure career site</a>
+                        <a href="/admin/masters?tenant=@EditorModel.TenantKey">Manage masters</a>
+                        <a href="/admin/jobs?tenant=@EditorModel.TenantKey">Manage jobs</a>
+                        <a href="/career/@EditorModel.TenantKey" target="_blank">Open public URL ↗</a>
+                    </div>
+                }
+            </section>
+        </div>
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private TenantDto EditorModel { get; set; } = NewModel();
+    private bool IsSaving { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        if (Tenants.Count > 0) EditTenant(Tenants[0]);
+    }
+
+    private void NewTenant() { EditorModel = NewModel(); StatusMessage = null; }
+    private static TenantDto NewModel() => new() { IsActive = true };
+    private void EditTenant(TenantDto tenant) => EditorModel = new()
+    {
+        Id = tenant.Id, TenantKey = tenant.TenantKey, DisplayName = tenant.DisplayName,
+        PrimaryDomain = tenant.PrimaryDomain, IsActive = tenant.IsActive,
+        CreatedUtc = tenant.CreatedUtc, UpdatedUtc = tenant.UpdatedUtc
+    };
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            var id = await TenantService.SaveAsync(EditorModel);
+            await RefreshAsync();
+            EditTenant(Tenants.Single(item => item.Id == id));
+            StatusClass = "success";
+            StatusMessage = "Client saved. Its isolated draft career site is ready for configuration.";
+        }
+        catch (Exception exception) { StatusClass = "error"; StatusMessage = exception.Message; }
+        finally { IsSaving = false; }
+    }
+
+    private async Task RefreshAsync() => Tenants = await TenantService.GetAllAsync();
+}

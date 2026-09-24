@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentView
+    x:Class="Vispl.HRManagement.Mobile.Shared.Controls.ApplicantCard"
+    x:Name="Root"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:behaviors="clr-namespace:Vispl.HRManagement.Mobile.Shared.Behaviors"
+    x:DataType="controls:ApplicantCard">
+    <Border Style="{StaticResource Card}">
+        <Border.Behaviors>
+            <behaviors:PressScaleBehavior />
+        </Border.Behaviors>
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding OpenCommand, Source={x:Reference Root}}" CommandParameter="{Binding Item, Source={x:Reference Root}}" />
+        </Border.GestureRecognizers>
+        <Grid ColumnDefinitions="48,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="5">
+            <Border Grid.RowSpan="2" WidthRequest="44" HeightRequest="44" BackgroundColor="{StaticResource BlueTint}" StrokeThickness="0">
+                <Border.StrokeShape><RoundRectangle CornerRadius="22" /></Border.StrokeShape>
+                <Label Text="◎" TextColor="{StaticResource Primary600}" FontSize="22" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+            </Border>
+            <Label Grid.Column="1" Text="{Binding Item.Name, Source={x:Reference Root}}" FontSize="15" FontAttributes="Bold" />
+            <controls:StatusPill Grid.Column="2" Status="{Binding Item.Status, Source={x:Reference Root}}" />
+            <Label Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Item.JobTitle, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+            <HorizontalStackLayout Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Spacing="10">
+                <Label Text="{Binding Item.Email, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+                <Label Text="{Binding Item.Phone, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+            </HorizontalStackLayout>
+            <Grid Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto" Margin="0,5,0,0">
+                <Label Text="{Binding Item.Rating, Source={x:Reference Root}, StringFormat='★ {0:0.0}/5'}" TextColor="{StaticResource Gold500}" FontAttributes="Bold" FontSize="12" />
+                <Label Grid.Column="2" Text="View profile  ›" TextColor="{StaticResource Primary600}" FontAttributes="Bold" FontSize="12" />
+            </Grid>
+        </Grid>
+    </Border>
+</ContentView>

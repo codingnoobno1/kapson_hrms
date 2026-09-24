@@ -1,0 +1,199 @@
+@page "/settings"
+@inject AppSession Session
+@inject MobileAppOptions Options
+@inject DiscoveryApi Discovery
+@inject MastersApi Masters
+@inject ScreenData Data
+@inject AuthApi Auth
+@inject ITokenStore Tokens
+@inject NavigationManager Navigation
+@inject AppThemeService Theme
+
+<PageTitle>Settings</PageTitle>
+
+<h1 class="page-title">Settings</h1>
+
+<section class="card theme-settings-card">
+    <div class="card-head">
+        <h2>Colour palette</h2>
+        <span class="badge">@(Theme.PresetKey == "custom" ? "Custom" : "Theme")</span>
+    </div>
+    <p class="card-note">Choose a complete theme or tune each widget family. Changes preview instantly and stay only on this device.</p>
+
+    <div class="theme-presets" role="list" aria-label="App themes">
+        @foreach (var preset in AppThemeService.Presets)
+        {
+            <button type="button"
+                    class="theme-preset @(Theme.PresetKey == preset.Key ? "selected" : "")"
+                    @onclick="@(() => Theme.ApplyPreset(preset.Key))">
+                <span class="theme-preset-swatches" aria-hidden="true">
+                    <i style="background:@preset.Primary"></i>
+                    <i style="background:@preset.KpiTwo"></i>
+                    <i style="background:@preset.KpiThree"></i>
+                </span>
+                <span><strong>@preset.Name</strong><small>@preset.Description</small></span>
+            </button>
+        }
+    </div>
+
+    <h3 class="theme-subtitle">Widget colours</h3>
+    <div class="widget-colour-grid">
+        <label class="widget-colour-picker"><span>Brand &amp; actions</span><input type="color" value="@Theme.Primary" aria-label="Brand and actions colour" @oninput="@(args => ChangeColour("primary", args))" /></label>
+        <label class="widget-colour-picker"><span>KPI widget 1</span><input type="color" value="@Theme.KpiOne" aria-label="KPI widget 1 colour" @oninput="@(args => ChangeColour("kpi-one", args))" /></label>
+        <label class="widget-colour-picker"><span>KPI widget 2</span><input type="color" value="@Theme.KpiTwo" aria-label="KPI widget 2 colour" @oninput="@(args => ChangeColour("kpi-two", args))" /></label>
+        <label class="widget-colour-picker"><span>KPI widget 3</span><input type="color" value="@Theme.KpiThree" aria-label="KPI widget 3 colour" @oninput="@(args => ChangeColour("kpi-three", args))" /></label>
+        <label class="widget-colour-picker"><span>Detail cards</span><input type="color" value="@Theme.CardAccent" aria-label="Detail card colour" @oninput="@(args => ChangeColour("card", args))" /></label>
+        <label class="widget-colour-picker"><span>Charts &amp; reports</span><input type="color" value="@Theme.ChartAccent" aria-label="Charts and reports colour" @oninput="@(args => ChangeColour("chart", args))" /></label>
+    </div>
+    <button class="btn-ghost btn-block" type="button" @onclick="Theme.Reset">Restore reference palette</button>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>Design preview</h2>
+        <span class="badge @(Data.UseSampleData ? "" : "badge-off")">@(Data.UseSampleData ? "On" : "Off")</span>
+    </div>
+    <p class="card-note">
+        Renders the screens with content transcribed from the design references so the UI can be
+        reviewed before the API is finished. A banner stays on screen while it is on. Turn it off
+        to see exactly what the server returns.
+    </p>
+    <button class="btn-ghost btn-block" type="button" @onclick="ToggleSample">
+        @(Data.UseSampleData ? "Use live server data" : "Show sample data")
+    </button>
+</section>
+
+<section class="card">
+    <h2>Server</h2>
+    <div class="field">
+        <label for="base">API base address</label>
+        <input id="base" class="input mono" type="url" @bind="baseAddress" />
+    </div>
+    <button class="btn-primary btn-block" type="button" @onclick="SaveBaseAddressAsync">Save and test</button>
+    <button class="btn-ghost btn-block" type="button" @onclick="ResetBaseAddress">Reset to default</button>
+
+    @if (testMessage is not null)
+    {
+        <p class="card-note @(testOk ? "text-ok" : "text-bad")">@testMessage</p>
+    }
+
+    <p class="card-note">
+        On the Android emulator the developer machine is reachable at
+        <code>@MobileAppOptions.DefaultAndroidBaseAddress</code>, never at localhost.
+    </p>
+</section>
+
+<section class="card">
+    <h2>Company</h2>
+    @if (Session.HasTenant)
+    {
+        <div class="kv"><span>Name</span><span>@Session.TenantName</span></div>
+        <div class="kv"><span>Key</span><span class="mono">@Session.TenantKey</span></div>
+        <div class="kv"><span>Authority</span><span class="mono">@(string.IsNullOrWhiteSpace(Session.Authority) ? "not configured" : Session.Authority)</span></div>
+        <button class="btn-ghost btn-block" type="button" @onclick="ForgetAsync">Disconnect company</button>
+    }
+    else
+    {
+        <p>No company connected.</p>
+        <button class="btn-primary btn-block" type="button" @onclick="@(() => Navigation.NavigateTo("/connect"))">Connect</button>
+    }
+</section>
+
+<section class="card">
+    <h2>Account</h2>
+    @if (Session.IsSignedIn)
+    {
+        <div class="kv"><span>User</span><span>@Session.DisplayName</span></div>
+        <div class="kv"><span>Portal</span><span>@Session.Portal</span></div>
+        <div class="kv"><span>Permissions</span><span>@Session.Permissions.Count</span></div>
+        <button class="btn-ghost btn-block" type="button" @onclick="SignOutAsync">Sign out</button>
+    }
+    else
+    {
+        <p>Not signed in.</p>
+        <button class="btn-primary btn-block" type="button" @onclick="@(() => Navigation.NavigateTo("/signin"))">Sign in</button>
+    }
+</section>
+
+<section class="card">
+    <h2>About</h2>
+    <div class="kv"><span>App version</span><span>@AppInfo.VersionString (@AppInfo.BuildString)</span></div>
+    <div class="kv"><span>Platform</span><span>@DeviceInfo.Platform @DeviceInfo.VersionString</span></div>
+    <div class="kv"><span>Device</span><span>@DeviceInfo.Model</span></div>
+    <div class="kv"><span>Idiom</span><span>@DeviceInfo.Idiom</span></div>
+</section>
+
+@code {
+    private string baseAddress = string.Empty;
+    private string? testMessage;
+    private bool testOk;
+
+    private void ChangeColour(string widget, ChangeEventArgs args)
+    {
+        if (args.Value is string colour)
+        {
+            Theme.SetWidgetColour(widget, colour);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Session.Load();
+        baseAddress = Session.GetBaseAddress(Options);
+    }
+
+    private void ToggleSample() => Data.UseSampleData = !Data.UseSampleData;
+
+    private async Task SaveBaseAddressAsync()
+    {
+        var candidate = baseAddress.Trim();
+        if (!candidate.EndsWith('/'))
+        {
+            candidate += "/";
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out _))
+        {
+            testOk = false;
+            testMessage = "That is not a valid absolute URL.";
+            return;
+        }
+
+        Session.SetBaseAddress(candidate);
+        baseAddress = candidate;
+        Masters.Invalidate();
+
+        var result = await Discovery.GetMetadataAsync();
+        testOk = result.IsSuccess;
+        testMessage = result is { IsSuccess: true, Data: not null }
+            ? $"Connected. API {result.Data.ApiVersion}, minimum app {result.Data.MinimumAppVersion}."
+            : result.Message;
+    }
+
+    private void ResetBaseAddress()
+    {
+        Session.SetBaseAddress(Options.BaseAddress);
+        baseAddress = Options.BaseAddress;
+        testMessage = null;
+    }
+
+    private async Task SignOutAsync()
+    {
+        // Revoke server-side first so the refresh token cannot outlive the local sign-out.
+        var refreshToken = await Tokens.GetRefreshTokenAsync();
+        if (!string.IsNullOrWhiteSpace(refreshToken))
+        {
+            await Auth.RevokeAsync(refreshToken, allDevices: false);
+        }
+
+        await Session.SignOutAsync();
+        Masters.Invalidate();
+    }
+
+    private async Task ForgetAsync()
+    {
+        await Session.ForgetTenantAsync();
+        Masters.Invalidate();
+        Navigation.NavigateTo("/connect");
+    }
+}

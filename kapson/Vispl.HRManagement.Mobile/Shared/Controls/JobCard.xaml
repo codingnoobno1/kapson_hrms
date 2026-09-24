@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentView
+    x:Class="Vispl.HRManagement.Mobile.Shared.Controls.JobCard"
+    x:Name="Root"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:behaviors="clr-namespace:Vispl.HRManagement.Mobile.Shared.Behaviors"
+    x:DataType="controls:JobCard">
+    <Border Style="{StaticResource Card}">
+        <Border.Behaviors>
+            <behaviors:PressScaleBehavior />
+        </Border.Behaviors>
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding OpenCommand, Source={x:Reference Root}}" CommandParameter="{Binding Item, Source={x:Reference Root}}" />
+        </Border.GestureRecognizers>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="7">
+            <VerticalStackLayout Spacing="3">
+                <Label Text="{Binding Item.Title, Source={x:Reference Root}}" FontSize="16" FontAttributes="Bold" />
+                <Label Text="{Binding Item.Department, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+            </VerticalStackLayout>
+            <controls:StatusPill Grid.Column="1" Status="{Binding Item.Status, Source={x:Reference Root}}" VerticalOptions="Start" />
+            <HorizontalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="7">
+                <Label Text="{Binding Item.Location, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+                <Label Text="•" Style="{StaticResource Caption}" />
+                <Label Text="{Binding Item.EmploymentType, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+                <Label Text="•" Style="{StaticResource Caption}" />
+                <Label Text="{Binding Item.Experience, Source={x:Reference Root}}" Style="{StaticResource Caption}" />
+            </HorizontalStackLayout>
+            <Label Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Item.Salary, Source={x:Reference Root}}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource Navy800}" />
+            <Grid Grid.Row="3" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+                <Label Text="View details" TextColor="{StaticResource Primary600}" FontAttributes="Bold" FontSize="13" />
+                <Label Grid.Column="2" Text="{Binding Item.ExpiresAt, Source={x:Reference Root}, StringFormat='Expires {0:dd MMM}'}" Style="{StaticResource Caption}" />
+            </Grid>
+        </Grid>
+    </Border>
+</ContentView>

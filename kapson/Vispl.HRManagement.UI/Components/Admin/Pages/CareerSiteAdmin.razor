@@ -1,0 +1,158 @@
+@page "/admin/career-site"
+@attribute [Authorize(Policy = "AdminPortal")]
+@using Microsoft.AspNetCore.Components.Forms
+@inject ICareerSiteService CareerSiteService
+@inject ITenantService TenantService
+@inject IThemeTemplateService ThemeTemplateService
+@inject IMediaLibraryService MediaLibraryService
+
+<PageTitle>Career Site | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div><span class="admin-kicker">TENANT CONFIGURATION</span><h1>Career site</h1><p>Choose a client, configure its branded candidate experience, save a draft, and publish when ready.</p></div>
+            @if (Model is not null)
+            {
+                <div class="admin-heading-actions"><a class="admin-button secondary" href="@PublicHomeUrl" target="_blank">View published ↗</a><button class="admin-button primary" type="button" @onclick="PublishAsync" disabled="@IsSaving">Save & publish</button></div>
+            }
+        </div>
+
+        <div class="admin-context-bar">
+            <label>Client<select value="@TenantKey" @onchange="ChangeTenant">@foreach (var tenant in Tenants) { <option value="@tenant.TenantKey">@tenant.DisplayName</option> }</select></label>
+            @if (Model is not null) { <span>Draft updated @Model.UpdatedUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm") · Published version @Model.PublishedVersion</span> }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="admin-alert @StatusClass">@StatusMessage</div> }
+
+        @if (Model is null || EditContext is null)
+        {
+            <div class="admin-panel">Loading configuration from SQL Server…</div>
+        }
+        else
+        {
+            <EditForm EditContext="EditContext" OnValidSubmit="SaveDraftAsync" FormName="career-site-configuration">
+                <DataAnnotationsValidator /><ValidationSummary class="admin-validation" />
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>01</span><h2>Enterprise template</h2></div><small>@Templates.Count selectable designs</small></div>
+                    <div class="admin-template-grid">
+                        @foreach (var template in Templates)
+                        {
+                            <button type="button" class="admin-template-card @(Model.TemplateKey == template.TemplateKey ? "selected" : null)" @onclick="() => ApplyTemplate(template)">
+                                <span class="admin-template-preview" style="background:@template.PreviewGradient"><i style="background:@template.AccentColor"></i><b style="background:@template.SurfaceColor"></b></span>
+                                <span><strong>@template.Name</strong><small>@template.Description</small></span>
+                                <em>@(Model.TemplateKey == template.TemplateKey ? "Selected" : "Use template")</em>
+                            </button>
+                        }
+                    </div>
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>02</span><h2>Identity, logo and colours</h2></div></div>
+                    <div class="admin-form-grid">
+                        <label>Tenant key<InputText @bind-Value="Model.TenantKey" disabled /></label><label>Company name<InputText @bind-Value="Model.CompanyName" /></label>
+                        <label>Portal name<InputText @bind-Value="Model.PortalName" /></label><label>Brand initial<InputText @bind-Value="Model.BrandInitial" /></label>
+                        <label class="span-two">Logo URL<InputText @bind-Value="Model.LogoUrl" placeholder="Choose from media below or paste an HTTPS URL" /></label>
+                        <label>Primary colour<InputText type="color" @bind-Value="Model.PrimaryColor" /></label><label>Accent colour<InputText type="color" @bind-Value="Model.AccentColor" /></label><label>Surface colour<InputText type="color" @bind-Value="Model.SurfaceColor" /></label>
+                    </div>
+                    <h3 class="admin-subheading">Media library</h3>
+                    <div class="admin-media-picker">
+                        <button type="button" class="@(string.IsNullOrWhiteSpace(Model.LogoUrl) ? "selected" : null)" @onclick="ClearLogo"><span class="media-picker-initial">@Model.BrandInitial</span><small>Use brand initial</small></button>
+                        @foreach (var asset in MediaAssets) { <button type="button" class="@(Model.LogoUrl == asset.PublicUrl ? "selected" : null)" @onclick="() => SelectLogo(asset)"><img src="@asset.PublicUrl" alt="@asset.OriginalFileName" /><small>@asset.OriginalFileName</small></button> }
+                        <a href="/admin/media?tenant=@TenantKey">Upload more media →</a>
+                    </div>
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>03</span><h2>Homepage section order</h2></div><small>Drag rows into the published order</small></div>
+                    <div class="admin-section-sorter">
+                        @foreach (var pageSection in Model.HomeSections.OrderBy(item => item.SortOrder))
+                        {
+                            <div class="admin-sortable-row @(DraggedSection == pageSection ? "dragging" : null)" draggable="true" @ondragstart="() => StartDrag(pageSection)" @ondragover:preventDefault @ondrop="() => DropOn(pageSection)" @key="pageSection">
+                                <span class="admin-drag-handle">⋮⋮</span><strong>@pageSection.DisplayName</strong><small>@pageSection.Key</small>
+                                <label class="admin-check"><InputCheckbox @bind-Value="pageSection.IsVisible" /><span>Visible</span></label>
+                                <span class="admin-order-buttons"><button type="button" @onclick="() => Move(pageSection, -1)" aria-label="Move up">↑</button><button type="button" @onclick="() => Move(pageSection, 1)" aria-label="Move down">↓</button></span>
+                            </div>
+                        }
+                    </div>
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>04</span><h2>Header and SEO</h2></div></div>
+                    <div class="admin-form-grid"><label class="span-two">SEO title<InputText @bind-Value="Model.SeoTitle" /></label><label class="span-two">SEO description<InputTextArea @bind-Value="Model.SeoDescription" /></label></div>
+                    <h3 class="admin-subheading">Header navigation</h3>
+                    @foreach (var item in Model.NavigationItems.OrderBy(item => item.SortOrder)) { <div class="admin-inline-row" @key="item"><InputText @bind-Value="item.Label" placeholder="Label" /><InputText @bind-Value="item.Url" placeholder="URL" /><InputNumber @bind-Value="item.SortOrder" /></div> }
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>05</span><h2>Homepage content</h2></div></div>
+                    <div class="admin-form-grid">
+                        <label>Hero eyebrow<InputText @bind-Value="Model.HeroEyebrow" /></label><label class="span-two">Hero title<InputText @bind-Value="Model.HeroTitle" /></label><label class="span-two">Hero summary<InputTextArea @bind-Value="Model.HeroSummary" /></label>
+                        <label>Hero card title<InputText @bind-Value="Model.HeroCardTitle" /></label><label>Hero card subtitle<InputText @bind-Value="Model.HeroCardSubtitle" /></label>
+                        <label>Introduction eyebrow<InputText @bind-Value="Model.IntroEyebrow" /></label><label class="span-two">Introduction title<InputText @bind-Value="Model.IntroTitle" /></label><label class="span-two">Introduction body<InputTextArea @bind-Value="Model.IntroBody" /></label>
+                        <label class="span-two">Values heading<InputText @bind-Value="Model.ValuesTitle" /></label>
+                    </div>
+                    <h3 class="admin-subheading">Value cards</h3>
+                    @foreach (var item in Model.Values.OrderBy(item => item.SortOrder)) { <div class="admin-content-row" @key="item"><InputText @bind-Value="item.Code" /><InputText @bind-Value="item.Title" /><InputTextArea @bind-Value="item.Body" /><InputNumber @bind-Value="item.SortOrder" /></div> }
+                    <h3 class="admin-subheading">Hiring process</h3>
+                    <div class="admin-form-grid"><label class="span-two">Heading<InputText @bind-Value="Model.HiringTitle" /></label><label class="span-two">Summary<InputTextArea @bind-Value="Model.HiringSummary" /></label></div>
+                    @foreach (var item in Model.HiringSteps.OrderBy(item => item.SortOrder)) { <div class="admin-content-row" @key="item"><InputText @bind-Value="item.Code" /><InputText @bind-Value="item.Title" /><InputTextArea @bind-Value="item.Body" /><InputNumber @bind-Value="item.SortOrder" /></div> }
+                    <div class="admin-form-grid admin-form-gap"><label class="span-two">Closing title<InputText @bind-Value="Model.ClosingTitle" /></label><label class="span-two">Closing summary<InputTextArea @bind-Value="Model.ClosingSummary" /></label></div>
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>06</span><h2>About and careers pages</h2></div></div>
+                    <div class="admin-form-grid">
+                        <label class="span-two">About hero title<InputText @bind-Value="Model.AboutHeroTitle" /></label><label class="span-two">About hero summary<InputTextArea @bind-Value="Model.AboutHeroSummary" /></label>
+                        <label class="span-two">Story title<InputText @bind-Value="Model.AboutStoryTitle" /></label><label class="span-two">Story body<InputTextArea class="tall-input" @bind-Value="Model.AboutStoryBody" /></label>
+                        <label class="span-two">Careers title<InputText @bind-Value="Model.CareersTitle" /></label><label class="span-two">Careers summary<InputTextArea @bind-Value="Model.CareersSummary" /></label>
+                    </div>
+                    <h3 class="admin-subheading">About principles</h3>
+                    @foreach (var item in Model.Principles.OrderBy(item => item.SortOrder)) { <div class="admin-content-row" @key="item"><InputText @bind-Value="item.Code" /><InputText @bind-Value="item.Title" /><InputTextArea @bind-Value="item.Body" /><InputNumber @bind-Value="item.SortOrder" /></div> }
+                </section>
+
+                <section class="admin-panel">
+                    <div class="admin-section-title"><div><span>07</span><h2>Footer and contact</h2></div></div>
+                    <div class="admin-form-grid"><label class="span-two">Footer tagline<InputTextArea @bind-Value="Model.FooterTagline" /></label><label>Address<InputText @bind-Value="Model.ContactAddress" /></label><label>Careers email<InputText @bind-Value="Model.ContactEmail" /></label></div>
+                </section>
+
+                <div class="admin-savebar"><span>Draft changes are private until you publish them.</span><button class="admin-button primary" type="submit" disabled="@IsSaving">Save draft</button></div>
+            </EditForm>
+        }
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "tenant")] public string? RequestedTenant { get; set; }
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<ThemeTemplateDto> Templates { get; set; } = [];
+    private IReadOnlyList<MediaAssetDto> MediaAssets { get; set; } = [];
+    private string TenantKey { get; set; } = "kapson";
+    private CareerSiteConfigurationDto? Model { get; set; }
+    private EditContext? EditContext { get; set; }
+    private PageSectionDto? DraggedSection { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+    private bool IsSaving { get; set; }
+    private string PublicHomeUrl => TenantKey == "kapson" ? "/kapson_home" : $"/career/{TenantKey}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = await TenantService.GetAllAsync(); Templates = await ThemeTemplateService.GetActiveAsync();
+        TenantKey = Tenants.Any(item => item.TenantKey == RequestedTenant) ? RequestedTenant! : Tenants.FirstOrDefault()?.TenantKey ?? "kapson";
+        await LoadTenantAsync();
+    }
+    private async Task ChangeTenant(ChangeEventArgs args) { TenantKey = args.Value?.ToString() ?? TenantKey; await LoadTenantAsync(); }
+    private async Task LoadTenantAsync() { Model = await CareerSiteService.GetDraftAsync(TenantKey); MediaAssets = await MediaLibraryService.GetAllAsync(TenantKey); EditContext = Model is null ? null : new EditContext(Model); StatusMessage = null; }
+    private void ApplyTemplate(ThemeTemplateDto template) { if (Model is null) return; Model.TemplateKey = template.TemplateKey; Model.PrimaryColor = template.PrimaryColor; Model.AccentColor = template.AccentColor; Model.SurfaceColor = template.SurfaceColor; }
+    private void SelectLogo(MediaAssetDto asset) { if (Model is not null) Model.LogoUrl = asset.PublicUrl; }
+    private void ClearLogo() { if (Model is not null) Model.LogoUrl = null; }
+    private void StartDrag(PageSectionDto section) => DraggedSection = section;
+    private void DropOn(PageSectionDto target) { if (Model is null || DraggedSection is null || DraggedSection == target) return; var ordered = Model.HomeSections.OrderBy(item => item.SortOrder).ToList(); ordered.Remove(DraggedSection); ordered.Insert(ordered.IndexOf(target), DraggedSection); ApplyOrder(ordered); DraggedSection = null; }
+    private void Move(PageSectionDto section, int offset) { if (Model is null) return; var ordered = Model.HomeSections.OrderBy(item => item.SortOrder).ToList(); var current = ordered.IndexOf(section); var next = current + offset; if (next < 0 || next >= ordered.Count) return; ordered.RemoveAt(current); ordered.Insert(next, section); ApplyOrder(ordered); }
+    private static void ApplyOrder(IReadOnlyList<PageSectionDto> ordered) { for (var index = 0; index < ordered.Count; index++) ordered[index].SortOrder = index + 1; }
+    private async Task SaveDraftAsync() { if (Model is null) return; await ExecuteAsync(async () => { await CareerSiteService.SaveDraftAsync(Model); StatusMessage = "Draft saved to SQL Server. The published site is unchanged."; }); }
+    private async Task PublishAsync() { if (Model is null || EditContext is null || !EditContext.Validate()) return; await ExecuteAsync(async () => { await CareerSiteService.SaveDraftAsync(Model); await CareerSiteService.PublishAsync(Model.TenantKey); await LoadTenantAsync(); StatusMessage = $"Published version {Model?.PublishedVersion}. Candidate pages now use this version."; }); }
+    private async Task ExecuteAsync(Func<Task> action) { try { IsSaving = true; StatusMessage = null; StatusClass = "success"; await action(); } catch (Exception exception) { StatusClass = "error"; StatusMessage = exception.Message; } finally { IsSaving = false; } }
+}

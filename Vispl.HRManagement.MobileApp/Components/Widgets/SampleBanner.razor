@@ -1,0 +1,11 @@
+@inject NavigationManager Navigation
+
+@* Shown whenever sample mode is on, so design-reference content is never
+   mistaken for data from the server. *@
+<div class="sample-banner" role="status">
+    <AppIcon Name="alert-triangle" Size="16" />
+    <span>Sample data — not from your server.</span>
+    <button class="sample-banner-link" type="button" @onclick="@(() => Navigation.NavigateTo("/settings"))">
+        Turn off
+    </button>
+</div>

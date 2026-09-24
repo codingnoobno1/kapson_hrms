@@ -1,0 +1,47 @@
+@*
+    The client-locked System Settings frame (the Designation screen): nav, blue page title and the
+    Dashboard › System Settings › {Title} breadcrumb. Dialogs are rendered by the page after this
+    component, outside the frame, as the Designation page does.
+*@
+
+<div class="hr-app">
+    <HrNav ActivePage="settings" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <h1 class="hr-title-blue">@Title</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Path("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <a href="@Path(CrumbPath)">@Crumb</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <strong>@Title</strong>
+        </nav>
+
+        @if (Error is not null)
+        {
+            <div class="hr-alert error">@Error</div>
+        }
+        else
+        {
+            @ChildContent
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>The middle breadcrumb. System Settings unless a page belongs elsewhere (Attendance).</summary>
+    [Parameter] public string Crumb { get; set; } = "System Settings";
+
+    [Parameter] public string CrumbPath { get; set; } = "settings";
+
+    /// <summary>A failure that makes the whole page meaningless. Cards report their own.</summary>
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Path(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}

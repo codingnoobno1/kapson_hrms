@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Applicants.Pages.ApplicantsPage"
+    x:Name="Page"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:models="clr-namespace:Vispl.HRManagement.Mobile.Shared.Models"
+    xmlns:pages="clr-namespace:Vispl.HRManagement.Mobile.Features.Applicants.Pages"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Applicants.ViewModels"
+    x:DataType="vm:ApplicantsViewModel">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,Auto,Auto,*">
+        <controls:BrandHeader Subtitle="Talent pipeline" />
+        <VerticalStackLayout Grid.Row="1" Padding="18,18,18,10" Spacing="3">
+            <Label Text="Applicants" Style="{StaticResource PageTitle}" />
+            <Label Text="Review talent, update stages and coordinate interviews." Style="{StaticResource BodyText}" />
+        </VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="2" Padding="18,0,18,12" Spacing="10">
+            <SearchBar Text="{Binding Query}" Placeholder="Search by name or position" BackgroundColor="White" CancelButtonColor="{StaticResource Primary600}" />
+            <CollectionView ItemsSource="{Binding Statuses}" ItemsLayout="HorizontalList" HeightRequest="42" SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <Button Text="{Binding .}" Command="{Binding ViewModel.SelectStatusCommand, Source={x:Reference Page}, x:DataType=pages:ApplicantsPage}" CommandParameter="{Binding .}"
+                                HeightRequest="36" Padding="14,0" Margin="0,0,7,0" CornerRadius="18" BackgroundColor="{StaticResource BlueTint}" TextColor="{StaticResource Primary600}" FontSize="12" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+        <Grid Grid.Row="3" Margin="18,0,18,0">
+            <CollectionView ItemsSource="{Binding FilteredApplicants}" SelectionMode="None">
+                <CollectionView.ItemsLayout><LinearItemsLayout Orientation="Vertical" ItemSpacing="12" /></CollectionView.ItemsLayout>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:ApplicantSummary">
+                        <controls:ApplicantCard Item="{Binding .}" OpenCommand="{Binding ViewModel.OpenApplicantCommand, Source={x:Reference Page}, x:DataType=pages:ApplicantsPage}" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+                <CollectionView.EmptyView><Label Text="No applicants match this filter." Style="{StaticResource BodyText}" HorizontalTextAlignment="Center" Margin="30" /></CollectionView.EmptyView>
+            </CollectionView>
+            <VerticalStackLayout IsVisible="{Binding IsBusy}" Spacing="12">
+                <controls:SkeletonView HeightRequest="128" />
+                <controls:SkeletonView HeightRequest="128" />
+                <controls:SkeletonView HeightRequest="128" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

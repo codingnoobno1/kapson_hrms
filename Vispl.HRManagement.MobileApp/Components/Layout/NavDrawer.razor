@@ -1,0 +1,125 @@
+@inject AppSession Session
+@inject NavigationManager Navigation
+
+@* RW-07..RW-11 NavigationDrawer. Order fixed by REF-05: brand header, profile
+   block, primary items, nested group, footer items. *@
+<button class="drawer-scrim" type="button" aria-label="Close menu" @onclick="OnClose"></button>
+
+<aside class="drawer" role="dialog" aria-label="Menu">
+    <div class="drawer-brand">
+        <div class="brand-lockup">
+            <span class="brand-symbol" aria-hidden="true">
+                <i></i><i></i><i></i><i></i>
+            </span>
+            <span class="brand-words">
+                <span class="brand-words-top">HR</span>
+                <span class="brand-words-bottom">Management</span>
+            </span>
+        </div>
+        <p class="drawer-brand-tagline">
+            Employee Leave Status, Attendance<br />&amp; Milestone Tracking System
+        </p>
+    </div>
+
+    @* RW-09 DrawerProfileBlock *@
+    <div class="drawer-profile">
+        <div class="avatar" aria-hidden="true"><AppIcon Name="user" Size="34" StrokeWidth="1.5" /></div>
+        <p class="drawer-profile-name">@DisplayName</p>
+        <span class="drawer-profile-role">@RoleLabel</span>
+    </div>
+
+    <div class="drawer-section">
+        <NavLink class="drawer-item" href="/modules/profile" @onclick="OnClose">
+            <AppIcon Name="user" Class="drawer-item-icon" />
+            <span>Profile</span>
+        </NavLink>
+
+        <NavLink class="drawer-item" href="/" Match="NavLinkMatch.All" @onclick="OnClose">
+            <AppIcon Name="home" Class="drawer-item-icon" />
+            <span>Home</span>
+        </NavLink>
+
+        <div class="drawer-item">
+            <AppIcon Name="user-circle" Class="drawer-item-icon" />
+            <span>Recruitment</span>
+        </div>
+
+        @* RW-11 DrawerSubItemCard *@
+        <div class="drawer-subitems">
+            <NavLink class="drawer-subitem" href="/applicants" @onclick="OnClose">
+                <span class="drawer-subitem-tile"><AppIcon Name="users" /></span>
+                <span class="list-item-main">
+                    <span class="drawer-subitem-title">Stall Applicants</span>
+                    <span class="drawer-subitem-note">View all applicants in recruitment pipeline</span>
+                </span>
+            </NavLink>
+
+            <NavLink class="drawer-subitem" href="/modules/applications" @onclick="OnClose">
+                <span class="drawer-subitem-tile"><AppIcon Name="ban" /></span>
+                <span class="list-item-main">
+                    <span class="drawer-subitem-title">Rejected Applicants</span>
+                    <span class="drawer-subitem-note">View all rejected candidates</span>
+                </span>
+            </NavLink>
+        </div>
+    </div>
+
+    @* Screens with no reference of their own stay reachable here rather than
+       being added as a fifth bottom-bar destination. *@
+    <div class="drawer-section">
+        <NavLink class="drawer-item" href="/people" @onclick="OnClose">
+            <AppIcon Name="users" Class="drawer-item-icon" />
+            <span>People</span>
+        </NavLink>
+        <NavLink class="drawer-item" href="/leave" @onclick="OnClose">
+            <AppIcon Name="sun" Class="drawer-item-icon" />
+            <span>Leave Approvals</span>
+        </NavLink>
+        <NavLink class="drawer-item" href="/attendance" @onclick="OnClose">
+            <AppIcon Name="clock" Class="drawer-item-icon" />
+            <span>Attendance</span>
+        </NavLink>
+        <NavLink class="drawer-item" href="/masters" @onclick="OnClose">
+            <AppIcon Name="folder" Class="drawer-item-icon" />
+            <span>Master Data</span>
+        </NavLink>
+        <NavLink class="drawer-item" href="/modules" @onclick="OnClose">
+            <AppIcon Name="grid" Class="drawer-item-icon" />
+            <span>Modules</span>
+        </NavLink>
+    </div>
+
+    <div class="drawer-section">
+        <NavLink class="drawer-item" href="/settings" @onclick="OnClose">
+            <AppIcon Name="settings" Class="drawer-item-icon" />
+            <span>Setting</span>
+        </NavLink>
+        <button class="drawer-item" type="button" @onclick="SignOutAsync">
+            <AppIcon Name="log-out" Class="drawer-item-icon" />
+            <span>Logout</span>
+        </button>
+    </div>
+</aside>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    // The bootstrap call fills Session.Session, but a fresh sign-in only sets DisplayName.
+    // Falling through to it keeps the drawer from reading "Not signed in" to someone who
+    // just signed in and is looking at their own data.
+    private string DisplayName => Session.Session?.User.DisplayName
+        ?? Session.DisplayName
+        ?? "Not signed in";
+
+    private string RoleLabel => Session.Session?.Roles.FirstOrDefault()
+        ?? Session.Portal
+        ?? Session.TenantName
+        ?? "No company";
+
+    private async Task SignOutAsync()
+    {
+        await Session.SignOutAsync();
+        await OnClose.InvokeAsync();
+        Navigation.NavigateTo("/signin");
+    }
+}

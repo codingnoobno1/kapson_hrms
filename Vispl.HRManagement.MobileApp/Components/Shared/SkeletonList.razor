@@ -1,0 +1,14 @@
+@* Placeholder in the shape of the content that is loading. Shows what to expect
+   instead of a spinner over a blank page, which makes the wait read as shorter. *@
+<div class="skeleton-list" role="status" aria-busy="true" aria-label="@Label">
+    @for (var index = 0; index < Count; index++)
+    {
+        <div class="skeleton-card @(Tall ? "tall" : "")"></div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Count { get; set; } = 4;
+    [Parameter] public bool Tall { get; set; }
+    [Parameter] public string Label { get; set; } = "Loading";
+}

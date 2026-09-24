@@ -1,0 +1,33 @@
+@page "/hr/coming-soon"
+@page "/hr/{TenantKey}/coming-soon"
+@attribute [Authorize(Policy = "HrPortal")]
+
+@*
+    The one destination every not-yet-built mega-menu card links to. CR-12
+    (docs/employee-app/portal-integration.md): a feature that does not exist says so — it never
+    renders an empty table or a dead link pretending to be finished work.
+*@
+
+<PageTitle>@(Title ?? "Coming soon") | HR Portal</PageTitle>
+
+<HrPageShell ActivePage="settings" TenantKey="@TenantKey"
+             Kicker="COMING SOON" Title="@(Title ?? "This screen")">
+    <ChildContent>
+        <div class="hr-panel">
+            <div class="hr-alert warning compact">
+                @(Title ?? "This screen") is named in the approved design, but nothing is built
+                behind it yet — no page, no service, and for most of this area no backend module
+                at all. There is nothing to load or show here until that exists.
+            </div>
+            <p class="hr-empty"><a href="@BackLink()">Back to System Settings</a></p>
+        </div>
+    </ChildContent>
+</HrPageShell>
+
+@code {
+    [Parameter] public string? TenantKey { get; set; }
+    [SupplyParameterFromQuery] public string? Title { get; set; }
+
+    private string BackLink() =>
+        string.IsNullOrWhiteSpace(TenantKey) ? "/hr/settings" : $"/hr/{TenantKey}/settings";
+}

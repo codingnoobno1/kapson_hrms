@@ -1,0 +1,60 @@
+@page "/kapson/careers/{Slug}"
+@page "/career/{TenantKey}/careers/{Slug}"
+@inject ICareerSiteService CareerSiteService
+@inject IJobOpeningService JobOpeningService
+@inject IThemeTemplateService ThemeTemplateService
+
+@if (Site is null || Job is null)
+{
+    <PageTitle>Position not found</PageTitle>
+    @if (Site is not null) { <PublicHeader Site="Site" /> }
+    <main class="not-found-page"><h1>Position not found</h1><p>This opening may have closed or moved.</p><a class="button button-dark" href="@CareersUrl">View all positions</a></main>
+    @if (Site is not null) { <PublicFooter Site="Site" /> }
+}
+else
+{
+    <PageTitle>@Job.Title | @Site.CompanyName Careers</PageTitle>
+    <div class="public-site template-@Site.TemplateKey" style="@ThemeStyle">
+        <PublicHeader Site="Site" />
+        <main>
+            <section class="job-detail-hero">
+                <div class="public-container narrow-container">
+                    <a class="back-link" href="@CareersUrl">← All positions</a><span class="eyebrow eyebrow-light">@Job.Department</span><h1>@Job.Title</h1>
+                    <div class="detail-meta"><span>@Job.Location</span><span>@Job.EmploymentType</span><span>@Job.WorkMode</span><span>@Job.Experience</span></div>
+                </div>
+            </section>
+            <section class="job-detail-content">
+                <div class="public-container detail-grid">
+                    <article>
+                        <h2>About the role</h2><p class="lead-copy">@Job.Summary</p>
+                        <h2>What you’ll do</h2><ul>@foreach (var item in Job.Responsibilities) { <li>@item</li> }</ul>
+                        <h2>What you’ll bring</h2><ul>@foreach (var item in Job.Requirements) { <li>@item</li> }</ul>
+                        <h2>Why @Site.CompanyName</h2><p>You’ll join a grounded, ambitious team with space to learn, contribute and see the impact of your work.</p>
+                    </article>
+                    <aside class="apply-card">
+                        <span>POSITION @Job.Id</span><h3>Interested in this role?</h3><p>Send us your CV and a few details. It takes a couple of minutes.</p>
+                        <a class="button button-gold button-full" href="@ApplyUrl">Apply for this role</a>
+                    </aside>
+                </div>
+            </section>
+        </main>
+        <PublicFooter Site="Site" />
+    </div>
+}
+
+@code {
+    [Parameter] public string TenantKey { get; set; } = "kapson";
+    [Parameter] public string Slug { get; set; } = string.Empty;
+    private CareerSiteConfigurationDto? Site { get; set; }
+    private JobOpeningDto? Job { get; set; }
+    private ThemeTemplateDto? Theme { get; set; }
+    private string CareersUrl => TenantKey == "kapson" ? "/kapson/careers" : $"/career/{TenantKey}/careers";
+    private string ApplyUrl => TenantKey == "kapson" ? $"/kapson/careers/{Slug}/apply" : $"/career/{TenantKey}/careers/{Slug}/apply";
+    private string ThemeStyle => Site is null ? string.Empty : $"--ink:{Site.PrimaryColor};--ink-soft:{Site.PrimaryColor};--gold:{Site.AccentColor};--cream:{Site.SurfaceColor};--body-font:{Theme?.FontFamily ?? "Inter, sans-serif"};--heading-font:{Theme?.HeadingFontFamily ?? "Georgia, serif"};--site-radius:{Theme?.BorderRadius ?? 20}px;";
+    protected override async Task OnParametersSetAsync()
+    {
+        TenantKey = string.IsNullOrWhiteSpace(TenantKey) ? "kapson" : TenantKey.ToLowerInvariant();
+        Site = await CareerSiteService.GetPublishedAsync(TenantKey); Job = await JobOpeningService.GetPublishedBySlugAsync(TenantKey, Slug);
+        Theme = Site is null ? null : await ThemeTemplateService.GetByKeyAsync(Site.TemplateKey);
+    }
+}

@@ -1,0 +1,269 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = "AdminPortal")]
+@inject ITenantService TenantService
+@inject IAccessRoleService RoleService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Roles &amp; Permissions | HR Admin</PageTitle>
+<div class="admin-app">
+    <AdminNav ActivePage="roles" />
+    <main class="admin-page">
+        <div class="admin-page-heading">
+            <div>
+                <span class="admin-kicker">ROLE-BASED ACCESS CONTROL</span>
+                <h1>Roles and permissions</h1>
+                <p>Keep protected system roles for common jobs, or build client-specific roles from explicit HR and employee permissions.</p>
+            </div>
+            <div class="admin-heading-actions">
+                <a class="admin-button secondary" href="/admin/accounts">Account assignments</a>
+                <button class="admin-button primary" type="button" @onclick="NewRole">Create custom role</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(StatusMessage))
+        {
+            <div class="admin-alert @StatusClass">@StatusMessage</div>
+        }
+
+        @if (Tenants.Count == 0)
+        {
+            <section class="admin-panel admin-empty-state"><h2>Create a client first</h2><p>Every custom role is isolated to one licensed client.</p></section>
+        }
+        else
+        {
+            <div class="access-context-bar">
+                <label>
+                    <span>Licensed client</span>
+                    <select value="@SelectedTenantKey" @onchange="TenantChangedAsync">
+                        @foreach (var tenant in Tenants)
+                        {
+                            <option value="@tenant.TenantKey">@tenant.DisplayName (@tenant.TenantKey)</option>
+                        }
+                    </select>
+                </label>
+                <div class="access-portal-switch" role="group" aria-label="Role portal">
+                    <button type="button" class="@(SelectedPortal == AccountPortal.Hr ? "active" : null)" @onclick="() => SetPortalAsync(AccountPortal.Hr)">HR roles</button>
+                    <button type="button" class="@(SelectedPortal == AccountPortal.Employee ? "active" : null)" @onclick="() => SetPortalAsync(AccountPortal.Employee)">Employee roles</button>
+                </div>
+                <span class="access-context-summary"><strong>@Roles.Count</strong> roles · <strong>@PermissionCatalog.Count</strong> available permissions</span>
+            </div>
+
+            <div class="role-management-layout">
+                <section class="admin-panel access-list-panel">
+                    <div class="admin-section-title"><div><span>01</span><h2>@SelectedPortal roles</h2></div></div>
+                    @if (IsLoading)
+                    {
+                        <div class="access-loading">Loading roles…</div>
+                    }
+                    else
+                    {
+                        <div class="access-role-list">
+                            @foreach (var role in Roles)
+                            {
+                                <button type="button" class="access-role-row @(SelectedRole?.Id == role.Id ? "selected" : null)" @onclick="() => SelectRole(role)">
+                                    <span class="access-role-icon">@(role.IsSystem ? "◆" : "◇")</span>
+                                    <span><strong>@role.DisplayName</strong><small>@role.RoleCode · @role.PermissionKeys.Count permissions</small></span>
+                                    <span class="access-state-stack">
+                                        <em class="@(role.IsActive ? "active" : "inactive")">@(role.IsActive ? "Active" : "Inactive")</em>
+                                        <small>@role.AccountCount account@(role.AccountCount == 1 ? "" : "s")</small>
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="admin-panel role-editor-panel">
+                    <div class="admin-section-title">
+                        <div><span>02</span><h2>@EditorTitle</h2></div>
+                        @if (SelectedRole?.IsSystem == true) { <em class="access-system-badge">Protected system role</em> }
+                    </div>
+
+                    @if (SelectedRole?.IsSystem == true)
+                    {
+                        <div class="access-system-note">
+                            <strong>@SelectedRole.DisplayName</strong>
+                            <p>@SelectedRole.Description</p>
+                            <span>System roles cannot be renamed, edited or deleted. Create a custom role when this client needs a different permission set.</span>
+                        </div>
+                        <PermissionMatrix Catalog="PermissionCatalog" PermissionKeys="SelectedRole.PermissionKeys" ReadOnly="true" />
+                    }
+                    else
+                    {
+                        <EditForm Model="EditorModel" OnValidSubmit="SaveAsync" FormName="role-editor">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary class="admin-validation" />
+                            <div class="admin-form-grid">
+                                <label>Role code<InputText @bind-Value="EditorModel.RoleCode" disabled="@(SelectedRole is not null)" placeholder="HR_OPERATIONS_LEAD" /></label>
+                                <label>Display name<InputText @bind-Value="EditorModel.DisplayName" placeholder="HR Operations Lead" /></label>
+                                <label class="span-two">Description<InputTextArea @bind-Value="EditorModel.Description" placeholder="Explain who should receive this role." /></label>
+                            </div>
+                            <label class="admin-check access-active-check"><InputCheckbox @bind-Value="EditorModel.IsActive" /><span>Role can be assigned to accounts</span></label>
+                            <PermissionMatrix Catalog="PermissionCatalog" PermissionKeys="EditorModel.PermissionKeys" PermissionKeysChanged="PermissionKeysChanged" />
+                            <div class="admin-form-actions admin-form-gap">
+                                <button class="admin-button primary" type="submit" disabled="@IsSaving">@(SelectedRole is null ? "Create role" : "Save role")</button>
+                                @if (SelectedRole is not null)
+                                {
+                                    <button class="admin-button danger" type="button" @onclick="DeleteAsync" disabled="@(IsSaving || SelectedRole.AccountCount > 0)">Delete role</button>
+                                }
+                            </div>
+                            @if (SelectedRole is not null && SelectedRole.AccountCount > 0)
+                            {
+                                <p class="access-delete-hint">This role is assigned to @SelectedRole.AccountCount account(s). Remove those assignments before deleting it.</p>
+                            }
+                        </EditForm>
+                    }
+                </section>
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    private IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+    private IReadOnlyList<AccessRoleDto> Roles { get; set; } = [];
+    private IReadOnlyList<PermissionDefinitionDto> PermissionCatalog => RoleService.GetPermissionCatalog(SelectedPortal);
+    private string SelectedTenantKey { get; set; } = string.Empty;
+    private AccountPortal SelectedPortal { get; set; } = AccountPortal.Hr;
+    private AccessRoleDto? SelectedRole { get; set; }
+    private SaveAccessRoleRequest EditorModel { get; set; } = new();
+    private bool IsLoading { get; set; }
+    private bool IsSaving { get; set; }
+    private string? StatusMessage { get; set; }
+    private string StatusClass { get; set; } = "success";
+    private string EditorTitle => SelectedRole is null ? "Create custom role" : SelectedRole.DisplayName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tenants = (await TenantService.GetAllAsync()).Where(tenant => tenant.IsActive).ToList();
+        if (Tenants.Count == 0) return;
+
+        var query = ParseQuery(new Uri(NavigationManager.Uri).Query);
+        var requestedTenant = query.GetValueOrDefault("tenant");
+        SelectedTenantKey = Tenants.Any(tenant => tenant.TenantKey == requestedTenant)
+            ? requestedTenant!
+            : Tenants[0].TenantKey;
+        if (Enum.TryParse<AccountPortal>(query.GetValueOrDefault("portal"), true, out var portal) &&
+            portal is AccountPortal.Hr or AccountPortal.Employee)
+        {
+            SelectedPortal = portal;
+        }
+
+        await LoadAsync();
+        if (Roles.Count > 0) SelectRole(Roles[0]); else NewRole();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            IsLoading = true;
+            Roles = await RoleService.GetAllAsync(SelectedTenantKey, SelectedPortal);
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsLoading = false; }
+    }
+
+    private async Task TenantChangedAsync(ChangeEventArgs args)
+    {
+        SelectedTenantKey = args.Value?.ToString() ?? SelectedTenantKey;
+        await ReloadAndSelectAsync();
+    }
+
+    private async Task SetPortalAsync(AccountPortal portal)
+    {
+        if (portal == SelectedPortal) return;
+        SelectedPortal = portal;
+        await ReloadAndSelectAsync();
+    }
+
+    private async Task ReloadAndSelectAsync()
+    {
+        SelectedRole = null;
+        await LoadAsync();
+        if (Roles.Count > 0) SelectRole(Roles[0]); else NewRole();
+    }
+
+    private void NewRole()
+    {
+        SelectedRole = null;
+        EditorModel = new SaveAccessRoleRequest
+        {
+            TenantKey = SelectedTenantKey,
+            Portal = SelectedPortal,
+            IsActive = true
+        };
+        StatusMessage = null;
+    }
+
+    private void SelectRole(AccessRoleDto role)
+    {
+        SelectedRole = role;
+        EditorModel = new SaveAccessRoleRequest
+        {
+            Id = role.Id,
+            TenantKey = role.TenantKey,
+            Portal = role.Portal,
+            RoleCode = role.RoleCode,
+            DisplayName = role.DisplayName,
+            Description = role.Description,
+            IsActive = role.IsActive,
+            PermissionKeys = [.. role.PermissionKeys]
+        };
+        StatusMessage = null;
+    }
+
+    private Task PermissionKeysChanged(List<string> keys)
+    {
+        EditorModel.PermissionKeys = keys;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            IsSaving = true;
+            EditorModel.RoleCode = EditorModel.RoleCode.Trim().ToUpperInvariant();
+            var role = await RoleService.SaveAsync(EditorModel, await ActorIdAsync());
+            await LoadAsync();
+            SelectRole(Roles.Single(item => item.Id == role.Id));
+            ShowSuccess(EditorModel.Id is null ? "Custom role created." : "Custom role and permission grants saved.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (SelectedRole is null) return;
+        try
+        {
+            IsSaving = true;
+            await RoleService.DeleteAsync(SelectedRole.Id, await ActorIdAsync());
+            await LoadAsync();
+            if (Roles.Count > 0) SelectRole(Roles[0]); else NewRole();
+            ShowSuccess("Custom role deleted.");
+        }
+        catch (Exception exception) { ShowError(exception.Message); }
+        finally { IsSaving = false; }
+    }
+
+    private async Task<string?> ActorIdAsync() =>
+        (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User
+            .FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+    private void ShowSuccess(string message) { StatusClass = "success"; StatusMessage = message; }
+    private void ShowError(string message) { StatusClass = "error"; StatusMessage = message; }
+
+    private static Dictionary<string, string> ParseQuery(string query) =>
+        query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(parts => parts.Length == 2)
+            .ToDictionary(
+                parts => Uri.UnescapeDataString(parts[0]),
+                parts => Uri.UnescapeDataString(parts[1].Replace('+', ' ')),
+                StringComparer.OrdinalIgnoreCase);
+}

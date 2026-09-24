@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Interviews.Pages.InterviewsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:models="clr-namespace:Vispl.HRManagement.Mobile.Shared.Models"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Interviews.ViewModels"
+    x:DataType="vm:InterviewsViewModel">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,Auto,Auto,*">
+        <controls:BrandHeader Subtitle="Interview operations" />
+        <Grid Grid.Row="1" Padding="18,18,18,12" ColumnDefinitions="*,Auto">
+            <VerticalStackLayout Spacing="3">
+                <Label Text="Interview schedule" Style="{StaticResource PageTitle}" />
+                <Label Text="Upcoming candidate conversations and evaluations." Style="{StaticResource BodyText}" />
+            </VerticalStackLayout>
+            <Button Grid.Column="1" Text="＋" WidthRequest="46" HeightRequest="46" CornerRadius="16" Padding="0" BackgroundColor="{StaticResource Primary600}" TextColor="White" FontSize="22" />
+        </Grid>
+        <Grid Grid.Row="2" Margin="18,0,18,12" ColumnDefinitions="*,*" BackgroundColor="#E9EDF4" Padding="4">
+            <Button Text="Schedule" BackgroundColor="White" TextColor="{StaticResource Primary600}" CornerRadius="10" FontAttributes="Bold" />
+            <Button Grid.Column="1" Text="Evaluations" BackgroundColor="Transparent" TextColor="{StaticResource Ink500}" CornerRadius="10" />
+        </Grid>
+        <Grid Grid.Row="3" Margin="18,0,18,0">
+            <CollectionView ItemsSource="{Binding Interviews}" SelectionMode="None">
+                <CollectionView.ItemsLayout><LinearItemsLayout Orientation="Vertical" ItemSpacing="11" /></CollectionView.ItemsLayout>
+                <CollectionView.ItemTemplate><DataTemplate x:DataType="models:InterviewSummary"><controls:InterviewCard Item="{Binding .}" /></DataTemplate></CollectionView.ItemTemplate>
+            </CollectionView>
+            <VerticalStackLayout IsVisible="{Binding IsBusy}" Spacing="11">
+                <controls:SkeletonView HeightRequest="96" />
+                <controls:SkeletonView HeightRequest="96" />
+                <controls:SkeletonView HeightRequest="96" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

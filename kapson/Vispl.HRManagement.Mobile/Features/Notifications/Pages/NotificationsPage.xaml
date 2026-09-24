@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ContentPage
+    x:Class="Vispl.HRManagement.Mobile.Features.Notifications.Pages.NotificationsPage"
+    x:Name="Page"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:Vispl.HRManagement.Mobile.Shared.Controls"
+    xmlns:models="clr-namespace:Vispl.HRManagement.Mobile.Shared.Models"
+    xmlns:vm="clr-namespace:Vispl.HRManagement.Mobile.Features.Notifications.ViewModels"
+    x:DataType="vm:NotificationsViewModel">
+    <Grid x:Name="RootLayout" RowDefinitions="Auto,Auto,Auto,*">
+        <controls:BrandHeader Subtitle="Updates and reminders" NotificationCount="2" />
+        <Grid Grid.Row="1" Padding="18,18,18,12" ColumnDefinitions="*,Auto">
+            <VerticalStackLayout Spacing="3">
+                <Label Text="Notifications" Style="{StaticResource PageTitle}" />
+                <Label Text="Stay current with hiring and HR activity." Style="{StaticResource BodyText}" />
+            </VerticalStackLayout>
+            <Label Grid.Column="1" Text="Mark all read" TextColor="{StaticResource Primary600}" FontSize="12" VerticalTextAlignment="Center" />
+        </Grid>
+        <Grid Grid.Row="2" Margin="18,0,18,12" ColumnDefinitions="*,*" BackgroundColor="#E9EDF4" Padding="4">
+            <Button Text="General" Command="{Binding SelectCategoryCommand}" CommandParameter="General" BackgroundColor="White" TextColor="{StaticResource Primary600}" CornerRadius="10" FontAttributes="Bold" />
+            <Button Grid.Column="1" Text="Interview schedule" Command="{Binding SelectCategoryCommand}" CommandParameter="Interviews" BackgroundColor="Transparent" TextColor="{StaticResource Ink500}" CornerRadius="10" />
+        </Grid>
+        <Grid Grid.Row="3" Margin="18,0,18,0">
+            <CollectionView ItemsSource="{Binding FilteredNotifications}" SelectionMode="None">
+                <CollectionView.ItemsLayout><LinearItemsLayout Orientation="Vertical" ItemSpacing="11" /></CollectionView.ItemsLayout>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:NotificationSummary">
+                        <Border Style="{StaticResource Card}" Loaded="OnNotificationCardLoaded">
+                            <Grid ColumnDefinitions="8,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="7">
+                                <BoxView Grid.RowSpan="3" Color="{StaticResource Primary500}" CornerRadius="4" />
+                                <Label Grid.Column="1" Text="{Binding Title}" FontSize="15" FontAttributes="Bold" />
+                                <Label Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm}'}" Style="{StaticResource Caption}" />
+                                <Label Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Message}" Style="{StaticResource BodyText}" LineHeight="1.25" />
+                                <Label Grid.Row="2" Grid.Column="1" Text="{Binding Category}" TextColor="{StaticResource Primary600}" FontSize="11" FontAttributes="Bold" />
+                                <Label Grid.Row="2" Grid.Column="2" Text="{Binding CreatedAt, StringFormat='{}{0:dd MMM yyyy}'}" Style="{StaticResource Caption}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+            <VerticalStackLayout IsVisible="{Binding IsBusy}" Spacing="11">
+                <controls:SkeletonView HeightRequest="86" />
+                <controls:SkeletonView HeightRequest="86" />
+                <controls:SkeletonView HeightRequest="86" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

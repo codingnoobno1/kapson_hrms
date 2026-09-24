@@ -1,0 +1,71 @@
+@page "/modules/{Key}"
+@inject FeatureApi Features
+@inject NavigationManager Navigation
+
+<PageTitle>Module</PageTitle>
+
+<button class="btn-back" type="button" @onclick="@(() => Navigation.NavigateTo("/modules"))"><AppIcon Name="chevron-left" Size="16" /> Modules</button>
+
+@if (module is null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="user-circle" Size="40" StrokeWidth="1.4" /></div>
+        <h1>Unknown module</h1>
+        <p>“@Key” is not in the route catalogue.</p>
+    </div>
+}
+else
+{
+    <h1 class="page-title"><AppIcon Name="@module.Icon" Size="22" /> @module.Name</h1>
+    <p class="page-subtitle">@module.Path</p>
+
+    @if (isLoading)
+    {
+        <LoadingView Text="Contacting the server…" />
+    }
+    else if (status is not null)
+    {
+        <section class="card">
+            <div class="card-head">
+                <h2>@status.Module</h2>
+                <span class="badge">@status.Status</span>
+            </div>
+            <p>@status.Message</p>
+        </section>
+    }
+    else if (result is not null)
+    {
+        <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = string.Empty;
+
+    private ApiModule? module;
+    private ApiResult<MobileFeatureStatusDto>? result;
+    private bool isLoading;
+
+    private MobileFeatureStatusDto? status => result is not null && result.IsSuccess ? result.Data : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        module = ApiCatalog.Find(Key);
+        if (module is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (module is null)
+        {
+            return;
+        }
+
+        isLoading = true;
+        result = await Features.ProbeAsync(module);
+        isLoading = false;
+    }
+}

@@ -1,0 +1,1423 @@
+@page "/hr/dashboard"
+@page "/hr/{TenantKey}/dashboard"
+@attribute [Authorize(Policy = "HrPortal")]
+@using Vispl.HRManagement.BM.ITF.Mobile
+@using Vispl.HRManagement.Contracts.Mobile.Dashboard
+@using Vispl.HRManagement.Contracts.Mobile.Workforce
+@using Vispl.HRManagement.Contracts.Mobile.Employee
+@using Vispl.HRManagement.UI.Components.Hr.Shared
+@inject IHrDashboardService Dashboard
+@inject IWorkforceReportService Reports
+@inject IMobileLeaveService Leave
+@inject IMovementService MovementService
+@inject IGatePassService GatePassService
+@inject IEmployeeMobileAccessService MobileAccessService
+@inject IPolicyService Policies
+@inject HrPortalCaller PortalCaller
+
+<PageTitle>Dashboard | HR Portal</PageTitle>
+
+<div class="hr-app">
+    <HrNav ActivePage="dashboard" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <div class="hr-page-heading">
+            <div>
+                <span class="hr-kicker">WORKFORCE</span>
+                <h1>HR Management Dashboard</h1>
+                <p>Attendance, leave and approvals for the people in your scope.</p>
+            </div>
+            <div class="hr-filter-bar">
+                <label>
+                    Company
+                    <select value="@CompanyCode" @onchange="ChangeCompany">
+                        <option value="">All companies</option>
+                        @if (ScopeOptions is not null)
+                        {
+                            @foreach (var company in ScopeOptions.Companies)
+                            {
+                                <option value="@company.Code">@company.Name (@company.EmployeeCount)</option>
+                            }
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Unit
+                    <select value="@UnitCode" @onchange="ChangeUnit">
+                        <option value="">All units</option>
+                        @if (ScopeOptions is not null)
+                        {
+                            @foreach (var unit in ScopeOptions.Units)
+                            {
+                                <option value="@unit.Code">@unit.Name (@unit.EmployeeCount)</option>
+                            }
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    As of
+                    <input type="date" value="@AsOf?.ToString("yyyy-MM-dd")" @onchange="ChangeAsOf" />
+                </label>
+
+                <button class="hr-button small" type="button" @onclick="ApplyAsync" disabled="@IsBusy">
+                    @(IsBusy ? "Loading…" : "Apply filters")
+                </button>
+            </div>
+        </div>
+
+        @if (LoadError is not null)
+        {
+            <div class="hr-alert error">@LoadError</div>
+        }
+        else if (Model is null)
+        {
+            <div class="hr-kpi-strip">
+                @for (var index = 0; index < 6; index++)
+                {
+                    <div class="hr-kpi-card skeleton"><span></span><strong></strong></div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="hr-scope-line">
+                @Scope!.PopulationCount employees ·
+                @(Scope.CompanyCode ?? "all companies") ·
+                @(Scope.UnitCode ?? "all units") ·
+                as of @Scope.AsOf.ToString("dd MMM yyyy")
+            </p>
+
+            @if (Scope.IsHistorical)
+            {
+                <div class="hr-alert warning">
+                    These figures are for @Scope.AsOf.ToString("dd MMM yyyy"), not today. Every panel
+                    on this page uses that date.
+                </div>
+            }
+
+            <div class="hr-kpi-strip">
+                @foreach (var kpi in Model.Headline.Kpis)
+                {
+                    <a class="hr-kpi-card tone-@kpi.Tone" href="@KpiPath(kpi.Key)">
+                        <div class="hr-kpi-head">
+                            <span class="hr-kpi-icon">@KpiIcon(kpi.Key)</span>
+                            <span class="hr-kpi-title">@kpi.Title</span>
+                        </div>
+                        <strong class="hr-kpi-value">@kpi.Count</strong>
+                        @if (kpi.Percentage is { } percentage)
+                        {
+                            <span class="hr-kpi-sub">@percentage.ToString("0.##")% @kpi.DenominatorLabel</span>
+                        }
+                        else if (kpi.Key == DashboardKpiKeys.PendingApproval)
+                        {
+                            <span class="hr-kpi-link">View All ›</span>
+                        }
+                        else
+                        {
+                            <span class="hr-kpi-sub">@kpi.DenominatorLabel</span>
+                        }
+                        @if (kpi.Caption is not null)
+                        {
+                            <span class="hr-kpi-caption">@kpi.Caption</span>
+                        }
+                    </a>
+                }
+            </div>
+
+            @if (Model.Policies is { Count: > 0 } policies)
+            {
+                <h2 class="hr-section-title">Company Policies &amp; Leave Rules</h2>
+
+                @if (PolicyError is not null)
+                {
+                    <div class="hr-alert error compact">@PolicyError</div>
+                }
+
+                <div class="hr-policy-grid">
+                    @foreach (var policy in policies)
+                    {
+                        <article class="hr-policy-card">
+                            <span class="hr-policy-icon">@policy.Icon</span>
+                            <button type="button" class="hr-policy-title" @onclick="() => OpenPolicyAsync(policy)">
+                                @policy.Title
+                            </button>
+                            <span class="hr-policy-updated">Updated: @policy.UpdatedOn.ToString("dd MMM, yyyy")</span>
+                            <p class="hr-policy-excerpt">@policy.Excerpt</p>
+                            <div class="hr-policy-foot">
+                                <small>Last Updated: @policy.UpdatedOn.ToString("dd MMM")</small>
+                                @if (policy.IsAcknowledged)
+                                {
+                                    <span class="hr-policy-state read" title="@ReadTitle(policy)">Read</span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="hr-policy-state unread"
+                                            disabled="@(AcknowledgingId == policy.Id)"
+                                            @onclick="() => AcknowledgeAsync(policy)">
+                                        @(AcknowledgingId == policy.Id ? "Saving…" : "Unread")
+                                    </button>
+                                }
+                            </div>
+                        </article>
+                    }
+                </div>
+
+                @if (OpenPolicy is { } detail)
+                {
+                    <div class="hr-modal-backdrop" @onclick="ClosePolicy"></div>
+
+                    <div class="hr-modal" role="dialog" aria-modal="true" aria-label="@detail.Summary.Title">
+                        <div class="hr-modal-head">
+                            <h2>@detail.Summary.Title</h2>
+                            <button type="button" class="hr-modal-close" aria-label="Close"
+                                    @onclick="ClosePolicy">✕</button>
+                        </div>
+
+                        <div class="hr-modal-body">
+                            <p class="hr-modal-updated">
+                                Last Updated: @detail.Summary.UpdatedOn.ToString("dd MMM, yyyy")
+                            </p>
+
+                            @foreach (var block in detail.Sections)
+                            {
+                                <h3 class="hr-policy-section-heading">@block.Heading</h3>
+
+                                @if (!string.IsNullOrWhiteSpace(block.Intro))
+                                {
+                                    <p class="hr-policy-intro">@block.Intro</p>
+                                }
+
+                                @if (block.Points.Count > 0)
+                                {
+                                    <ul class="hr-policy-points">
+                                        @foreach (var point in block.Points)
+                                        {
+                                            <li>@point</li>
+                                        }
+                                    </ul>
+                                }
+
+                                @foreach (var sub in block.Subsections ?? [])
+                                {
+                                    <h4 class="hr-policy-subheading">@sub.Label</h4>
+                                    <ul class="hr-policy-points">
+                                        @foreach (var point in sub.Points)
+                                        {
+                                            <li>@point</li>
+                                        }
+                                    </ul>
+                                }
+                            }
+                        </div>
+
+                        <div class="hr-modal-foot">
+                            @if (detail.Summary.IsAcknowledged)
+                            {
+                                <span class="hr-modal-foot-note">
+                                    Marked as read @(detail.Summary.AcknowledgedUtc?.ToLocalTime().ToString("dd MMM yyyy") ?? string.Empty).
+                                </span>
+                                <button class="hr-button small ghost" type="button" @onclick="ClosePolicy">Close</button>
+                            }
+                            else
+                            {
+                                <span class="hr-modal-foot-note">Mark this policy as read</span>
+                                <div class="hr-modal-actions">
+                                    <button class="hr-button small ghost" type="button" @onclick="ClosePolicy">Cancel</button>
+                                    <button class="hr-button small" type="button"
+                                            disabled="@(AcknowledgingId == detail.Summary.Id)"
+                                            @onclick="() => AcknowledgeAsync(detail.Summary)">
+                                        @(AcknowledgingId == detail.Summary.Id ? "Saving…" : "Mark this policy as read")
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+
+            @if (Model.PeopleMoments is { } moments)
+            {
+                <div class="hr-moment-panels">
+                    <section class="hr-panel hr-moment-panel">
+                        <div class="hr-panel-head">
+                            <h2>🎂 Birthdays</h2>
+                            <a class="hr-link-inline" href="@Path("people")">View More ›</a>
+                        </div>
+                        <div class="hr-moment-tabs">
+                            @foreach (var window in MomentWindows)
+                            {
+                                <button type="button"
+                                        class="hr-moment-tab @(BirthdayTab == window ? "active" : "")"
+                                        @onclick="() => BirthdayTab = window">@window.ToUpperInvariant()</button>
+                            }
+                        </div>
+                        @{ var birthdays = moments.Birthdays.Where(m => m.Window == BirthdayTab).ToList(); }
+                        @if (birthdays.Count == 0)
+                        {
+                            <p class="hr-empty">Nobody @BirthdayTab.ToLowerInvariant() in this window.</p>
+                        }
+                        else
+                        {
+                            @foreach (var moment in birthdays)
+                            {
+                                <div class="hr-moment-row">
+                                    <div>
+                                        <strong>@moment.DisplayName</strong>
+                                        <small>@MomentLine(moment) · Turning @moment.Years</small>
+                                    </div>
+                                    <span class="hr-chip">@moment.Window.ToUpperInvariant()</span>
+                                </div>
+                            }
+                        }
+                    </section>
+
+                    <section class="hr-panel hr-moment-panel">
+                        <div class="hr-panel-head">
+                            <h2>🎉 Anniversaries</h2>
+                            <a class="hr-link-inline" href="@Path("people")">View More ›</a>
+                        </div>
+                        <div class="hr-moment-tabs">
+                            @foreach (var window in MomentWindows)
+                            {
+                                <button type="button"
+                                        class="hr-moment-tab @(AnniversaryTab == window ? "active" : "")"
+                                        @onclick="() => AnniversaryTab = window">@window.ToUpperInvariant()</button>
+                            }
+                        </div>
+                        @{ var anniversaries = moments.Anniversaries.Where(m => m.Window == AnniversaryTab).ToList(); }
+                        @if (anniversaries.Count == 0)
+                        {
+                            <p class="hr-empty">Nobody @AnniversaryTab.ToLowerInvariant() in this window.</p>
+                        }
+                        else
+                        {
+                            @foreach (var moment in anniversaries)
+                            {
+                                <div class="hr-moment-row">
+                                    <div>
+                                        <strong>@moment.DisplayName</strong>
+                                        <small>@MomentLine(moment) · @moment.Years @(moment.Years == 1 ? "year" : "years")</small>
+                                    </div>
+                                    <span class="hr-chip">@moment.Window.ToUpperInvariant()</span>
+                                </div>
+                            }
+                        }
+                    </section>
+                </div>
+            }
+
+            <div class="hr-late-coming-widget">
+                <HrDataTable TRow="LateArrivalRowDto"
+                             Title="⏰ Late Coming List (Today)"
+                             Error="@TableError"
+                             IsLoading="TablesLoading"
+                             EmptyMessage="Nobody arrived late."
+                             Rows="LateArrivals?.Rows.Items">
+                    <Header>
+                        <th>Employee Name</th>
+                        <th>Department</th>
+                        <th>Designation</th>
+                        <th>Expected Time</th>
+                        <th>Arrival Time</th>
+                        <th>Delay (Minutes)</th>
+                        <th>Total Time Late as on</th>
+                        <th>Total Time Late This Month</th>
+                        <th>Total Time Late This Week</th>
+                    </Header>
+                    <Row Context="row">
+                        <td>@row.DisplayName</td>
+                        <td>@row.DepartmentCode</td>
+                        <td>@row.Designation</td>
+                        <td>@row.ExpectedTime.ToString("hh\\:mm tt")</td>
+                        <td>@row.ArrivalTime.ToString("hh\\:mm tt")</td>
+                        <td>@row.DelayMinutes min</td>
+                        <td>@Duration(row.LateMinutesToDate)</td>
+                        <td>@Duration(row.LateMinutesThisMonth)</td>
+                        <td>@Duration(row.LateMinutesThisWeek)</td>
+                    </Row>
+                </HrDataTable>
+            </div>
+
+            <div class="hr-reference-table hr-events-widget">
+                <HrDataTable TRow="CompanyEventDto"
+                             Title="📅 Upcoming Events &amp; Holidays"
+                             Error="@TableError"
+                             IsLoading="IsBusy"
+                             EmptyMessage="No upcoming events or holidays in this period."
+                             Rows="Model.UpcomingEvents">
+                    <Header>
+                        <th>Event Name</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                    </Header>
+                    <Row Context="item">
+                        <td>@item.Name</td>
+                        <td>@item.Date.ToString("MMMM dd, yyyy")</td>
+                        <td><span class="hr-event-type @EventTypeClass(item.Type)">@item.Type.ToUpperInvariant()</span></td>
+                        <td>@(item.Description ?? item.LocationCode ?? "—")</td>
+                    </Row>
+                </HrDataTable>
+            </div>
+
+            @if (LeaveActionMessage is not null)
+            {
+                <div class="hr-alert success">@LeaveActionMessage</div>
+            }
+
+            <div class="hr-reference-table hr-leave-approval-widget">
+                <HrDataTable TRow="LeaveApprovalRowDto"
+                             Title="⏳ Leaves Pending for Verification &amp; Approval"
+                             Error="@LeaveApprovalError"
+                             IsLoading="TablesLoading"
+                             EmptyMessage="Nothing is waiting for verification or approval."
+                             Rows="LeaveApprovals?.Rows">
+                    <Header>
+                        <th>Employee Name</th>
+                        <th>Department</th>
+                        <th>Designation</th>
+                        <th>Leave Type</th>
+                        <th>From Date</th>
+                        <th>To Date</th>
+                        <th>Days</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </Header>
+                    <Row Context="request">
+                        <td>@request.DisplayName</td>
+                        <td>@request.DepartmentCode</td>
+                        <td>@request.Designation</td>
+                        <td>@request.LeaveTypeCode</td>
+                        <td>@request.From.ToString("MMMM dd, yyyy")</td>
+                        <td>@request.To.ToString("MMMM dd, yyyy")</td>
+                        <td>@request.Days.ToString("0.#")</td>
+                        <td>@request.Reason</td>
+                        <td><span class="hr-pending-state">PENDING</span></td>
+                        <td>
+                            @if (request.IsOwn)
+                            {
+                                <span class="hr-hint">Own request</span>
+                            }
+                            else if (CanApproveLeave)
+                            {
+                                <span class="hr-reference-actions">
+                                    <button class="approve" type="button" title="Approve" aria-label="Approve leave request"
+                                            disabled="@(DecidingLeaveId == request.RequestId)"
+                                            @onclick="() => DecideLeaveAsync(request, true)">✓</button>
+                                    <button class="reject" type="button" title="Reject" aria-label="Reject leave request"
+                                            disabled="@(DecidingLeaveId == request.RequestId)"
+                                            @onclick="() => DecideLeaveAsync(request, false)">×</button>
+                                    <a class="view" title="View" aria-label="View leave request" href="@Path("leave")">⊙</a>
+                                </span>
+                            }
+                            else
+                            {
+                                <a class="hr-link-inline" href="@Path("leave")">View</a>
+                            }
+                        </td>
+                    </Row>
+                </HrDataTable>
+            </div>
+
+            <div class="hr-balance-grid hr-reference-table">
+                <HrDataTable TRow="EmployeeLeaveBalanceRowDto"
+                             Title="📊 Leave Balance (Employee Wise)"
+                             Error="@TableError"
+                             IsLoading="TablesLoading"
+                             EmptyMessage="No balances have been granted."
+                             Rows="EmployeeBalances?.Rows.Items">
+                    <Header>
+                        <th>Employee Name</th>
+                        <th>Department</th>
+                        <th>Designation</th>
+                        @if (EmployeeBalances is not null)
+                        {
+                            @foreach (var column in EmployeeBalances.PolicyColumns)
+                            {
+                                <th class="numeric">@column</th>
+                            }
+                        }
+                        <th class="numeric">Total</th>
+                    </Header>
+                    <Row Context="row">
+                        <td>@row.DisplayName</td>
+                        <td>@row.DepartmentCode</td>
+                        <td>@row.Designation</td>
+                        @foreach (var cell in row.Balances)
+                        {
+                            <td class="numeric">@cell.Available.ToString("0.#")</td>
+                        }
+                        <td class="numeric strong">@row.Total.ToString("0.#")</td>
+                    </Row>
+                </HrDataTable>
+
+                <HrDataTable TRow="DepartmentLeaveBalanceRowDto"
+                             Title="🏭 Leave Balance (Department Wise)"
+                             Error="@TableError"
+                             IsLoading="TablesLoading"
+                             EmptyMessage="No leave has been granted yet."
+                             Rows="DepartmentBalances?.Rows">
+                    <Header>
+                        <th>Department</th>
+                        <th>Total Emp</th>
+                        <th>Used</th>
+                        <th>Available</th>
+                        <th>Utilisation</th>
+                    </Header>
+                    <Row Context="row">
+                        <td>@row.DepartmentCode</td>
+                        <td>@row.EmployeeCount</td>
+                        <td>@row.UsedDays.ToString("0.#")</td>
+                        <td>@row.AvailableDays.ToString("0.#")</td>
+                        <td>
+                            <div class="hr-inline-bar" title="@($"{row.UtilisationPercent:0.#}%")">
+                                <div style="width:@(row.UtilisationPercent)%"></div>
+                            </div>
+                        </td>
+                    </Row>
+                </HrDataTable>
+            </div>
+
+            @if (Model.LeaveAnalytics is { } analytics)
+            {
+                <div class="hr-chart-grid hr-reference-chart-grid">
+                    <section class="hr-panel hr-category-chart-panel">
+                        <div class="hr-panel-head">
+                            <h2>📈 Leave Category Wise Distribution</h2>
+                        </div>
+                        <HrDonutChart Slices="CategorySlices(analytics)"
+                                      AriaLabel="Leave days by type"
+                                      CentreCaption="days"
+                                      EmptyMessage="No leave has been taken in this period." />
+                    </section>
+
+                    <section class="hr-panel hr-department-chart-panel">
+                        <div class="hr-panel-head">
+                            <h2>📊 Department Wise Leave Usage</h2>
+                        </div>
+                        <HrBarChart Groups="DepartmentGroups()"
+                                    SeriesNames="DepartmentSeries"
+                                    SeriesColours="DepartmentColours"
+                                    AriaLabel="Leave used and available by department"
+                                    EmptyMessage="No departments have leave granted yet." />
+                    </section>
+                </div>
+
+                <div class="hr-chart-grid hr-followup-chart-grid">
+                    <section class="hr-panel">
+                        <div class="hr-panel-head">
+                            <h2>📉 Monthly Leave Trend (Last 6 Months)</h2>
+                        </div>
+                        <HrTrendChart Points="TrendPoints(analytics)"
+                                      AriaLabel="Leave days taken per month"
+                                      EmptyMessage="No leave recorded in this window." />
+                    </section>
+
+                    <section class="hr-panel">
+                        <div class="hr-panel-head">
+                            <h2>🎯 Leave Status Overview</h2>
+                        </div>
+                        <HrDonutChart Slices="StatusSlices(analytics)"
+                                      InnerRadius="0"
+                                      AriaLabel="Leave requests by status"
+                                      EmptyMessage="No requests raised this year." />
+                    </section>
+                </div>
+
+                @if (LeaveApprovals is not null)
+                {
+                    <section class="hr-year-end-section">
+                        <h2 class="hr-year-end-title">📋 Employees Pending Leave Year End Process (Department Wise)</h2>
+                        @{ var yearEndDepartments = YearEndDepartments(); }
+                        @if (yearEndDepartments.Count == 0)
+                        {
+                            <div class="hr-panel"><p class="hr-empty">No departments have pending leave requests.</p></div>
+                        }
+                        else
+                        {
+                            <div class="hr-year-end-grid">
+                                @foreach (var department in yearEndDepartments)
+                                {
+                                    <article class="hr-year-end-card">
+                                        <div class="hr-year-end-head">
+                                            <strong>@department.Department<br />Department</strong>
+                                            <span>@department.PendingRequests</span>
+                                        </div>
+                                        <dl>
+                                            <div><dt>Pending Requests:</dt><dd>@department.PendingRequests</dd></div>
+                                            <div><dt>Total Days:</dt><dd>@department.TotalDays.ToString("0.#") days</dd></div>
+                                            <div><dt>Avg Days:</dt><dd>@department.AverageDays.ToString("0.##") days</dd></div>
+                                        </dl>
+                                        <a href="@Path("leave")">View Details</a>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+
+                @if (LeaveTypeUsage is not null)
+                {
+                    <section class="hr-panel hr-monthly-leave-panel">
+                        <div class="hr-panel-head">
+                            <h2>📊 Employees Leaves by Leave Type (Monthly View)</h2>
+                        </div>
+
+                        <div class="hr-month-selector" aria-label="Select leave report month">
+                            <button class="arrow" type="button" title="Previous month" @onclick="() => MoveLeaveMonthAsync(-1)">←</button>
+                            @for (var month = 1; month <= 12; month++)
+                            {
+                                var monthNumber = month;
+                                <button type="button"
+                                        class="@(LeaveTypeUsage.Month == monthNumber ? "active" : "")"
+                                        @onclick="() => SelectLeaveMonthAsync(monthNumber)">
+                                    @(new DateOnly(LeaveTypeUsage.Year, monthNumber, 1).ToString("MMM yyyy"))
+                                </button>
+                            }
+                            <button class="arrow" type="button" title="Next month" @onclick="() => MoveLeaveMonthAsync(1)">→</button>
+                        </div>
+
+                        <div class="hr-leave-type-bars">
+                            @foreach (var leaveType in LeaveTypeUsage.Rows)
+                            {
+                                <div class="hr-leave-type-row">
+                                    <strong>@leaveType.PolicyName</strong>
+                                    <div class="hr-leave-type-track">
+                                        <div style="width:@(LeaveTypePercent(leaveType))%">
+                                            @leaveType.Used.ToString("0.#") @leaveType.Unit
+                                        </div>
+                                    </div>
+                                    <b>@leaveType.Used.ToString("0.#")/@leaveType.Entitled.ToString("0.#")</b>
+                                </div>
+                            }
+                        </div>
+
+                        @if (UsageByDate is { Days.Count: > 0 })
+                        {
+                            <div class="hr-monthly-day-section">
+                                <h3>📅 @UsageByDate.MonthLabel @UsageByDate.Year - Leave Usage by Date Wise</h3>
+                                <div class="hr-chart-scroll">
+                                    <HrBarChart Groups="DailyGroups()"
+                                                SeriesNames="UsageByDate.Categories"
+                                                Stacked="true"
+                                                AriaLabel="Leave days taken per working day"
+                                                EmptyMessage="Nobody took leave this month." />
+                                </div>
+                            </div>
+                        }
+                    </section>
+                }
+            }
+
+            <HrDataTable TRow="MissPunchRowDto"
+                         Title="Missing punches"
+                         Meta="Last 30 days"
+                         Total="MissPunches?.OpenCount"
+                         Error="@TableError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="Every day is complete."
+                         Rows="MissPunches?.Rows.Items">
+                <Header>
+                    <th>Employee</th><th>Department</th><th>Date</th><th>Missing</th><th>State</th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@row.DepartmentCode</td>
+                    <td>@row.Date.ToString("dd MMM yyyy")</td>
+                    <td><span class="hr-tag">@row.MissingSide</span></td>
+                    <td><span class="hr-tag tone-@row.StateTone">@row.State</span></td>
+                </Row>
+            </HrDataTable>
+
+            <HrDataTable TRow="MovementRowDto"
+                         Title="Out of office — personal"
+                         Meta="Today"
+                         Total="Movement?.Personal.Count"
+                         Error="@TableError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="Nobody is out on personal business."
+                         Rows="Movement?.Personal">
+                <Header>
+                    <th>Employee</th><th>Department</th><th>Out</th><th>Expected back</th>
+                    <th>Reason</th><th class="numeric">Away</th><th></th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@row.DepartmentCode</td>
+                    <td>@row.GoingOutUtc.ToString("HH\\:mm")</td>
+                    <td>@row.ExpectedReturnUtc.ToString("HH\\:mm")</td>
+                    <td>@row.Detail</td>
+                    <td class="numeric">@Duration(row.MinutesOut)</td>
+                    <td>
+                        @if (row.IsOverdue)
+                        {
+                            <span class="hr-tag tone-warning">Overdue</span>
+                        }
+                        else if (row.ActualReturnUtc is not null)
+                        {
+                            <span class="hr-tag tone-success">Back</span>
+                        }
+                        else
+                        {
+                            <span class="hr-tag">Out</span>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+
+            <HrDataTable TRow="MovementRowDto"
+                         Title="Out of office — official"
+                         Meta="Today"
+                         Total="Movement?.Official.Count"
+                         Error="@TableError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="Nobody is out on company business."
+                         Rows="Movement?.Official">
+                <Header>
+                    <th>Employee</th><th>Department</th><th>Out</th><th>Expected back</th>
+                    <th>Purpose</th><th class="numeric">Away</th><th></th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@row.DepartmentCode</td>
+                    <td>@row.GoingOutUtc.ToString("HH\\:mm")</td>
+                    <td>@row.ExpectedReturnUtc.ToString("HH\\:mm")</td>
+                    <td>@row.Detail</td>
+                    <td class="numeric">@Duration(row.MinutesOut)</td>
+                    <td>
+                        @if (row.IsOverdue)
+                        {
+                            <span class="hr-tag tone-warning">Overdue</span>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+
+            <HrDataTable TRow="GatePassRowDto"
+                         Title="Gate pass approvals"
+                         Meta="@($"{GatePasses?.PendingCount ?? 0} awaiting a decision")"
+                         Total="GatePasses?.Rows.ApproximateTotal is { } passCount ? (int)passCount : null"
+                         Error="@TableError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="No gate passes in this window."
+                         Rows="GatePasses?.Rows.Items">
+                <Header>
+                    <th>Employee</th><th>Department</th><th>Type</th><th>From</th><th>To</th>
+                    <th>Purpose</th><th>Status</th><th class="numeric">Scans</th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@row.DepartmentCode</td>
+                    <td>
+                        <span class="hr-tag @(row.PassType == "MultiDayPass" ? "tone-success" : "tone-info")">
+                            @(row.PassType == "MultiDayPass" ? "MULTI-DAY" : "DAY PASS")
+                        </span>
+                    </td>
+                    <td>@row.FromDate.ToString("dd MMM")</td>
+                    <td>@row.ToDate.ToString("dd MMM")</td>
+                    <td>@row.Purpose</td>
+                    <td><span class="hr-tag tone-@row.Status.Tone">@row.Status.Name</span></td>
+                    <td class="numeric">@row.ScanCount</td>
+                </Row>
+            </HrDataTable>
+
+            <HrDataTable TRow="OpeningPipelineRowDto"
+                         Title="Applicants by open position"
+                         Meta="@OpeningsMeta()"
+                         Total="Pipeline?.Openings.Count"
+                         Error="@TableError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="No vacancies are open."
+                         Rows="Pipeline?.Openings">
+                <Header>
+                    <th>Position</th><th>Department</th><th>Location</th>
+                    <th class="numeric">Applied</th><th class="numeric">New</th>
+                    <th class="numeric">In progress</th><th class="numeric">Hired</th>
+                    <th>Latest</th>
+                </Header>
+                <Row Context="row">
+                    <td>
+                        @row.Title
+                        @if (!row.IsPublished)
+                        {
+                            <span class="hr-tag">DRAFT</span>
+                        }
+                    </td>
+                    <td>@row.Department</td>
+                    <td>@row.Location</td>
+                    <td class="numeric strong">@row.TotalApplicants</td>
+                    <td class="numeric">
+                        @if (row.NewApplicants > 0)
+                        {
+                            <span class="hr-tag tone-info">@row.NewApplicants</span>
+                        }
+                        else
+                        {
+                            <text>0</text>
+                        }
+                    </td>
+                    <td class="numeric">@row.InProgress</td>
+                    <td class="numeric">@row.Hired</td>
+                    <td>
+                        @if (row.LatestApplicationUtc is { } latest)
+                        {
+                            <text>@latest.ToLocalTime().ToString("dd MMM")</text>
+                        }
+                        else
+                        {
+                            <span class="hr-tag tone-warning">Nobody yet</span>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+
+            <HrDataTable TRow="EmployeeMobileAccessDto"
+                         Title="Employee app access"
+                         Meta="@MobileAccessMeta()"
+                         Total="MobileAccess?.Count"
+                         Error="@MobileAccessError"
+                         IsLoading="TablesLoading"
+                         EmptyMessage="No employees to give access to."
+                         Rows="MobileAccess">
+                <Header>
+                    <th>Employee</th><th>Number</th><th>Department</th><th>Joined</th>
+                    <th>Status</th><th>Signs in as</th><th></th>
+                </Header>
+                <Row Context="row">
+                    <td>@row.DisplayName</td>
+                    <td>@row.EmployeeNumber</td>
+                    <td>@row.DepartmentCode</td>
+                    <td>@(row.JoinedOn?.ToString("dd MMM yyyy"))</td>
+                    <td>
+                        <span class="hr-tag tone-@row.StateTone">@StateLabel(row.State)</span>
+                        @if (row.Explanation is not null)
+                        {
+                            <small class="hr-hint">@row.Explanation</small>
+                        }
+                    </td>
+                    <td>@(row.UserName ?? "—")</td>
+                    <td>
+                        @if (row.State == MobileAccessStates.NotGranted)
+                        {
+                            <button class="hr-button small" type="button"
+                                    disabled="@(PendingAccessId == row.EmployeeId)"
+                                    @onclick="() => GrantAsync(row)">
+                                @(PendingAccessId == row.EmployeeId ? "Approving…" : "Approve access")
+                            </button>
+                        }
+                        else if (row.State == MobileAccessStates.Suspended)
+                        {
+                            <button class="hr-button small" type="button"
+                                    disabled="@(PendingAccessId == row.EmployeeId)"
+                                    @onclick="() => SetAccessAsync(row, true)">Restore</button>
+                        }
+                        else if (row.State != MobileAccessStates.Blocked)
+                        {
+                            <button class="hr-button small ghost" type="button"
+                                    disabled="@(PendingAccessId == row.EmployeeId)"
+                                    @onclick="() => SetAccessAsync(row, false)">Suspend</button>
+                        }
+                    </td>
+                </Row>
+            </HrDataTable>
+
+            @if (IssuedCredentials is { } issued)
+            {
+                <div class="hr-alert success">
+                    <strong>@issued.UserName</strong> can now sign in to the employee app as
+                    @issued.RoleName. Temporary password:
+                    <code>@issued.TemporaryPassword</code> — give this to the employee now.
+                    It is shown once and cannot be recovered; they must replace it at first sign-in.
+                    <button class="hr-button small ghost" type="button"
+                            @onclick="() => IssuedCredentials = null">Dismiss</button>
+                </div>
+            }
+
+        }
+    </main>
+</div>
+
+@code {
+    /// <summary>
+    /// The client in the address. Presentational only — the data shown is always the client on
+    /// the signed-in account, never one named in a URL, so editing the address cannot reach
+    /// another client's figures.
+    /// </summary>
+    [Parameter] public string? TenantKey { get; set; }
+
+    private HrDashboardDto? Model;
+    private DashboardScopeDto? Scope;
+    private DashboardScopeOptionsDto? ScopeOptions;
+    private LateArrivalReportDto? LateArrivals;
+    private MissPunchReportDto? MissPunches;
+    private DepartmentLeaveBalanceGridDto? DepartmentBalances;
+    private LeaveUsageByDateReportDto? UsageByDate;
+    private LeaveTypeUsageReportDto? LeaveTypeUsage;
+    private MovementBoardDto? Movement;
+    private GatePassBoardDto? GatePasses;
+    private EmployeeLeaveBalanceGridDto? EmployeeBalances;
+    private OpeningPipelineDto? Pipeline;
+    private IReadOnlyList<EmployeeMobileAccessDto>? MobileAccess;
+    private LeaveApprovalQueueDto? LeaveApprovals;
+
+    /// <summary>
+    /// Shown once, immediately after a grant, and never read back from anywhere. The password
+    /// is not recoverable, so if this is lost the account has to be reset instead.
+    /// </summary>
+    private GrantMobileAccessResultDto? IssuedCredentials;
+
+    private string? PendingAccessId;
+
+    private string? LoadError;
+    private string? TableError;
+    private string? MobileAccessError;
+    private string? LeaveApprovalError;
+    private string? LeaveActionMessage;
+    private bool TablesLoading = true;
+    private bool IsBusy;
+    private bool CanApproveLeave;
+    private string? DecidingLeaveId;
+    private string? SelectedLeaveMonth;
+
+    private string CompanyCode = string.Empty;
+    private string UnitCode = string.Empty;
+
+    private PolicyDetailDto? OpenPolicy;
+    private string? AcknowledgingId;
+    private string? PolicyError;
+
+    private static readonly string[] MomentWindows = ["Today", "Belated", "Upcoming"];
+    private string BirthdayTab = "Today";
+    private string AnniversaryTab = "Today";
+
+    /// <summary>"Department • Designation", each part only if the server actually returned one —
+    /// dropping a missing piece rather than printing "· ·" for whoever has no designation on file.</summary>
+    private static string MomentLine(PersonMomentDto moment) =>
+        string.Join(" • ", new[] { moment.DepartmentCode, moment.Designation }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    /// <summary>
+    /// Null until the first load answers. The client's today is the service's to decide — a
+    /// page that sends the server's date instead would open on yesterday for anyone east of
+    /// UTC, and then judge a finished day as though it were still running.
+    /// </summary>
+    private DateOnly? AsOf;
+
+    private string Path(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+
+    /// <summary>
+    /// A tile's drill-down carries the same scope the tile itself was computed with — a click
+    /// during a historical "as of" view must not silently reset to today's list.
+    /// </summary>
+    private string KpiPath(string key)
+    {
+        var basePath = string.IsNullOrWhiteSpace(TenantKey)
+            ? $"/hr/dashboard/kpi/{key}"
+            : $"/hr/{TenantKey}/dashboard/kpi/{key}";
+
+        var parameters = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(CompanyCode))
+        {
+            parameters.Add($"company={Uri.EscapeDataString(CompanyCode)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(UnitCode))
+        {
+            parameters.Add($"unit={Uri.EscapeDataString(UnitCode)}");
+        }
+
+        if (AsOf is { } asOf)
+        {
+            parameters.Add($"asOf={asOf:yyyy-MM-dd}");
+        }
+
+        return parameters.Count == 0 ? basePath : $"{basePath}?{string.Join("&", parameters)}";
+    }
+
+    private static string ReadTitle(PolicySummaryDto policy) =>
+        policy.AcknowledgedUtc is { } when
+            ? $"Read on {when.ToLocalTime():dd MMM yyyy, HH:mm}"
+            : "Read";
+
+    private void ClosePolicy()
+    {
+        OpenPolicy = null;
+        PolicyError = null;
+    }
+
+    private async Task OpenPolicyAsync(PolicySummaryDto policy)
+    {
+        PolicyError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            OpenPolicy = await Policies.GetPublishedDetailAsync(
+                caller.TenantKey, caller.EmployeeId, policy.Id, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            OpenPolicy = null;
+            PolicyError = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Acknowledges the version the reader actually has on screen, not "the current one" — if it
+    /// was republished while this page was open, the stale acknowledgement is recorded against the
+    /// old version and the card correctly stays unread until they read the new text.
+    /// </summary>
+    private async Task AcknowledgeAsync(PolicySummaryDto policy)
+    {
+        AcknowledgingId = policy.Id;
+        PolicyError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+
+            if (string.IsNullOrWhiteSpace(caller.EmployeeId))
+            {
+                PolicyError = "This account is not linked to an employee record, so a policy cannot be marked as read against it.";
+                return;
+            }
+
+            await Policies.AcknowledgeAsync(
+                caller.TenantKey, caller.EmployeeId, policy.Id, policy.Version, CancellationToken.None);
+
+            // Re-read rather than flipping a local flag: the service owns whether this counts.
+            Model = await Dashboard.GetDashboardAsync(caller, BuildQuery(), CancellationToken.None);
+
+            if (OpenPolicy is not null && OpenPolicy.Summary.Id == policy.Id)
+            {
+                OpenPolicy = await Policies.GetPublishedDetailAsync(
+                    caller.TenantKey, caller.EmployeeId, policy.Id, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            PolicyError = ex.Message;
+        }
+        finally
+        {
+            AcknowledgingId = null;
+        }
+    }
+
+    /// <summary>
+    /// One glyph per headline KPI, keyed off <see cref="DashboardKpiKeys"/> rather than a field
+    /// the DTO doesn't carry — presentation only, never a second source of the number itself.
+    /// </summary>
+    private static string KpiIcon(string key) => key switch
+    {
+        DashboardKpiKeys.TotalEmployees => "👥",
+        DashboardKpiKeys.PresentToday => "✅",
+        DashboardKpiKeys.OnLeave => "🗓️",
+        DashboardKpiKeys.Absent => "🚫",
+        DashboardKpiKeys.LateComing => "⏰",
+        DashboardKpiKeys.PendingApproval => "⏳",
+        _ => "•"
+    };
+
+    /// <summary>Minutes as hours and minutes, matching how the prototype reads.</summary>
+    private static string Duration(int minutes) =>
+        minutes <= 0 ? "-"
+        : minutes < 60 ? $"{minutes} min"
+        : $"{minutes / 60} hr {minutes % 60:00} min";
+
+    private static string EventTypeClass(string type) =>
+        type.Equals("Holiday", StringComparison.OrdinalIgnoreCase) ? "holiday" : "company-event";
+
+    private void ChangeCompany(ChangeEventArgs args) => CompanyCode = args.Value?.ToString() ?? string.Empty;
+
+    private void ChangeUnit(ChangeEventArgs args) => UnitCode = args.Value?.ToString() ?? string.Empty;
+
+    private void ChangeAsOf(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            AsOf = parsed;
+        }
+    }
+
+    private DashboardScopeQuery BuildQuery() => new()
+    {
+        CompanyCode = string.IsNullOrWhiteSpace(CompanyCode) ? null : CompanyCode,
+        UnitCode = string.IsNullOrWhiteSpace(UnitCode) ? null : UnitCode,
+        AsOf = AsOf
+    };
+
+    private static readonly string[] DepartmentSeries = ["Used Leaves", "Available Leaves"];
+    private static readonly string[] DepartmentColours = [HrChartPalette.Used, HrChartPalette.Available];
+
+    /// <summary>
+    /// Policies with nothing taken are dropped from the donut — a wedge of zero is invisible but
+    /// still occupies a legend row, which makes the legend harder to read, not easier.
+    /// </summary>
+    private static IReadOnlyList<HrDonutChart.Slice> CategorySlices(LeaveAnalyticsDto analytics) =>
+        analytics.CategoryDistribution
+            .Where(slice => slice.Days > 0)
+            .Select(slice => new HrDonutChart.Slice(slice.PolicyName, slice.Days))
+            .ToList();
+
+    private static IReadOnlyList<HrDonutChart.Slice> StatusSlices(LeaveAnalyticsDto analytics) =>
+        new[]
+        {
+            new HrDonutChart.Slice("Approved", analytics.StatusSplit.Approved, HrChartPalette.Approved),
+            new HrDonutChart.Slice("Pending", analytics.StatusSplit.Pending, HrChartPalette.Pending),
+            new HrDonutChart.Slice("Rejected", analytics.StatusSplit.Rejected, HrChartPalette.Rejected),
+            new HrDonutChart.Slice("Withdrawn", analytics.StatusSplit.Withdrawn, HrChartPalette.Withdrawn)
+        }
+        .Where(slice => slice.Value > 0)
+        .ToList();
+
+    private static IReadOnlyList<HrTrendChart.TrendPoint> TrendPoints(LeaveAnalyticsDto analytics) =>
+        analytics.MonthlyTrend
+            .Select(point => new HrTrendChart.TrendPoint(point.MonthLabel, point.Days))
+            .ToList();
+
+    private IReadOnlyList<HrBarChart.BarGroup> DepartmentGroups() =>
+        DepartmentBalances?.Rows
+            .Select(row => new HrBarChart.BarGroup(
+                row.DepartmentCode, new[] { row.UsedDays, row.AvailableDays }))
+            .ToList()
+        ?? [];
+
+    private IReadOnlyList<HrBarChart.BarGroup> DailyGroups() =>
+        UsageByDate?.Days
+            .Select(day => new HrBarChart.BarGroup(
+                day.Date.ToString("d MMM"),
+                day.ByCategory.Select(category => category.Days).ToList()))
+            .ToList()
+        ?? [];
+
+    private sealed record DepartmentYearEndSummary(
+        string Department, int PendingRequests, decimal TotalDays, decimal AverageDays);
+
+    private IReadOnlyList<DepartmentYearEndSummary> YearEndDepartments() =>
+        LeaveApprovals?.Rows
+            .GroupBy(row => string.IsNullOrWhiteSpace(row.DepartmentCode) ? "Unassigned" : row.DepartmentCode)
+            .Select(group =>
+            {
+                var total = group.Sum(row => row.Days);
+                return new DepartmentYearEndSummary(group.Key!, group.Count(), total, total / group.Count());
+            })
+            .OrderBy(row => row.Department)
+            .ToList()
+        ?? [];
+
+    private static decimal LeaveTypePercent(LeaveTypeUsageDto row) =>
+        row.Entitled <= 0 ? 0 : Math.Min(100, row.Used * 100 / row.Entitled);
+
+    private async Task SelectLeaveMonthAsync(int month)
+    {
+        if (LeaveTypeUsage is null || month is < 1 or > 12)
+        {
+            return;
+        }
+
+        SelectedLeaveMonth = $"{LeaveTypeUsage.Year:0000}-{month:00}";
+        await RefreshMonthlyLeaveAsync();
+    }
+
+    private async Task MoveLeaveMonthAsync(int offset)
+    {
+        var basis = LeaveTypeUsage is null
+            ? AsOf ?? DateOnly.FromDateTime(DateTime.Today)
+            : new DateOnly(LeaveTypeUsage.Year, LeaveTypeUsage.Month, 1);
+
+        var target = basis.AddMonths(offset);
+        SelectedLeaveMonth = target.ToString("yyyy-MM");
+        await RefreshMonthlyLeaveAsync();
+    }
+
+    private async Task RefreshMonthlyLeaveAsync()
+    {
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var query = BuildQuery();
+            var monthlyQuery = new MonthlyReportQuery
+            {
+                CompanyCode = query.CompanyCode,
+                UnitCode = query.UnitCode,
+                AsOf = query.AsOf,
+                Month = SelectedLeaveMonth
+            };
+
+            LeaveTypeUsage = await Reports.GetLeaveByTypeAsync(caller, monthlyQuery, CancellationToken.None);
+            UsageByDate = await Reports.GetLeaveByDateAsync(caller, monthlyQuery, CancellationToken.None);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            TableError = $"Monthly leave reporting needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            TableError = ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Vacancies nobody has applied to are named in the meta line rather than left to be
+    /// spotted by reading every row — that is the number an HR lead acts on.
+    /// </summary>
+    private string OpeningsMeta() =>
+        Pipeline is null
+            ? "Loading"
+            : Pipeline.OpeningsWithNoApplicants > 0
+                ? $"{Pipeline.TotalApplicants} applicants · {Pipeline.OpeningsWithNoApplicants} with nobody applied"
+                : $"{Pipeline.TotalApplicants} applicants";
+
+    /// <summary>The states are contract values; nobody should have to read camel case.</summary>
+    private static string StateLabel(string state) => state switch
+    {
+        MobileAccessStates.NotGranted => "Not granted",
+        MobileAccessStates.AwaitingFirstSignIn => "Not signed in yet",
+        MobileAccessStates.Active => "Active",
+        MobileAccessStates.Suspended => "Suspended",
+        MobileAccessStates.Blocked => "Cannot be granted",
+        _ => state
+    };
+
+    private string MobileAccessMeta()
+    {
+        if (MobileAccess is null)
+        {
+            return "Loading";
+        }
+
+        var waiting = MobileAccess.Count(row => row.State == MobileAccessStates.NotGranted);
+        return waiting > 0 ? $"{waiting} awaiting approval" : "Everyone eligible has access";
+    }
+
+    private async Task GrantAsync(EmployeeMobileAccessDto row)
+    {
+        PendingAccessId = row.EmployeeId;
+        MobileAccessError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            IssuedCredentials = await MobileAccessService.GrantAsync(
+                caller, row.EmployeeId, new GrantMobileAccessRequest(), CancellationToken.None);
+
+            await RefreshMobileAccessAsync(caller);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            MobileAccessError = $"Approving access needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            MobileAccessError = ex.Message;
+        }
+        finally
+        {
+            PendingAccessId = null;
+        }
+    }
+
+    private async Task SetAccessAsync(EmployeeMobileAccessDto row, bool isActive)
+    {
+        PendingAccessId = row.EmployeeId;
+        MobileAccessError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            await MobileAccessService.SetActiveAsync(caller, row.EmployeeId, isActive, CancellationToken.None);
+            await RefreshMobileAccessAsync(caller);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            MobileAccessError = $"Changing access needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            MobileAccessError = ex.Message;
+        }
+        finally
+        {
+            PendingAccessId = null;
+        }
+    }
+
+    private async Task RefreshMobileAccessAsync(MobileCallerContext caller) =>
+        MobileAccess = await MobileAccessService.GetAsync(
+            caller, new MobileAccessQuery(), CancellationToken.None);
+
+    protected override async Task OnInitializedAsync()
+    {
+        CanApproveLeave = await PortalCaller.HasAsync("LEAVE.APPROVE");
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            ScopeOptions = await Reports.GetScopeOptionsAsync(caller, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // The filter bar degrades to "all companies" rather than blocking the page.
+            ScopeOptions = null;
+        }
+
+        await ApplyAsync();
+    }
+
+    private async Task ApplyAsync()
+    {
+        IsBusy = true;
+        TablesLoading = true;
+        LoadError = null;
+        TableError = null;
+        LeaveApprovalError = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var query = BuildQuery();
+
+            Model = await Dashboard.GetDashboardAsync(caller, query, CancellationToken.None);
+            Scope = Model.Scope;
+
+            // Adopt the date the service resolved, so the picker shows the client's today and
+            // every panel below is asked for the same day the tiles were built from.
+            AsOf ??= Scope.AsOf;
+            query.AsOf = AsOf;
+
+            // The tables load after the summary and report their own failure. One panel that
+            // cannot be built must not blank a page whose other panels are fine.
+            try
+            {
+                var reportQuery = new WorkforceReportQuery
+                {
+                    CompanyCode = query.CompanyCode,
+                    UnitCode = query.UnitCode,
+                    AsOf = query.AsOf,
+                    PageSize = 15
+                };
+
+                var balanceQuery = new LeaveBalanceGridQuery
+                {
+                    CompanyCode = query.CompanyCode,
+                    UnitCode = query.UnitCode,
+                    AsOf = query.AsOf,
+                    PageSize = 15
+                };
+
+                LateArrivals = await Reports.GetLateArrivalsAsync(caller, reportQuery, CancellationToken.None);
+                MissPunches = await Reports.GetMissingPunchesAsync(caller, reportQuery, CancellationToken.None);
+                DepartmentBalances = await Reports.GetDepartmentLeaveBalancesAsync(caller, balanceQuery, CancellationToken.None);
+                EmployeeBalances = await Reports.GetEmployeeLeaveBalancesAsync(caller, balanceQuery, CancellationToken.None);
+
+                Movement = await MovementService.GetBoardAsync(
+                    caller, new MovementQuery { Date = query.AsOf }, CancellationToken.None);
+
+                GatePasses = await GatePassService.GetBoardAsync(
+                    caller, new GatePassQuery { PageSize = 15 }, CancellationToken.None);
+
+                var monthlyQuery = new MonthlyReportQuery
+                {
+                    CompanyCode = query.CompanyCode,
+                    UnitCode = query.UnitCode,
+                    AsOf = query.AsOf,
+                    Month = SelectedLeaveMonth
+                };
+
+                LeaveTypeUsage = await Reports.GetLeaveByTypeAsync(caller, monthlyQuery, CancellationToken.None);
+                UsageByDate = await Reports.GetLeaveByDateAsync(caller, monthlyQuery, CancellationToken.None);
+
+                Pipeline = await Reports.GetOpeningPipelineAsync(caller, query, CancellationToken.None);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                TableError = $"These tables need {denied.Permission}.";
+            }
+            catch (Exception ex)
+            {
+                TableError = ex.Message;
+            }
+
+            try
+            {
+                LeaveApprovals = await Reports.GetLeaveApprovalQueueAsync(caller, query, CancellationToken.None);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                LeaveApprovalError = $"The approval queue needs {denied.Permission}.";
+            }
+            catch (Exception ex)
+            {
+                LeaveApprovalError = ex.Message;
+            }
+
+            // Reported separately: a recruiter can read the dashboard but not the account list,
+            // and that should shrink one panel rather than break the page.
+            try
+            {
+                await RefreshMobileAccessAsync(caller);
+            }
+            catch (MobileAccessDeniedException denied)
+            {
+                MobileAccessError = $"Seeing who has app access needs {denied.Permission}.";
+            }
+            catch (Exception ex)
+            {
+                MobileAccessError = ex.Message;
+            }
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account does not hold {denied.Permission}, so the dashboard cannot be shown.";
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+            TablesLoading = false;
+        }
+    }
+
+    private async Task DecideLeaveAsync(LeaveApprovalRowDto request, bool approve)
+    {
+        DecidingLeaveId = request.RequestId;
+        LeaveApprovalError = null;
+        LeaveActionMessage = null;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            await Leave.DecideAsync(caller, request.RequestId, new LeaveDecisionRequest
+            {
+                Decision = approve ? "approve" : "reject",
+                Comment = approve ? null : "Rejected from the HR dashboard."
+            }, CancellationToken.None);
+
+            LeaveActionMessage = approve
+                ? $"{request.DisplayName}'s leave request was approved."
+                : $"{request.DisplayName}'s leave request was rejected.";
+
+            LeaveApprovals = await Reports.GetLeaveApprovalQueueAsync(caller, BuildQuery(), CancellationToken.None);
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LeaveApprovalError = $"Deciding a request needs {denied.Permission}.";
+        }
+        catch (Exception ex)
+        {
+            LeaveApprovalError = ex.Message;
+        }
+        finally
+        {
+            DecidingLeaveId = null;
+        }
+    }
+}

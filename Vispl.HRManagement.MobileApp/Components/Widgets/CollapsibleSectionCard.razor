@@ -1,0 +1,39 @@
+@* RW-27 CollapsibleSectionCard. Expanded by default on the dashboard. *@
+<section class="card">
+    <button class="collapsible-head" type="button" aria-expanded="@isOpen" @onclick="Toggle">
+        <span class="collapsible-title">
+            @if (!string.IsNullOrEmpty(Icon))
+            {
+                <AppIcon Name="@Icon" Size="18" />
+            }
+            <span>@Title</span>
+        </span>
+        @if (Count > 0)
+        {
+            <span class="badge">@Count</span>
+        }
+        <AppIcon Name="chevron-down" Size="20"
+                 Class="@($"collapsible-chevron {(isOpen ? "open" : "")}")" />
+    </button>
+
+    @if (isOpen)
+    {
+        <div class="collapsible-body">
+            @ChildContent
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = string.Empty;
+    [Parameter] public int Count { get; set; }
+    [Parameter] public bool StartExpanded { get; set; } = true;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool isOpen;
+
+    protected override void OnInitialized() => isOpen = StartExpanded;
+
+    private void Toggle() => isOpen = !isOpen;
+}

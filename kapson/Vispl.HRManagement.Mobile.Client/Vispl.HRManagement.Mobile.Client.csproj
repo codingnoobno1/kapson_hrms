@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Vispl.HRManagement.Mobile.Client</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vispl.HRManagement.Contracts\Vispl.HRManagement.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.14" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.14" />
+  </ItemGroup>
+
+</Project>

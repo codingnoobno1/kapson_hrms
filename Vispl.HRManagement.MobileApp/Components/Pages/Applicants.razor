@@ -1,0 +1,349 @@
+@page "/applicants"
+@inject ScreenData Data
+@using Vispl.HRManagement.Contracts.Recruitment
+
+@* REF-06 Stall Applicants, with the REF-07 detail sheet. *@
+<PageTitle>Stall Applicants</PageTitle>
+
+<h1 class="page-title">Stall Applicants</h1>
+
+@if (message is { } note)
+{
+    <p class="card-note">@note</p>
+}
+
+@if (moveError is { } problem)
+{
+    <p class="inline-error">@problem</p>
+}
+
+<SearchField Placeholder="Search by name or position..." Value="@search" ValueChanged="OnSearchChanged" />
+<FilterChipGroup Chips="Filters" Selected="@filter" SelectedChanged="OnFilterChanged" />
+
+@if (isLoading)
+{
+    <SkeletonList Count="4" Tall="true" Label="Loading applicants" />
+}
+else if (applicants is not null && applicants.Count > 0)
+{
+    <div class="stagger">
+        @foreach (var applicant in applicants)
+        {
+            var person = applicant;
+            <ApplicantCard Applicant="person"
+                           CanInvite="CanMove(person.Stage, ApplicationStages.Interviewing)"
+                           IsBusy="moving == person.Id"
+                           OnViewDetails="() => OpenAsync(person.Id)"
+                           OnInvite="() => MoveAsync(person.Id, person.Name, ApplicationStages.Interviewing)" />
+        }
+    </div>
+}
+else if (applicants is not null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><AppIcon Name="search" Size="40" StrokeWidth="1.4" /></div>
+        <h2>No applicants</h2>
+        <p>Nothing matches the current filter.</p>
+    </div>
+}
+else if (result is not null)
+{
+    <ProblemView Outcome="result.Outcome" Problem="result.Problem" OnRetry="LoadAsync" />
+}
+
+@if (sheetOpen)
+{
+    <BottomSheet Title="Full Application Details" OnClose="CloseSheet">
+        @if (detail is not null)
+        {
+            <div class="sheet-summary">
+                <div class="sheet-summary-head">
+                    <div>
+                        <div class="list-item-title">@detail.CandidateName</div>
+                        <div class="list-item-meta">@detail.Role</div>
+                    </div>
+                    <StatusPill Label="@detail.StatusLabel" State="past-interview" />
+                </div>
+                <div class="list-item-meta">Applied: @detail.AppliedOn.ToString("yyyy-MM-dd")</div>
+            </div>
+
+            <SectionHeader Title="Personal Information" Icon="user" />
+            <KeyValueCard Rows="detail.PersonalInformation" />
+
+            <SectionHeader Title="Professional Details" Icon="briefcase" />
+            <KeyValueCard Rows="detail.ProfessionalDetails" />
+
+            <SectionHeader Title="Address Details" Icon="map-pin" />
+            <AddressCard Address="detail.Address" />
+
+            @* Only the moves the server's own transition table allows, so a button never
+               appears for something that would be refused. *@
+            <SectionHeader Title="Move to" Icon="chevron-right" />
+            @if (NextStages(detail.StatusLabel).Count > 0)
+            {
+                <div class="applicant-actions">
+                    @foreach (var stage in NextStages(detail.StatusLabel))
+                    {
+                        var target = stage;
+                        <button class="@(ApplicationStages.IsRejection(target) ? "btn-ghost" : "btn-primary")"
+                                type="button"
+                                disabled="@(moving == detail.Id)"
+                                @onclick="() => MoveAsync(detail.Id, detail.CandidateName, target)">
+                            @Spaced(target)
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="card-note">@WhyStuck(detail.StatusLabel)</p>
+            }
+
+            @* The checklist only exists once an offer has been accepted, and approving a
+               scanned document from a phone is exactly what this app is for. *@
+            @if (onboarding is { } checklist)
+            {
+                <SectionHeader Title="Onboarding" Icon="trending-up" />
+                <p class="card-note">
+                    @checklist.CompletionPercent.ToString("0")% complete ·
+                    @checklist.OutstandingRequiredCount required task@(checklist.OutstandingRequiredCount == 1 ? "" : "s") outstanding
+                </p>
+
+                @foreach (var task in checklist.Tasks)
+                {
+                    <article class="card">
+                        <div class="card-head">
+                            <div class="list-item-main">
+                                <span class="list-item-title">@task.Title</span>
+                                <span class="list-item-meta">
+                                    @task.OwnerKind · @(task.IsRequired ? "required" : "optional")
+                                </span>
+                            </div>
+                            <StatusPill Label="@task.Status" State="@TaskTone(task.Status)" />
+                        </div>
+
+                        @if (task.DecisionReason is { } reason)
+                        {
+                            <p class="card-note">@reason</p>
+                        }
+
+                        @if (task.Status == OnboardingTaskStatuses.Submitted)
+                        {
+                            <div class="applicant-actions">
+                                <button class="btn-primary" type="button"
+                                        disabled="@(decidingTask == task.Id)"
+                                        @onclick="() => DecideAsync(checklist.Id, task, true)"><AppIcon Name="check" Size="15" /> Approve</button>
+                                <button class="btn-ghost" type="button"
+                                        disabled="@(decidingTask == task.Id)"
+                                        @onclick="() => DecideAsync(checklist.Id, task, false)"><AppIcon Name="x" Size="15" /> Reject</button>
+                            </div>
+                        }
+                    </article>
+                }
+            }
+        }
+        else if (detailResult is not null)
+        {
+            <ProblemView Outcome="detailResult.Outcome" Problem="detailResult.Problem" />
+        }
+    </BottomSheet>
+}
+
+@code {
+    private static readonly FilterChipGroup.Chip[] Filters =
+    [
+        new("all", "All"),
+        new("shortlisted", "Shortlisted"),
+        new("rejected", "Rejected"),
+        new("pending", "Pending")
+    ];
+
+    private string search = string.Empty;
+    private string filter = "all";
+    private bool isLoading = true;
+    private bool sheetOpen;
+
+    private ScreenResult<IReadOnlyList<ApplicantModel>>? result;
+    private IReadOnlyList<ApplicantModel>? applicants;
+
+    private ScreenResult<ApplicationDetailModel>? detailResult;
+    private ApplicationDetailModel? detail;
+
+    private OnboardingDto? onboarding;
+    private string? moving;
+    private long? decidingTask;
+    private string? message;
+    private string? moveError;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task OnSearchChanged(string value)
+    {
+        search = value;
+        await LoadAsync();
+    }
+
+    private async Task OnFilterChanged(string key)
+    {
+        filter = key;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+
+        ApplicantState? state = filter switch
+        {
+            "shortlisted" => ApplicantState.Shortlisted,
+            "rejected" => ApplicantState.Rejected,
+            "pending" => ApplicantState.PendingReview,
+            _ => null
+        };
+
+        result = await Data.GetApplicantsAsync(
+            string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+            state);
+        applicants = result.Data;
+        isLoading = false;
+    }
+
+    private async Task OpenAsync(string id)
+    {
+        sheetOpen = true;
+        detail = null;
+        detailResult = null;
+        onboarding = null;
+        StateHasChanged();
+
+        detailResult = await Data.GetApplicationAsync(id);
+        detail = detailResult.Data;
+
+        // The checklist exists only from OfferAccepted onwards. Asking for it earlier would
+        // be a guaranteed 404, so the stage decides whether it is worth a round trip.
+        if (detail is not null && HasChecklist(detail.StatusLabel) && long.TryParse(id, out var applicationId))
+        {
+            onboarding = (await Data.GetOnboardingAsync(applicationId)).Data;
+        }
+    }
+
+    private void CloseSheet()
+    {
+        sheetOpen = false;
+        detail = null;
+        detailResult = null;
+        onboarding = null;
+    }
+
+    private async Task MoveAsync(string id, string name, string toStage)
+    {
+        moving = id;
+        moveError = null;
+        message = null;
+
+        if (!long.TryParse(id, out var applicationId))
+        {
+            moving = null;
+            return;
+        }
+
+        var moved = await Data.ChangeApplicationStageAsync(
+            applicationId, toStage, "Moved from the HR app.");
+
+        moving = null;
+
+        if (!moved.IsSuccess)
+        {
+            moveError = moved.Problem?.Title ?? "That move was refused.";
+            return;
+        }
+
+        message = ApplicationStages.IsRejection(toStage)
+            ? $"{name} was rejected."
+            : $"{name} moved to {Spaced(toStage)}.";
+
+        // The list and any open sheet both describe the stage, so both are refreshed rather
+        // than left to disagree with each other.
+        await LoadAsync();
+
+        if (sheetOpen)
+        {
+            await OpenAsync(id);
+        }
+    }
+
+    private async Task DecideAsync(long onboardingId, OnboardingTaskDto task, bool approve)
+    {
+        decidingTask = task.Id;
+        moveError = null;
+        message = null;
+
+        var decided = await Data.DecideOnboardingTaskAsync(
+            onboardingId, task.Id,
+            approve ? "approve" : "reject",
+            approve ? null : "Rejected from the HR app.");
+
+        decidingTask = null;
+
+        if (!decided.IsSuccess)
+        {
+            moveError = decided.Problem?.Title ?? "That decision was refused.";
+            return;
+        }
+
+        message = $"{task.Title} was {(approve ? "approved" : "rejected")}.";
+
+        // Approving the last required task is what completes onboarding and hires the
+        // candidate, so the whole sheet is re-read rather than just this row.
+        if (detail is not null)
+        {
+            await OpenAsync(detail.Id);
+        }
+    }
+
+    /// <summary>
+    /// The moves HR may make from a stage, taken from the same table the service enforces.
+    /// </summary>
+    private static IReadOnlyList<string> NextStages(string from) =>
+        ApplicationStages.All
+            .Where(stage => ApplicationStages.IsHrTransitionAllowed(from, stage))
+            .ToList();
+
+    private static bool CanMove(string from, string to) =>
+        ApplicationStages.IsHrTransitionAllowed(from, to);
+
+    private static bool HasChecklist(string stage) =>
+        stage is ApplicationStages.OfferAccepted
+              or ApplicationStages.Onboarding
+              or ApplicationStages.Hired;
+
+    /// <summary>
+    /// A stage with no moves has to say why, or the sheet reads as broken. Waiting on the
+    /// candidate and being finished are different states and should not look alike.
+    /// </summary>
+    private static string WhyStuck(string stage) => stage switch
+    {
+        ApplicationStages.Offered => "Waiting on the candidate to accept or decline.",
+        ApplicationStages.OfferAccepted or ApplicationStages.Onboarding =>
+            "Onboarding is in progress; it finishes on the checklist below.",
+        ApplicationStages.Hired => "Hired.",
+        ApplicationStages.Rejected or ApplicationStages.OfferDeclined or ApplicationStages.Withdrawn =>
+            "Closed.",
+        _ => "No move is available from here."
+    };
+
+    private static string Spaced(string stage) => stage switch
+    {
+        ApplicationStages.OfferAccepted => "Offer accepted",
+        ApplicationStages.OfferDeclined => "Offer declined",
+        _ => stage
+    };
+
+    private static string TaskTone(string status) => status switch
+    {
+        OnboardingTaskStatuses.Approved => "active",
+        OnboardingTaskStatuses.Submitted => "pending",
+        OnboardingTaskStatuses.Rejected => "rejected",
+        _ => "draft"
+    };
+}

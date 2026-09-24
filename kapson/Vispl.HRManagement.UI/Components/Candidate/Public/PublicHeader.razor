@@ -1,0 +1,47 @@
+<header class="public-header">
+    <div class="public-container public-nav">
+        <a class="public-brand" href="@HomeUrl" aria-label="@Site.CompanyName careers home">
+            @if (!string.IsNullOrWhiteSpace(Site.LogoUrl))
+            {
+                <img class="public-brand-logo" src="@Site.LogoUrl" alt="@Site.CompanyName logo" />
+            }
+            else
+            {
+                <span class="public-brand-mark">@Site.BrandInitial</span>
+            }
+            <span>
+                <strong>@Site.CompanyName.ToUpperInvariant()</strong>
+                <small>@Site.PortalName.ToUpperInvariant()</small>
+            </span>
+        </a>
+
+        <nav class="public-nav-links" aria-label="Primary navigation">
+            @foreach (var item in Site.NavigationItems.OrderBy(item => item.SortOrder))
+            {
+                <a href="@item.Url">@item.Label</a>
+            }
+
+            @*
+                Not one of the configurable navigation items on purpose. Those are marketing
+                content a client edits; this is the way back to somebody's own application, and
+                a candidate must be able to reach it whatever a client has done to their menu.
+            *@
+            <a href="@OnboardingUrl">Track my application</a>
+        </nav>
+
+        <a class="button button-small button-dark" href="@CareersUrl">Find your role</a>
+    </div>
+</header>
+
+@code {
+    [Parameter, EditorRequired]
+    public CareerSiteConfigurationDto Site { get; set; } = null!;
+    private string HomeUrl => Site.TenantKey == "kapson" ? "/kapson_home" : $"/career/{Site.TenantKey}";
+    private string CareersUrl => Site.TenantKey == "kapson" ? "/kapson/careers" : $"/career/{Site.TenantKey}/careers";
+
+    /// <summary>
+    /// Carries the client, so a candidate never has to know our tenant key — they arrived
+    /// from this company's own site and the page should already know which company that is.
+    /// </summary>
+    private string OnboardingUrl => $"/onboarding?tenant={Uri.EscapeDataString(Site.TenantKey)}";
+}

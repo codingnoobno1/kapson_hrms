@@ -1,0 +1,127 @@
+[
+  {
+    "tenantKey": "kapson",
+    "slug": "store-manager-284",
+    "title": "Store Manager",
+    "department": "Retail Operations",
+    "location": "Chandigarh, Mohali",
+    "employmentType": "Full Time",
+    "workMode": "On-site",
+    "experience": "5–8 years",
+    "summary": "Lead a flagship retail location, build a high-performing team and deliver an exceptional customer experience.",
+    "responsibilities": [
+      "Own daily store operations and performance",
+      "Coach and develop the retail team",
+      "Drive customer experience and commercial outcomes"
+    ],
+    "requirements": [
+      "5+ years in retail operations",
+      "Strong people leadership and planning skills",
+      "Comfort working with targets and business reporting"
+    ],
+    "isPublished": true,
+    "salaryMinimum": 800000,
+    "salaryMaximum": 1100000,
+    "salaryCurrencyCode": "INR",
+    "status": "Draft",
+    "expiresOn": "2026-12-31"
+  },
+  {
+    "tenantKey": "kapson",
+    "slug": "financial-analyst-285",
+    "title": "Financial Analyst",
+    "department": "Finance & Operations",
+    "location": "Mohali",
+    "employmentType": "Full Time",
+    "workMode": "Hybrid",
+    "experience": "3–6 years",
+    "summary": "Turn financial and operational data into clear recommendations for teams across the business.",
+    "responsibilities": [
+      "Prepare management reporting and forecasts",
+      "Analyse trends, risks and opportunities",
+      "Partner with operating teams on business cases"
+    ],
+    "requirements": [
+      "Degree in finance, accounting or a related field",
+      "Advanced spreadsheet and analytical skills",
+      "Clear written and verbal communication"
+    ],
+    "isPublished": true,
+    "salaryMinimum": 600000,
+    "salaryMaximum": 850000,
+    "salaryCurrencyCode": "INR",
+    "status": "Active",
+    "expiresOn": "2026-12-31"
+  },
+  {
+    "tenantKey": "kapson",
+    "slug": "human-resources-executive-286",
+    "title": "Human Resources Executive",
+    "department": "Human Resources",
+    "location": "Chandigarh",
+    "employmentType": "Full Time",
+    "workMode": "On-site",
+    "experience": "2–5 years",
+    "summary": "Support recruitment, employee engagement and dependable people operations across a growing organisation.",
+    "responsibilities": [
+      "Coordinate hiring and onboarding activities",
+      "Maintain accurate employee records",
+      "Support engagement and HR operations programmes"
+    ],
+    "requirements": [
+      "2+ years of generalist HR experience",
+      "Strong organisation and confidentiality",
+      "Working knowledge of HR systems and processes"
+    ],
+    "isPublished": true,
+    "salaryMinimum": 450000,
+    "salaryMaximum": 650000,
+    "salaryCurrencyCode": "INR",
+    "status": "Inactive",
+    "expiresOn": "2026-12-31"
+  },
+  {
+    "tenantKey": "kapson",
+    "slug": "ecommerce-category-lead-287",
+    "title": "E-commerce Category Lead",
+    "department": "Digital Commerce",
+    "location": "Mohali",
+    "employmentType": "Full Time",
+    "workMode": "Hybrid",
+    "experience": "4–7 years",
+    "summary": "Own category growth across digital channels through strong merchandising, trading and partner management.",
+    "responsibilities": [
+      "Build category growth and trading plans",
+      "Manage range, availability and promotions",
+      "Use customer data to improve conversion"
+    ],
+    "requirements": [
+      "E-commerce or digital merchandising experience",
+      "Commercial and analytical judgement",
+      "Strong stakeholder management"
+    ],
+    "isPublished": true
+  },
+  {
+    "tenantKey": "kapson",
+    "slug": "visual-merchandiser-288",
+    "title": "Visual Merchandiser",
+    "department": "Brand Experience",
+    "location": "Delhi NCR",
+    "employmentType": "Full Time",
+    "workMode": "Field based",
+    "experience": "2–4 years",
+    "summary": "Create compelling in-store experiences that bring product stories and seasonal campaigns to life.",
+    "responsibilities": [
+      "Deliver seasonal visual standards",
+      "Partner with store teams on execution",
+      "Review stores and recommend improvements"
+    ],
+    "requirements": [
+      "Portfolio of retail visual work",
+      "Strong eye for detail and presentation",
+      "Ability to travel across assigned locations"
+    ],
+    "isPublished": true
+  }
+]
