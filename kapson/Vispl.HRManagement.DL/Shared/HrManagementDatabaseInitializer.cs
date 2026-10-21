@@ -259,6 +259,9 @@ public sealed class HrManagementDatabaseInitializer(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        await WorkforceSampleSeeder.SeedIfEmptyAsync(dbContext, logger, cancellationToken);
+        await MobileAppSampleSeeder.SeedIfEmptyAsync(dbContext, logger, cancellationToken);
     }
 
     /// <summary>

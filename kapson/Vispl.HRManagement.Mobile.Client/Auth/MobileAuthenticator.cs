@@ -40,7 +40,7 @@ public sealed class MobileAuthenticator(
         try
         {
             using var response = await http.PostAsJsonAsync(
-                "api/mobile/v1/auth/token",
+                options.ResolveUri("api/mobile/v1/auth/token"),
                 new
                 {
                     userName = userName.Trim(),
@@ -128,7 +128,7 @@ public sealed class MobileAuthenticator(
         try
         {
             using var response = await http.PostAsJsonAsync(
-                "api/mobile/v1/auth/refresh",
+                options.ResolveUri("api/mobile/v1/auth/refresh"),
                 new { refreshToken = stored.RefreshToken, deviceId = options.DeviceId },
                 Json,
                 ct);
@@ -177,7 +177,7 @@ public sealed class MobileAuthenticator(
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, "api/mobile/v1/auth/revoke")
+                using var request = new HttpRequestMessage(HttpMethod.Post, options.ResolveUri("api/mobile/v1/auth/revoke"))
                 {
                     Content = JsonContent.Create(
                         new { refreshToken = stored.RefreshToken, allDevices }, options: Json)

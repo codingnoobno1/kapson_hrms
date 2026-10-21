@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using Vispl.HRManagement.Mobile.Client.Http;
 using Vispl.HRManagement.Mobile.Shared.Services;
 using Vispl.HRManagement.Mobile.Shared.ViewModels;
 
@@ -6,20 +7,30 @@ namespace Vispl.HRManagement.Mobile.Features.Authentication.ViewModels;
 
 public sealed class LoginViewModel : ScreenViewModel
 {
+    private const string ApiUrlPrefKey = "kapsons.api.base_url";
     private readonly IAuthenticationService authenticationService;
     private readonly IAppNavigator navigator;
+    private readonly MobileApiOptions options;
 
     // Blank, not pre-filled. The preview build seeded a demo address here, which is exactly the
     // sort of thing that survives into a release nobody meant to ship it in.
     private string userName = string.Empty;
     private string password = string.Empty;
+    private string serverUrl = MobileApiOptions.DefaultBaseAddress;
     private bool rememberMe = true;
     private bool isPasswordHidden = true;
 
-    public LoginViewModel(IAuthenticationService authenticationService, IAppNavigator navigator)
+    public LoginViewModel(
+        IAuthenticationService authenticationService,
+        IAppNavigator navigator,
+        MobileApiOptions options)
     {
         this.authenticationService = authenticationService;
         this.navigator = navigator;
+        this.options = options;
+        serverUrl = string.IsNullOrWhiteSpace(options.BaseAddress)
+            ? MobileApiOptions.DefaultBaseAddress
+            : options.BaseAddress;
         SignInCommand = new Command(async () => await SignInAsync(), () => !IsBusy);
         TogglePasswordCommand = new Command(() => IsPasswordHidden = !IsPasswordHidden);
     }
@@ -31,6 +42,7 @@ public sealed class LoginViewModel : ScreenViewModel
     public string UserName { get => userName; set => SetProperty(ref userName, value); }
 
     public string Password { get => password; set => SetProperty(ref password, value); }
+    public string ServerUrl { get => serverUrl; set => SetProperty(ref serverUrl, value); }
     public bool RememberMe { get => rememberMe; set => SetProperty(ref rememberMe, value); }
     public bool IsPasswordHidden { get => isPasswordHidden; set => SetProperty(ref isPasswordHidden, value); }
 
@@ -40,6 +52,13 @@ public sealed class LoginViewModel : ScreenViewModel
     private async Task SignInAsync()
     {
         ErrorMessage = null;
+
+        var configuredUrl = string.IsNullOrWhiteSpace(ServerUrl)
+            ? MobileApiOptions.DefaultBaseAddress
+            : ServerUrl.Trim();
+        options.BaseAddress = configuredUrl;
+        Preferences.Default.Set(ApiUrlPrefKey, configuredUrl);
+        ServerUrl = configuredUrl;
 
         if (string.IsNullOrWhiteSpace(UserName) || string.IsNullOrWhiteSpace(Password))
         {

@@ -80,6 +80,28 @@
                     SemanticProperties.Description="Password" />
             </Border>
 
+            <Label Text="Server API URL" FontSize="11" TextColor="#8C8C8C" Margin="0,8,0,4" />
+            <Border
+                Stroke="#F2F2F2"
+                StrokeThickness="1"
+                BackgroundColor="#F6F6F6"
+                Padding="12,2"
+                Margin="0,0,0,8">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+                <Entry
+                    x:Name="ServerUrlEntry"
+                    Placeholder="https://untutelary-francisco-overtrustfully.ngrok-free.dev"
+                    Keyboard="Url"
+                    ReturnType="Done"
+                    HeightRequest="44"
+                    FontSize="12"
+                    BackgroundColor="Transparent"
+                    TextColor="#111827"
+                    SemanticProperties.Description="Server API URL" />
+            </Border>
+
             <Label
                 x:Name="ErrorLabel"
                 FontSize="12"

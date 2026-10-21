@@ -29,21 +29,12 @@ public static class MauiProgram
     /// </summary>
     private static string ResolveApiBaseAddress()
     {
-#if ANDROID
-        // An emulator's "localhost" is the emulated device, not the machine hosting it. 10.0.2.2
-        // is the loopback alias the Android emulator maps back to the host.
-        //
-        // Plain http, because the ASP.NET dev certificate is not trusted inside the emulator and
-        // an https call fails with an opaque handshake error rather than anything diagnosable.
-        // Release builds must use https against a real certificate.
-        //
-        // A physical device over USB has no 10.0.2.2 alias — instead run
-        // `adb reverse tcp:7000 tcp:7000` so the device's own "localhost:7000" tunnels back to
-        // the host machine through the USB debugging connection.
-        return "http://localhost:7000";
-#else
-        return "https://localhost:7060";
-#endif
+        var saved = Preferences.Default.Get(
+            "kapsons.api.base_url",
+            "https://untutelary-francisco-overtrustfully.ngrok-free.dev");
+        return string.IsNullOrWhiteSpace(saved)
+            ? "https://untutelary-francisco-overtrustfully.ngrok-free.dev"
+            : saved.Trim();
     }
 
     public static MauiApp CreateMauiApp()
@@ -68,6 +59,7 @@ public static class MauiProgram
         {
             options.BaseAddress = ResolveApiBaseAddress();
             options.DeviceId = DeviceIdentity.Resolve();
+            options.AllowedPortals = ["Employee", "Candidate", "Hr"];
         });
 
         // Replaces the library's in-memory fallback with the platform's protected store.

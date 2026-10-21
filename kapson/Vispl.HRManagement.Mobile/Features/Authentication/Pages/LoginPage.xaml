@@ -99,6 +99,16 @@
                         </Border>
                     </VerticalStackLayout>
 
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Server API URL" FontSize="13" FontAttributes="Bold" />
+                        <Border Style="{StaticResource InputBorder}">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <Label Text="🌐" TextColor="{StaticResource Ink500}" VerticalTextAlignment="Center" />
+                                <Entry Grid.Column="1" Text="{Binding ServerUrl}" Placeholder="https://untutelary-francisco-overtrustfully.ngrok-free.dev" Keyboard="Url" FontSize="12" BackgroundColor="Transparent" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <CheckBox IsChecked="{Binding RememberMe}" Color="{StaticResource Primary600}" />
                         <Label Grid.Column="1" Text="Keep me signed in" Style="{StaticResource Caption}" VerticalTextAlignment="Center" />

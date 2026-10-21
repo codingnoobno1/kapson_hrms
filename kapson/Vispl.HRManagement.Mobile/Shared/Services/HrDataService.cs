@@ -34,7 +34,7 @@ public sealed class HrDataService(
 {
     public async Task<IReadOnlyList<KpiMetric>> GetMetricsAsync(CancellationToken ct = default)
     {
-        var dashboard = await home.GetAsync(ct);
+        var dashboard = await home.GetDashboardAsync(ct);
 
         // The server decides which tiles this caller may see — a KPI counting records they
         // cannot read would leak that those records exist. Whatever comes back is shown.
@@ -49,7 +49,7 @@ public sealed class HrDataService(
 
     public async Task<IReadOnlyList<InterviewSummary>> GetInterviewsAsync(CancellationToken ct = default)
     {
-        var page = await interviews.ListAsync(null, ct);
+        var page = await interviews.GetInterviewsAsync(assignedToMeOnly: false, status: null, ct: ct);
 
         return page.Items
             .Select(item => new InterviewSummary(
@@ -64,13 +64,13 @@ public sealed class HrDataService(
 
     public async Task<IReadOnlyList<JobSummary>> GetJobsAsync(CancellationToken ct = default)
     {
-        var page = await recruitment.GetJobsAsync(null, null, ct);
+        var page = await recruitment.GetJobsAsync(null, ct);
         return page.Items.Select(MapJob).ToList();
     }
 
     public async Task<JobSummary?> GetJobAsync(long id, CancellationToken ct = default)
     {
-        var job = await recruitment.GetJobAsync(id.ToString(CultureInfo.InvariantCulture), ct);
+        var job = await recruitment.GetJobAsync(id, ct);
 
         return new JobSummary(
             job.Id,
@@ -95,7 +95,7 @@ public sealed class HrDataService(
 
     public async Task<ApplicantSummary?> GetApplicantAsync(long id, CancellationToken ct = default)
     {
-        var detail = await recruitment.GetApplicationAsync(id.ToString(CultureInfo.InvariantCulture), ct);
+        var detail = await recruitment.GetApplicationAsync(id, ct);
         return MapApplicant(detail.Summary);
     }
 

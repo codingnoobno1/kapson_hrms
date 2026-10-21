@@ -26,11 +26,12 @@ public static class MauiProgram
     /// </summary>
     private static string ResolveApiBaseAddress()
     {
-#if ANDROID
-        return "http://10.0.2.2:7000";
-#else
-        return "https://localhost:7060";
-#endif
+        var saved = Preferences.Default.Get(
+            "kapsons.api.base_url",
+            "https://untutelary-francisco-overtrustfully.ngrok-free.dev");
+        return string.IsNullOrWhiteSpace(saved)
+            ? "https://untutelary-francisco-overtrustfully.ngrok-free.dev"
+            : saved.Trim();
     }
 
     public static MauiApp CreateMauiApp()

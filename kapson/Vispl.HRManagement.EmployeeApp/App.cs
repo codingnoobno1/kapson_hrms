@@ -21,12 +21,20 @@ public sealed class App : Application
     /// </summary>
     public static IServiceProvider Services { get; internal set; } = null!;
 
+    private readonly IServiceProvider services;
     private readonly MobileAuthenticator authenticator;
     private readonly MobileSession session;
     private readonly MobileRealtimeClient realtime;
 
-    public App(MobileAuthenticator authenticator, MobileSession session, MobileRealtimeClient realtime, EmployeeThemeService themes)
+    public App(
+        IServiceProvider services,
+        MobileAuthenticator authenticator,
+        MobileSession session,
+        MobileRealtimeClient realtime,
+        EmployeeThemeService themes)
     {
+        Services = services;
+        this.services = services;
         this.authenticator = authenticator;
         this.session = session;
         this.realtime = realtime;
@@ -38,7 +46,7 @@ public sealed class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        var window = new Window(BuildSplash()) { Title = "Kapsons" };
+        var window = new Window(services.GetRequiredService<SignInPage>()) { Title = "Kapsons" };
 
         Dispatcher.Dispatch(async () => await StartAsync(window));
 
@@ -47,16 +55,21 @@ public sealed class App : Application
 
     private async Task StartAsync(Window window)
     {
-        var restored = await authenticator.TryRestoreAsync();
-
-        if (restored)
+        try
         {
-            await realtime.StartAsync();
-        }
+            await Task.Yield();
+            var restored = await authenticator.TryRestoreAsync();
 
-        window.Page = restored
-            ? Services.GetRequiredService<AppShell>()
-            : Services.GetRequiredService<SignInPage>();
+            if (restored)
+            {
+                await realtime.StartAsync();
+                window.Page = services.GetRequiredService<AppShell>();
+            }
+        }
+        catch
+        {
+            // Stay on SignInPage if session restoration fails.
+        }
     }
 
     private void OnSignedOut(object? sender, EventArgs e) =>
@@ -65,35 +78,7 @@ public sealed class App : Application
             _ = realtime.StopAsync();
             if (Windows.Count > 0)
             {
-                Windows[0].Page = Services.GetRequiredService<SignInPage>();
+                Windows[0].Page = services.GetRequiredService<SignInPage>();
             }
         });
-
-    private static Page BuildSplash() => new ContentPage
-    {
-        BackgroundColor = Tokens.Background,
-        Content = new VerticalStackLayout
-        {
-            Spacing = 14,
-            VerticalOptions = LayoutOptions.Center,
-            Children =
-            {
-                new Label
-                {
-                    Text = "KAPSONS",
-                    FontSize = 28,
-                    FontAttributes = FontAttributes.Bold,
-                    CharacterSpacing = 3,
-                    TextColor = Tokens.TextPrimary,
-                    HorizontalTextAlignment = TextAlignment.Center
-                },
-                new ActivityIndicator
-                {
-                    IsRunning = true,
-                    Color = Tokens.BrandAccent,
-                    HorizontalOptions = LayoutOptions.Center
-                }
-            }
-        }
-    };
 }

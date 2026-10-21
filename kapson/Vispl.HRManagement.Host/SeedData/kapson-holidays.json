@@ -2,6 +2,10 @@
   { "tenantKey": "kapson", "date": "2026-01-26", "name": "Republic Day", "locationCode": null },
   { "tenantKey": "kapson", "date": "2026-08-15", "name": "Independence Day", "locationCode": null },
   { "tenantKey": "kapson", "date": "2026-10-02", "name": "Gandhi Jayanti", "locationCode": null },
+  { "tenantKey": "kapson", "date": "2026-10-20", "name": "Dussehra (Vijaya Dashami)", "locationCode": null },
+  { "tenantKey": "kapson", "date": "2026-11-08", "name": "Diwali (Deepavali)", "locationCode": null },
+  { "tenantKey": "kapson", "date": "2026-11-09", "name": "Vishwakarma Day", "locationCode": "CHANDIGARH" },
+  { "tenantKey": "kapson", "date": "2026-11-24", "name": "Guru Nanak Gurpurab", "locationCode": null },
   { "tenantKey": "kapson", "date": "2026-12-25", "name": "Christmas Day", "locationCode": null },
 
   { "tenantKey": "kapson", "date": "2027-01-26", "name": "Republic Day", "locationCode": null },

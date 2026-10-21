@@ -25,6 +25,7 @@ public sealed class MenuPage : ContentPage
     private readonly MeApiClient me;
     private readonly MobileAuthenticator authenticator;
     private readonly MobileSession session;
+    private readonly MobileApiOptions options;
     private readonly AppSheet sheet = new();
     private readonly BrandAppBar appBar = new();
 
@@ -42,6 +43,7 @@ public sealed class MenuPage : ContentPage
         MeApiClient me,
         MobileAuthenticator authenticator,
         MobileSession session,
+        MobileApiOptions options,
         QuickActionsHost quickActions,
         Leave.LeaveFlows leaveFlows,
         Presence.PresenceFlows presenceFlows)
@@ -51,6 +53,7 @@ public sealed class MenuPage : ContentPage
         this.me = me;
         this.authenticator = authenticator;
         this.session = session;
+        this.options = options;
 
         onboardingRow = new MenuRow("\U0001F4CB", "Employee Onboarding", "View onboarding status", ShowOnboardingAsync);
         salaryRow = new MenuRow("\U0001F4B0", "Salary Details", "View salary structure and components", ShowSalaryAsync);
@@ -108,6 +111,7 @@ public sealed class MenuPage : ContentPage
                     () => presenceFlows.PresentOnDutyApprovalsAsync(sheet), isReady: presenceFlows.CanApproveOnDuty),
 
                 new MenuSectionHeader("⚙️", "Account"),
+                new MenuRow("🌐", "Server API URL", "View or update the backend server address", ShowServerApiSettingsAsync),
                 new MenuRow("🎨", "Appearance", "Theme and widget colours", () => Shell.Current.GoToAsync("theme-settings")),
                 new MenuRow("\U0001F514", "Notifications", "What has happened on your requests", GoToNotificationsAsync),
                 new MenuRow("\U0001F6AA", "Sign out", "End this session on this device", SignOutAsync)
@@ -480,6 +484,63 @@ public sealed class MenuPage : ContentPage
     private static Task GoToLeaveAsync() => Shell.Current.GoToAsync("//leave");
 
     private static Task GoToNotificationsAsync() => Shell.Current.GoToAsync("notifications");
+
+    private Task ShowServerApiSettingsAsync()
+    {
+        var urlEntry = new Entry
+        {
+            Text = string.IsNullOrWhiteSpace(options.BaseAddress)
+                ? MobileApiOptions.DefaultBaseAddress
+                : options.BaseAddress,
+            Placeholder = MobileApiOptions.DefaultBaseAddress,
+            Keyboard = Keyboard.Url,
+            FontSize = 14,
+            TextColor = Tokens.TextPrimary
+        };
+
+        var statusLabel = new Label
+        {
+            FontSize = 12,
+            TextColor = Tokens.TextSecondary,
+            Text = "Changes apply immediately to all mobile API calls.",
+            Margin = new Thickness(Tokens.SpaceGutter, 8, Tokens.SpaceGutter, 0)
+        };
+
+        var saveBtn = new Button
+        {
+            Text = "Save API URL",
+            BackgroundColor = Tokens.BrandAccent,
+            TextColor = Tokens.OnAccent,
+            CornerRadius = 10,
+            HeightRequest = 44,
+            Margin = new Thickness(Tokens.SpaceGutter, 16, Tokens.SpaceGutter, 24)
+        };
+
+        saveBtn.Clicked += (_, _) =>
+        {
+            var nextUrl = string.IsNullOrWhiteSpace(urlEntry.Text)
+                ? MobileApiOptions.DefaultBaseAddress
+                : urlEntry.Text.Trim();
+            options.BaseAddress = nextUrl;
+            Preferences.Default.Set("kapsons.api.base_url", nextUrl);
+            urlEntry.Text = nextUrl;
+            statusLabel.Text = $"Saved: {nextUrl}";
+        };
+
+        var body = new VerticalStackLayout
+        {
+            Spacing = 0,
+            Children =
+            {
+                Field("Backend Server Base URL", urlEntry),
+                statusLabel,
+                saveBtn
+            }
+        };
+
+        sheet.Present("Server API URL", new ScrollView { Content = body });
+        return Task.CompletedTask;
+    }
 
     private async Task SignOutAsync()
     {

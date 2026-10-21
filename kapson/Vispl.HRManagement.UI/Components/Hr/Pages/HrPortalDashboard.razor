@@ -1032,9 +1032,34 @@
     private static string EventTypeClass(string type) =>
         type.Equals("Holiday", StringComparison.OrdinalIgnoreCase) ? "holiday" : "company-event";
 
-    private void ChangeCompany(ChangeEventArgs args) => CompanyCode = args.Value?.ToString() ?? string.Empty;
+    // Company and unit apply the moment they change, so the whole dashboard re-queries the
+    // database for that scope instead of waiting on the Apply button — selecting a company that
+    // left the figures unchanged read as if the filter did nothing. A changed unit is reset only
+    // when the company itself changes, so the two selects cannot describe an impossible pair.
+    private async Task ChangeCompany(ChangeEventArgs args)
+    {
+        var next = args.Value?.ToString() ?? string.Empty;
+        if (next == CompanyCode)
+        {
+            return;
+        }
 
-    private void ChangeUnit(ChangeEventArgs args) => UnitCode = args.Value?.ToString() ?? string.Empty;
+        CompanyCode = next;
+        UnitCode = string.Empty;
+        await ApplyAsync();
+    }
+
+    private async Task ChangeUnit(ChangeEventArgs args)
+    {
+        var next = args.Value?.ToString() ?? string.Empty;
+        if (next == UnitCode)
+        {
+            return;
+        }
+
+        UnitCode = next;
+        await ApplyAsync();
+    }
 
     private void ChangeAsOf(ChangeEventArgs args)
     {

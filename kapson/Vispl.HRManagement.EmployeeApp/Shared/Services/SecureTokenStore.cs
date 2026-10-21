@@ -31,7 +31,7 @@ public sealed class SecureTokenStore : ITokenStore
 
         try
         {
-            var payload = await SecureStorage.Default.GetAsync(Key);
+            var payload = Preferences.Default.Get<string?>(Key, null);
 
             return string.IsNullOrWhiteSpace(payload)
                 ? null
@@ -54,7 +54,7 @@ public sealed class SecureTokenStore : ITokenStore
 
         try
         {
-            await SecureStorage.Default.SetAsync(Key, JsonSerializer.Serialize(tokens, Json));
+            Preferences.Default.Set(Key, JsonSerializer.Serialize(tokens, Json));
         }
         catch (Exception exception)
         {
@@ -67,7 +67,7 @@ public sealed class SecureTokenStore : ITokenStore
     {
         try
         {
-            SecureStorage.Default.Remove(Key);
+            Preferences.Default.Remove(Key);
         }
         catch (Exception exception)
         {

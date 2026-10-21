@@ -15,7 +15,17 @@ namespace Vispl.HRManagement.EmployeeApp.Features.Menu;
 /// </summary>
 public static class SelfServiceSheets
 {
-    private static readonly CultureInfo India = CultureInfo.GetCultureInfo("en-IN");
+    // Indian digit grouping (e.g. ₹12,34,567) built explicitly. CultureInfo.GetCultureInfo("en-IN")
+    // throws CultureNotFoundException on a runtime without ICU / predefined cultures, which was
+    // crashing the Salary, Bank and Onboarding sheets the moment they were opened (the static
+    // initialiser failed, surfacing as a TypeInitializationException). A NumberFormatInfo needs no
+    // culture lookup and never throws.
+    private static readonly NumberFormatInfo India = new()
+    {
+        NumberGroupSizes = [3, 2],
+        NumberGroupSeparator = ",",
+        NumberDecimalDigits = 0
+    };
 
     public static View Salary(MySalaryDto salary)
     {

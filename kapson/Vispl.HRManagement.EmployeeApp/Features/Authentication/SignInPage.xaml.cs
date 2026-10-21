@@ -1,4 +1,5 @@
 using Vispl.HRManagement.Mobile.Client.Auth;
+using Vispl.HRManagement.Mobile.Client.Http;
 
 namespace Vispl.HRManagement.EmployeeApp.Features.Authentication;
 
@@ -11,12 +12,18 @@ namespace Vispl.HRManagement.EmployeeApp.Features.Authentication;
 /// </summary>
 public partial class SignInPage : ContentPage
 {
+    private const string ApiUrlPrefKey = "kapsons.api.base_url";
     private readonly MobileAuthenticator authenticator;
+    private readonly MobileApiOptions options;
 
-    public SignInPage(MobileAuthenticator authenticator)
+    public SignInPage(MobileAuthenticator authenticator, MobileApiOptions options)
     {
         InitializeComponent();
         this.authenticator = authenticator;
+        this.options = options;
+        ServerUrlEntry.Text = string.IsNullOrWhiteSpace(options.BaseAddress)
+            ? MobileApiOptions.DefaultBaseAddress
+            : options.BaseAddress;
     }
 
     private void OnUserNameCompleted(object? sender, EventArgs e) => PasswordEntry.Focus();
@@ -24,6 +31,14 @@ public partial class SignInPage : ContentPage
     private async void OnSignInClicked(object? sender, EventArgs e)
     {
         ErrorLabel.IsVisible = false;
+
+        var configuredUrl = string.IsNullOrWhiteSpace(ServerUrlEntry.Text)
+            ? MobileApiOptions.DefaultBaseAddress
+            : ServerUrlEntry.Text.Trim();
+        options.BaseAddress = configuredUrl;
+        Preferences.Default.Set(ApiUrlPrefKey, configuredUrl);
+        ServerUrlEntry.Text = configuredUrl;
+
         SetBusy(true);
 
         try
@@ -74,5 +89,6 @@ public partial class SignInPage : ContentPage
         SignInButton.IsEnabled = !busy;
         UserNameEntry.IsEnabled = !busy;
         PasswordEntry.IsEnabled = !busy;
+        ServerUrlEntry.IsEnabled = !busy;
     }
 }

@@ -40,6 +40,7 @@ public static class MobileClientServiceCollectionExtensions
             client.BaseAddress = new Uri(options.BaseAddress.TrimEnd('/') + "/");
             client.Timeout = options.Timeout;
             client.DefaultRequestHeaders.Add("X-Client", "kapsons-employee-app");
+            client.DefaultRequestHeaders.Add("ngrok-skip-browser-warning", "true");
         });
 
         services.AddSingleton(provider => new MobileApiClient(

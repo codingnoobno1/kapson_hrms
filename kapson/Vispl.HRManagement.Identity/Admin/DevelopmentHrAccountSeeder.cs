@@ -76,8 +76,7 @@ public sealed class DevelopmentHrAccountSeeder(
                 return;
             }
 
-            var grants = HrPermissionCatalog
-                .ForPortal(AccountPortal.Hr)
+            var grants = HrPermissionCatalog.All
                 .Select(permission => new RolePermissionEntity
                 {
                     RoleId = role.Id,
@@ -96,8 +95,7 @@ public sealed class DevelopmentHrAccountSeeder(
             .Select(item => item.PermissionKey)
             .ToListAsync(cancellationToken);
 
-        var missing = HrPermissionCatalog
-            .ForPortal(AccountPortal.Hr)
+        var missing = HrPermissionCatalog.All
             .Where(permission => !granted.Contains(permission.Key))
             .Select(permission => new RolePermissionEntity
             {
@@ -115,8 +113,20 @@ public sealed class DevelopmentHrAccountSeeder(
                 "Granted {Count} newly catalogued permission(s) to the development HR role.", missing.Count);
         }
 
-        if (await userManager.FindByNameAsync(userName) is not null)
+        var existing = await userManager.FindByNameAsync(userName);
+        if (existing is not null)
         {
+            // Accounts seeded before the mobile access grant existed were left without it, and
+            // the token endpoint refuses staff without the grant — so repair rather than skip.
+            if (!existing.MobileAccessEnabled || string.IsNullOrWhiteSpace(existing.EmployeeNumber))
+            {
+                existing.MobileAccessEnabled = true;
+                existing.EmployeeNumber ??= "EMP-1001";
+                existing.UpdatedUtc = DateTimeOffset.UtcNow;
+                await userManager.UpdateAsync(existing);
+                logger.LogWarning("Enabled mobile access / employee number for development HR account '{UserName}'.", userName);
+            }
+
             return;
         }
 
@@ -127,7 +137,10 @@ public sealed class DevelopmentHrAccountSeeder(
             DisplayName = "Development HR",
             TenantKey = tenantKey,
             Portal = AccountPortal.Hr,
+            EmployeeNumber = "EMP-1001",
             IsActive = true,
+            // The mobile token endpoint refuses staff accounts without this grant.
+            MobileAccessEnabled = true,
             // False so the token flow can be exercised without a password-change round trip.
             // Real accounts created through /admin/accounts keep the forced change.
             MustChangePassword = false,

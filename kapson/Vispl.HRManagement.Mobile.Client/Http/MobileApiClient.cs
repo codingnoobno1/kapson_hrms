@@ -10,8 +10,10 @@ namespace Vispl.HRManagement.Mobile.Client.Http;
 /// <summary>Options the app head supplies once.</summary>
 public sealed class MobileApiOptions
 {
+    public const string DefaultBaseAddress = "https://untutelary-francisco-overtrustfully.ngrok-free.dev";
+
     /// <summary>Host root, without the api path. For example https://hr.kapsons.com.</summary>
-    public string BaseAddress { get; set; } = string.Empty;
+    public string BaseAddress { get; set; } = DefaultBaseAddress;
 
     /// <summary>Identifies this installation to the server for device-bound actions.</summary>
     public string DeviceId { get; set; } = string.Empty;
@@ -26,6 +28,19 @@ public sealed class MobileApiOptions
     /// employee app, or an employee to the HR app, and finding a shell built for someone else.
     /// </summary>
     public IReadOnlyList<string> AllowedPortals { get; set; } = ["Employee", "Candidate"];
+
+    public Uri ResolveUri(string relativePath)
+    {
+        var raw = string.IsNullOrWhiteSpace(BaseAddress) ? DefaultBaseAddress : BaseAddress.Trim();
+        if (!raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            raw = "https://" + raw;
+        }
+
+        var root = raw.TrimEnd('/') + "/";
+        return new Uri(new Uri(root, UriKind.Absolute), relativePath.TrimStart('/'));
+    }
 }
 
 /// <summary>
@@ -151,7 +166,7 @@ public sealed class MobileApiClient(
         string? rowVersion,
         CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(method, path);
+        using var request = new HttpRequestMessage(method, options.ResolveUri(path));
 
         if (body is not null)
         {
@@ -361,7 +376,7 @@ public sealed class MobileApiClient(
                 return true;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "api/mobile/v1/auth/refresh")
+            using var request = new HttpRequestMessage(HttpMethod.Post, options.ResolveUri("api/mobile/v1/auth/refresh"))
             {
                 Content = JsonContent.Create(
                     new { refreshToken = stored.RefreshToken, deviceId = options.DeviceId }, options: Json)

@@ -28,8 +28,11 @@ public sealed class MobileRealtimeClient(MobileApiOptions options, MobileSession
             SetState(MobileRealtimeState.Connecting);
 
             connection = new HubConnectionBuilder()
-                .WithUrl(new Uri(new Uri(options.BaseAddress.TrimEnd('/') + "/"), "hubs/hr"), transport =>
-                    transport.AccessTokenProvider = () => Task.FromResult(session.Tokens?.AccessToken))
+                .WithUrl(options.ResolveUri("hubs/hr"), transport =>
+                {
+                    transport.AccessTokenProvider = () => Task.FromResult(session.Tokens?.AccessToken);
+                    transport.Headers["ngrok-skip-browser-warning"] = "true";
+                })
                 .WithAutomaticReconnect([TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)])
                 .Build();
 
