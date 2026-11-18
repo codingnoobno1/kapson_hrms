@@ -1,20 +1,27 @@
 @page "/hr/recruitment"
 @page "/hr/{TenantKey}/recruitment"
 @attribute [Authorize(Policy = "HrPortal")]
+@using System.Text.RegularExpressions
+@using Vispl.HRManagement.BM.ITF.Admin
 @using Vispl.HRManagement.BM.ITF.Mobile
 @using Vispl.HRManagement.BM.ITF.Recruitment
+@using Vispl.HRManagement.Contracts.Admin
 @using Vispl.HRManagement.Contracts.Mobile.Dashboard
 @using Vispl.HRManagement.Contracts.Recruitment
 @using Vispl.HRManagement.UI.Components.Hr.Shared
 @inject IWorkforceReportService Reports
 @inject IApplicationService Applications
+@inject IOnboardingService Onboarding
+@inject IEmployeeWorkspaceService Workspace
+@inject IMasterDataService Masters
+@inject IDesignationService Designations
 @inject HrPortalCaller PortalCaller
 
 <PageTitle>Recruitment | HR Portal</PageTitle>
 
 <HrPageShell ActivePage="recruitment" TenantKey="@TenantKey"
              Kicker="HIRING" Title="Recruitment"
-             Subtitle="Open positions, who has applied to them, and what happens next."
+             Subtitle="Open positions, candidate applications, 8-section onboarding review, and employee provisioning."
              Error="@LoadError">
     <Filters>
         <label>
@@ -106,7 +113,7 @@
                      Rows="Applicants">
             <Header>
                 <th>Candidate</th><th>Applied for</th><th>Department</th>
-                <th>Contact</th><th>Applied</th><th>Stage</th><th>Move to</th>
+                <th>Contact</th><th>Applied</th><th>Stage</th><th>Actions &amp; Onboarding</th>
             </Header>
             <Row Context="application">
                 <td class="strong">@application.CandidateName</td>
@@ -123,37 +130,286 @@
                 <td><span class="hr-tag tone-@application.StageTone">@Spaced(application.Stage)</span></td>
                 <td>
                     @{ var next = NextStages(application.Stage); }
-                    @if (next.Count == 0)
+                    <span class="hr-action-row">
+                        <button class="hr-button small @(SelectedApplicationId == application.Id ? "" : "ghost")"
+                                type="button"
+                                @onclick="() => InspectApplicationAsync(application.Id)">
+                            @(application.Stage is ApplicationStages.Onboarding or ApplicationStages.OfferAccepted ? "Checklist" : "Review")
+                        </button>
+
+                        @if (application.Stage == ApplicationStages.Hired && FindHiredEmployee(application) is { } emp)
+                        {
+                            <a class="hr-button small ghost" href="@EmployeeHref(emp.EmployeeId)">
+                                @emp.EmployeeNumber →
+                            </a>
+                        }
+
+                        @foreach (var stage in next)
+                        {
+                            var target = stage;
+                            <button class="hr-button small @(ApplicationStages.IsRejection(target) ? "ghost" : "")"
+                                    type="button"
+                                    disabled="@(MovingId == application.Id)"
+                                    @onclick="() => MoveAsync(application, target)">
+                                @Spaced(target)
+                            </button>
+                        }
+                    </span>
+                    @if (next.Count == 0 && application.Stage != ApplicationStages.Hired)
                     {
-                        <small class="hr-hint">@WhyStuck(application.Stage)</small>
-                    }
-                    else
-                    {
-                        <span class="hr-action-row">
-                            @foreach (var stage in next)
-                            {
-                                var target = stage;
-                                <button class="hr-button small @(ApplicationStages.IsRejection(target) ? "ghost" : "")"
-                                        type="button"
-                                        disabled="@(MovingId == application.Id)"
-                                        @onclick="() => MoveAsync(application, target)">
-                                    @Spaced(target)
-                                </button>
-                            }
-                        </span>
+                        <div><small class="hr-hint">@WhyStuck(application.Stage)</small></div>
                     }
                 </td>
             </Row>
         </HrDataTable>
+
+        @if (SelectedDetail is { } detail)
+        {
+            <section class="rec-review-panel">
+                <div class="rec-review-header">
+                    <div>
+                        <h3 class="rec-review-title">
+                            @detail.Summary.CandidateName — @detail.Summary.JobTitle
+                            <span class="hr-tag tone-@detail.Summary.StageTone" style="margin-left:8px">@Spaced(detail.Summary.Stage)</span>
+                        </h3>
+                        <p class="rec-review-sub">
+                            @detail.Summary.Department · @(detail.Summary.Email ?? "No email") · @(detail.Summary.Phone ?? "No phone")
+                        </p>
+                    </div>
+                    <div class="hr-action-row">
+                        @if (FindHiredEmployee(detail.Summary) is { } provisioned)
+                        {
+                            <a class="hr-button small" href="@EmployeeHref(provisioned.EmployeeId)">
+                                Open Employee Profile (@provisioned.EmployeeNumber) →
+                            </a>
+                        }
+                        <button class="hr-button small ghost" type="button" @onclick="CloseReview">Close</button>
+                    </div>
+                </div>
+
+                @if (ReviewError is not null)
+                {
+                    <div class="hr-alert error" style="margin-bottom:12px">@ReviewError</div>
+                }
+
+                <div class="rec-meta-strip">
+                    <div class="rec-meta-tile">
+                        <span>Current Location</span>
+                        <strong>@(string.IsNullOrWhiteSpace(detail.CurrentLocation) ? "—" : detail.CurrentLocation)</strong>
+                    </div>
+                    <div class="rec-meta-tile">
+                        <span>Total Experience</span>
+                        <strong>@detail.TotalExperienceYears.ToString("0.#") yrs</strong>
+                    </div>
+                    <div class="rec-meta-tile">
+                        <span>Notice Period</span>
+                        <strong>@detail.NoticePeriodDays days</strong>
+                    </div>
+                    <div class="rec-meta-tile">
+                        <span>Expected CTC</span>
+                        <strong>@(detail.ExpectedCtc is { } ctc ? $"₹{ctc:N0}" : "—")</strong>
+                    </div>
+                    <div class="rec-meta-tile">
+                        <span>Documents Uploaded</span>
+                        <strong>@detail.Documents.Count file@(detail.Documents.Count == 1 ? "" : "s")</strong>
+                    </div>
+                </div>
+
+                @if (detail.Documents.Count > 0)
+                {
+                    <div style="margin-bottom:14px">
+                        <small class="hr-hint" style="font-weight:700;text-transform:uppercase">Application &amp; Onboarding Documents</small>
+                        <div class="hr-action-row" style="margin-top:6px">
+                            @foreach (var doc in detail.Documents)
+                            {
+                                <span class="hr-tag tone-info">@doc.CategoryCode: @doc.FileName (@FormatBytes(doc.SizeBytes))</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (SelectedOnboarding is { } plan)
+                {
+                    <div style="padding-top:10px;border-top:1px solid #e2e8f0">
+                        <div class="rec-task-top">
+                            <div>
+                                <strong>Onboarding Checklist (@plan.Stage)</strong>
+                                <span class="hr-hint" style="margin-left:8px">
+                                    @plan.CompletionPercent% required complete · @plan.OutstandingRequiredCount required remaining
+                                    @if (plan.JoiningOn is { } jDate)
+                                    {
+                                        <text> · Joining @jDate.ToString("dd MMM yyyy")</text>
+                                    }
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="rec-task-list">
+                            @foreach (var task in plan.Tasks)
+                            {
+                                <div class="rec-task-card">
+                                    <div class="rec-task-top">
+                                        <div>
+                                            <strong>@task.Title</strong>
+                                            <span class="hr-tag" style="margin-left:6px">@task.OwnerKind</span>
+                                            <span class="hr-hint" style="margin-left:6px">@(task.IsRequired ? "Required" : "Optional") · @task.TaskType</span>
+                                        </div>
+                                        <span class="hr-tag tone-@TaskStatusTone(task.Status)">@task.Status</span>
+                                    </div>
+
+                                    <p class="hr-hint" style="margin:4px 0 0">@task.Instructions</p>
+
+                                    @if (!string.IsNullOrWhiteSpace(task.DocumentFileName))
+                                    {
+                                        <p class="hr-hint" style="margin:6px 0 0">Attached document: <strong>@task.DocumentFileName</strong></p>
+                                    }
+
+                                    @if (task.FormValues is { Count: > 0 })
+                                    {
+                                        <div class="cand-kv-grid">
+                                            @foreach (var kv in task.FormValues.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                                            {
+                                                <div class="cand-kv-item">
+                                                    <small>@PrettyKey(kv.Key)</small>
+                                                    @MaskSensitive(kv.Key, kv.Value)
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(task.DecisionReason))
+                                    {
+                                        <p class="hr-hint" style="margin:6px 0 0;color:#b91c1c">Reason: @task.DecisionReason</p>
+                                    }
+
+                                    @if (CanCreateEmployees && plan.Stage == "InProgress")
+                                    {
+                                        @if (task.OwnerKind == "Candidate" && task.Status == OnboardingTaskStatuses.Submitted)
+                                        {
+                                            <div class="rec-task-actions">
+                                                <button class="hr-button small" type="button"
+                                                        disabled="@(TaskBusyId == task.Id)"
+                                                        @onclick="() => DecideCandidateTaskAsync(task.Id, true)">
+                                                    Approve
+                                                </button>
+                                                <input type="text" placeholder="Reason if rejecting…"
+                                                       style="padding:5px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:.8rem"
+                                                       value="@RejectReasons.GetValueOrDefault(task.Id, string.Empty)"
+                                                       @oninput="e => RejectReasons[task.Id] = e.Value?.ToString() ?? string.Empty" />
+                                                <button class="hr-button small ghost" type="button"
+                                                        disabled="@(TaskBusyId == task.Id)"
+                                                        @onclick="() => DecideCandidateTaskAsync(task.Id, false)">
+                                                    Reject
+                                                </button>
+                                            </div>
+                                        }
+                                        else if (task.OwnerKind == "Hr" && task.Status != OnboardingTaskStatuses.Approved)
+                                        {
+                                            @if (task.Code == "BACKGROUND_VERIFICATION")
+                                            {
+                                                <div class="rec-hr-form">
+                                                    <label class="emp-field">
+                                                        <span class="emp-label">BGV Outcome</span>
+                                                        <select value='@HrField(task.Id, "outcome", "Clear")'
+                                                                @onchange='@(e => SetHrField(task.Id, "outcome", e))'>
+                                                            <option value="Clear">Clear</option>
+                                                            <option value="Conditional">Conditional Clear</option>
+                                                        </select>
+                                                    </label>
+                                                    <label class="emp-field">
+                                                        <span class="emp-label">Division</span>
+                                                        <select value='@HrField(task.Id, "divisionCode")'
+                                                                @onchange='@(e => SetHrField(task.Id, "divisionCode", e))'>
+                                                            <option value="">Auto from Department</option>
+                                                            @foreach (var div in OptionsFor(MasterCategories.Division))
+                                                            {
+                                                                <option value="@div.Code">@div.Name</option>
+                                                            }
+                                                        </select>
+                                                    </label>
+                                                    <label class="emp-field">
+                                                        <span class="emp-label">Sub-Department</span>
+                                                        <select value='@HrField(task.Id, "subDepartmentCode")'
+                                                                @onchange='@(e => SetHrField(task.Id, "subDepartmentCode", e))'>
+                                                            <option value="">Auto from Role</option>
+                                                            @foreach (var sub in AllSubDepartments)
+                                                            {
+                                                                <option value="@sub.Code">@sub.Name (@sub.ParentCode)</option>
+                                                            }
+                                                        </select>
+                                                    </label>
+                                                    <label class="emp-field">
+                                                        <span class="emp-label">Designation</span>
+                                                        <select value='@HrField(task.Id, "designationCode")'
+                                                                @onchange='@(e => SetHrField(task.Id, "designationCode", e))'>
+                                                            <option value="">Match Opening Title</option>
+                                                            @foreach (var des in AllDesignations)
+                                                            {
+                                                                <option value="@des.Code">@des.Name (@des.GradeCode)</option>
+                                                            }
+                                                        </select>
+                                                    </label>
+                                                    <label class="emp-field">
+                                                        <span class="emp-label">Reporting Manager</span>
+                                                        <select value='@HrField(task.Id, "reportingManagerId")'
+                                                                @onchange='@(e => SetHrField(task.Id, "reportingManagerId", e))'>
+                                                            <option value="">Unassigned</option>
+                                                            @foreach (var mgr in DirectoryEmployees.Where(e => e.IsActive && !e.IsDraft))
+                                                            {
+                                                                <option value="@mgr.EmployeeId">@mgr.DisplayName (@mgr.EmployeeNumber)</option>
+                                                            }
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                                <div class="rec-task-actions">
+                                                    <button class="hr-button small" type="button"
+                                                            disabled="@(TaskBusyId == task.Id)"
+                                                            @onclick="() => CompleteHrTaskAsync(plan.Id, task)">
+                                                        Complete Verification &amp; Confirm Placement
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="rec-task-actions">
+                                                    <input type="text" placeholder="Equipment / badge notes…"
+                                                           style="padding:5px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:.8rem;min-width:220px"
+                                                           value='@HrField(task.Id, "notes", "Issued standard welcome kit & ID card")'
+                                                           @oninput='@(e => SetHrField(task.Id, "notes", e))' />
+                                                    <button class="hr-button small" type="button"
+                                                            disabled="@(TaskBusyId == task.Id)"
+                                                            @onclick="() => CompleteHrTaskAsync(plan.Id, task)">
+                                                        Mark Completed
+                                                    </button>
+                                                </div>
+                                            }
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        }
     </ChildContent>
 </HrPageShell>
 
 @code {
-    /// <summary>Presentational only; the data is always the signed-in account's client.</summary>
     [Parameter] public string? TenantKey { get; set; }
 
     private OpeningPipelineDto? Pipeline;
     private IReadOnlyList<ApplicationListItemDto>? Applicants;
+    private IReadOnlyList<EmployeeExplorerRowDto> DirectoryEmployees = [];
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private IReadOnlyList<DesignationDto> AllDesignations = [];
+
+    private long? SelectedApplicationId;
+    private ApplicationDetailDto? SelectedDetail;
+    private OnboardingDto? SelectedOnboarding;
+
+    private readonly Dictionary<long, string> RejectReasons = [];
+    private readonly Dictionary<long, Dictionary<string, string>> HrTaskForms = [];
 
     private string Stage = string.Empty;
     private string Search = string.Empty;
@@ -161,17 +417,28 @@
     private string? LoadError;
     private string? PipelineError;
     private string? ApplicationsError;
+    private string? ReviewError;
     private string? ActionMessage;
     private bool IsBusy = true;
     private long? MovingId;
+    private long? TaskBusyId;
 
     private bool CanManage;
+    private bool CanCreateEmployees;
+    private string ResolvedTenant = "kapson";
+
+    private IEnumerable<MasterOptionDto> OptionsFor(string category) =>
+        AllOptions.Where(o => o.Category == category && o.IsActive).OrderBy(o => o.SortOrder);
+
+    private IEnumerable<MasterOptionDto> AllSubDepartments =>
+        AllOptions.Where(o => o.Category == MasterCategories.Department && !string.IsNullOrWhiteSpace(o.ParentCode) && o.IsActive)
+                  .OrderBy(o => o.ParentCode)
+                  .ThenBy(o => o.SortOrder);
 
     protected override async Task OnInitializedAsync()
     {
-        // Making an offer needs the stronger permission, so the button is only offered to
-        // somebody who holds it rather than shown and then refused.
         CanManage = await PortalCaller.HasAsync("RECRUITMENT.MANAGE");
+        CanCreateEmployees = await PortalCaller.HasAsync("EMPLOYEES.CREATE");
         await LoadAsync();
     }
 
@@ -196,9 +463,19 @@
         try
         {
             var caller = await PortalCaller.GetAsync();
+            ResolvedTenant = string.IsNullOrWhiteSpace(TenantKey) ? caller.TenantKey : TenantKey!;
 
-            // Two panels, two failures. A recruiter who may read applications but not the
-            // board should still get the applications.
+            if (AllOptions.Count == 0)
+            {
+                AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+                AllDesignations = (await Designations.GetAllAsync(caller.TenantKey)).Where(d => d.IsActive).ToList();
+            }
+
+            if (await PortalCaller.HasAsync("EMPLOYEES.VIEW") || CanCreateEmployees)
+            {
+                DirectoryEmployees = await Workspace.GetExplorerAsync(caller, new EmployeeExplorerQuery());
+            }
+
             try
             {
                 Pipeline = await Reports.GetOpeningPipelineAsync(
@@ -221,6 +498,11 @@
             {
                 ApplicationsError = ex.Message;
             }
+
+            if (SelectedApplicationId is { } selectedId)
+            {
+                await RefreshSelectedAsync(caller.TenantKey, selectedId);
+            }
         }
         catch (Exception ex)
         {
@@ -231,6 +513,163 @@
             IsBusy = false;
         }
     }
+
+    private async Task InspectApplicationAsync(long applicationId)
+    {
+        ReviewError = null;
+        if (SelectedApplicationId == applicationId)
+        {
+            CloseReview();
+            return;
+        }
+
+        SelectedApplicationId = applicationId;
+        var caller = await PortalCaller.GetAsync();
+        await RefreshSelectedAsync(caller.TenantKey, applicationId);
+    }
+
+    private async Task RefreshSelectedAsync(string tenantKey, long applicationId)
+    {
+        SelectedDetail = await Applications.GetDetailAsync(tenantKey, applicationId, CancellationToken.None);
+        SelectedOnboarding = await Onboarding.GetByApplicationAsync(tenantKey, applicationId, CancellationToken.None);
+    }
+
+    private void CloseReview()
+    {
+        SelectedApplicationId = null;
+        SelectedDetail = null;
+        SelectedOnboarding = null;
+        ReviewError = null;
+    }
+
+    private async Task DecideCandidateTaskAsync(long taskId, bool approve)
+    {
+        ReviewError = null;
+        ActionMessage = null;
+        var reason = RejectReasons.GetValueOrDefault(taskId, string.Empty).Trim();
+        if (!approve && string.IsNullOrWhiteSpace(reason))
+        {
+            ReviewError = "Enter a reason before rejecting a candidate task.";
+            return;
+        }
+
+        TaskBusyId = taskId;
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            await Onboarding.DecideTaskAsync(
+                caller.TenantKey,
+                taskId,
+                new OnboardingTaskDecisionRequest
+                {
+                    Decision = approve ? "approve" : "reject",
+                    Reason = string.IsNullOrWhiteSpace(reason) ? null : reason
+                },
+                caller.UserId,
+                CancellationToken.None);
+
+            RejectReasons.Remove(taskId);
+            await LoadAsync();
+            ActionMessage = approve
+                ? (SelectedDetail?.Summary.Stage == ApplicationStages.Hired
+                    ? $"{SelectedDetail.Summary.CandidateName} completed onboarding and is now provisioned in Employees Explorer!"
+                    : "Onboarding task approved.")
+                : "Onboarding task returned to candidate.";
+        }
+        catch (Exception ex)
+        {
+            ReviewError = ex.Message;
+        }
+        finally
+        {
+            TaskBusyId = null;
+        }
+    }
+
+    private async Task CompleteHrTaskAsync(long onboardingId, OnboardingTaskDto task)
+    {
+        ReviewError = null;
+        ActionMessage = null;
+        TaskBusyId = task.Id;
+
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (HrTaskForms.TryGetValue(task.Id, out var form))
+            {
+                foreach (var kv in form.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                {
+                    values[kv.Key] = kv.Value.Trim();
+                }
+            }
+
+            if (task.Code == "BACKGROUND_VERIFICATION")
+            {
+                if (!values.ContainsKey("outcome")) values["outcome"] = "Clear";
+                values["verifiedBy"] = caller.UserId ?? "HR Portal";
+            }
+            else if (values.Count == 0)
+            {
+                values["notes"] = "Issued standard welcome kit & ID card";
+            }
+
+            await Onboarding.CompleteHrTaskAsync(
+                caller.TenantKey,
+                onboardingId,
+                task.Id,
+                values,
+                caller.UserId,
+                CancellationToken.None);
+
+            await LoadAsync();
+            ActionMessage = SelectedDetail?.Summary.Stage == ApplicationStages.Hired
+                ? $"{SelectedDetail.Summary.CandidateName} completed onboarding and is now provisioned in Employees Explorer!"
+                : $"{task.Title} marked complete.";
+        }
+        catch (Exception ex)
+        {
+            ReviewError = ex.Message;
+        }
+        finally
+        {
+            TaskBusyId = null;
+        }
+    }
+
+    private string HrField(long taskId, string key, string fallback = "") =>
+        HrTaskForms.TryGetValue(taskId, out var dict) && dict.TryGetValue(key, out var val) ? val : fallback;
+
+    private void SetHrField(long taskId, string key, ChangeEventArgs args)
+    {
+        if (!HrTaskForms.TryGetValue(taskId, out var dict))
+        {
+            dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            HrTaskForms[taskId] = dict;
+        }
+        dict[key] = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private EmployeeExplorerRowDto? FindHiredEmployee(ApplicationListItemDto app)
+    {
+        if (!string.IsNullOrWhiteSpace(app.Email))
+        {
+            var byEmail = DirectoryEmployees.FirstOrDefault(e =>
+                string.Equals(e.Email, app.Email, StringComparison.OrdinalIgnoreCase));
+            if (byEmail is not null)
+            {
+                return byEmail;
+            }
+        }
+
+        return DirectoryEmployees.FirstOrDefault(e =>
+            string.Equals(e.DisplayName, app.CandidateName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string EmployeeHref(string employeeId) =>
+        string.IsNullOrWhiteSpace(TenantKey)
+            ? $"/hr/{ResolvedTenant}/employees/{employeeId}"
+            : $"/hr/{TenantKey}/employees/{employeeId}";
 
     private async Task MoveAsync(ApplicationListItemDto application, string toStage)
     {
@@ -245,7 +684,7 @@
             await Applications.ChangeStageAsync(
                 caller.TenantKey,
                 application.Id,
-                new ChangeStageRequest { ToStage = toStage, Reason = $"Moved from the HR portal." },
+                new ChangeStageRequest { ToStage = toStage, Reason = "Moved from the HR portal." },
                 caller.UserId,
                 CanManage,
                 CancellationToken.None);
@@ -270,27 +709,18 @@
         }
     }
 
-    /// <summary>
-    /// What HR may do next, from the same table the service enforces — so a button never
-    /// appears for a move that would be refused. Offering is filtered out for an account that
-    /// lacks RECRUITMENT.MANAGE.
-    /// </summary>
     private IReadOnlyList<string> NextStages(string from) =>
         ApplicationStages.All
             .Where(stage => ApplicationStages.IsHrTransitionAllowed(from, stage))
             .Where(stage => CanManage || !ApplicationStages.RequiresManagePermission(stage))
             .ToList();
 
-    /// <summary>
-    /// A row with no buttons needs to say why, or it reads as broken. Two different reasons
-    /// land here and conflating them is what makes the pipeline feel stuck.
-    /// </summary>
     private string WhyStuck(string stage) => stage switch
     {
         ApplicationStages.Offered =>
             "Waiting on the candidate to accept or decline.",
         ApplicationStages.OfferAccepted or ApplicationStages.Onboarding =>
-            "Onboarding is in progress; it finishes on the checklist.",
+            "Onboarding in progress — click Checklist to review & approve.",
         ApplicationStages.Hired => "Hired.",
         ApplicationStages.Rejected or ApplicationStages.OfferDeclined or ApplicationStages.Withdrawn =>
             "Closed.",
@@ -328,11 +758,39 @@
         return parts.Count == 0 ? "Every application" : string.Join(", ", parts);
     }
 
-    /// <summary>`OfferAccepted` is a contract value; nobody should have to read camel case.</summary>
     private static string Spaced(string stage) => stage switch
     {
         ApplicationStages.OfferAccepted => "Offer accepted",
         ApplicationStages.OfferDeclined => "Offer declined",
         _ => stage
     };
+
+    private static string TaskStatusTone(string status) => status switch
+    {
+        OnboardingTaskStatuses.Approved => "success",
+        OnboardingTaskStatuses.Submitted => "info",
+        OnboardingTaskStatuses.Rejected => "danger",
+        _ => "warning"
+    };
+
+    private static string PrettyKey(string key) =>
+        Regex.Replace(key, "([a-z])([A-Z])", "$1 $2") switch
+        {
+            var s when s.Length > 0 => char.ToUpperInvariant(s[0]) + s[1..],
+            var s => s
+        };
+
+    private static string MaskSensitive(string key, string value)
+    {
+        if ((key.Contains("aadhaar", StringComparison.OrdinalIgnoreCase) ||
+             key.Contains("accountNumber", StringComparison.OrdinalIgnoreCase)) &&
+            value.Length > 4)
+        {
+            return $"••••{value[^4..]}";
+        }
+        return value;
+    }
+
+    private static string FormatBytes(long bytes) =>
+        bytes < 1024 ? $"{bytes} B" : $"{Math.Round(bytes / 1024d, 1)} KB";
 }

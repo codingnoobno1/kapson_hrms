@@ -76,6 +76,18 @@ public static class HrManagementComposition
         await developmentHrSeeder.SeedAsync(cancellationToken);
 
         await LinkHrAccountsToEmployeesAsync(scope.ServiceProvider, application.Environment.IsDevelopment(), cancellationToken);
+
+        if (application.Configuration.GetValue("Database:SeedOnEmpty", true))
+        {
+            var hrDb = scope.ServiceProvider.GetRequiredService<HrManagementDbContext>();
+            var mediaStorage = scope.ServiceProvider.GetRequiredService<DL.ITF.Admin.IMediaStorage>();
+            var protector = scope.ServiceProvider.GetRequiredService<BM.ITF.Shared.ISensitiveValueProtector>();
+            var upgradeLogger = scope.ServiceProvider
+                .GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger("EmployeeAndCandidateUpgradeSeeder");
+            await EmployeeAndCandidateUpgradeSeeder.UpgradeExistingDataAsync(
+                hrDb, mediaStorage, protector.Protect, upgradeLogger, cancellationToken);
+        }
     }
 
     private static async Task LinkHrAccountsToEmployeesAsync(

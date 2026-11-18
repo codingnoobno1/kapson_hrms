@@ -2,29 +2,18 @@
 @page "/career/{TenantKey}/onboarding"
 @using System.Net.Http.Json
 @using System.Text.Json
+@using System.Text.RegularExpressions
+@using Vispl.HRManagement.BM.ITF.Admin
+@using Vispl.HRManagement.Contracts.Admin
 @using Vispl.HRManagement.Contracts.Recruitment
 @inject NavigationManager Navigation
 @inject IHttpClientFactory HttpClients
 @inject ICareerSiteService CareerSiteService
 @inject IThemeTemplateService ThemeTemplateService
-
-@*
-    Where a candidate lands from the mail they were sent when they applied.
-
-    It talks to the public and candidate APIs over HTTP rather than reaching into the business
-    services, so it is held to exactly the same rules a phone would be — a candidate sees their
-    own applications and nothing else, enforced by the token, not by this page remembering to
-    filter. Because this is server-side Blazor the token stays in the circuit and never reaches
-    the browser.
-*@
+@inject IMasterDataService MasterDataService
 
 <PageTitle>Your application | @(site?.CompanyName ?? "Vispl HR")</PageTitle>
 
-@*
-    Wrapped in the client's own career-site chrome when we know which client this is. A
-    candidate arrives here from a company's careers page or from that company's email; landing
-    on an unbranded form makes a perfectly legitimate link look like a phishing page.
-*@
 <div class="public-site template-@(site?.TemplateKey ?? "classic")" style="@ThemeStyle">
     @if (site is not null)
     {
@@ -32,293 +21,721 @@
     }
 
     <main>
-<div class="cand-page">
-    @if (site is null)
-    {
-        <header class="cand-head">
-            <span class="cand-mark">HR</span>
-            <div>
-                <h1>Your application</h1>
-                <p>Track where things stand and complete your joining formalities.</p>
-            </div>
-        </header>
-    }
-    else
-    {
-        <header class="cand-head plain">
-            <div>
-                <h1>Your application</h1>
-                <p>Track where things stand and complete your joining formalities.</p>
-            </div>
-        </header>
-    }
-
-    @if (notice is { } message)
-    {
-        <div class="cand-note success">@message</div>
-    }
-
-    @if (error is { } problem)
-    {
-        <div class="cand-note error">@problem</div>
-    }
-
-    @if (progress is null)
-    {
-        <section class="cand-card">
-            @if (HasToken)
+        <div class="cand-page">
+            @if (site is null)
             {
-                @* Arrived from the mail link. One job: set a password. *@
-                <h2>Choose a password</h2>
-                <p class="cand-sub">
-                    This is how you will sign back in to check your application.
-                </p>
-
-                @*
-                    Asked for even though the link identifies them. The token carries no
-                    address, so without this the page can set a password and then be unable to
-                    sign the person in — and it is a mild check that the link reached the
-                    person it was sent to rather than someone they forwarded it to.
-                *@
-                <label class="cand-field">
-                    <span>The email you applied with</span>
-                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
-                </label>
-
-                <label class="cand-field">
-                    <span>Password</span>
-                    <input type="password" @bind="password" @bind:event="oninput"
-                           placeholder="At least 10 characters" autocomplete="new-password" />
-                </label>
-
-                <label class="cand-field">
-                    <span>Confirm password</span>
-                    <input type="password" @bind="confirm" @bind:event="oninput"
-                           autocomplete="new-password" />
-                </label>
-
-                <button class="cand-button" type="button" disabled="@busy" @onclick="ActivateAsync">
-                    @(busy ? "Saving…" : "Set password and continue")
-                </button>
-
-                <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
-                    I already have a password
-                </button>
-            }
-            else if (mode == Mode.RequestLink)
-            {
-                <h2>Send me a link</h2>
-                <p class="cand-sub">
-                    Enter the address you applied with. If it matches an application we will
-                    email you a link to set a password.
-                </p>
-
-                @* Asked for only when we do not already know. Somebody who followed a link
-                   from a company's own careers site should not be asked which company. *@
-                @if (site is null)
-                {
-                    <label class="cand-field">
-                        <span>Company</span>
-                        <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
-                    </label>
-                }
-
-                <label class="cand-field">
-                    <span>Email</span>
-                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
-                </label>
-
-                <button class="cand-button" type="button" disabled="@busy" @onclick="RequestLinkAsync">
-                    @(busy ? "Sending…" : "Send the link")
-                </button>
-
-                <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
-                    Back to sign in
-                </button>
+                <header class="cand-head">
+                    <span class="cand-mark">HR</span>
+                    <div>
+                        <h1>Your application</h1>
+                        <p>Track where things stand and complete your joining formalities.</p>
+                    </div>
+                </header>
             }
             else
             {
-                <h2>Sign in</h2>
-                <p class="cand-sub">Use the address you applied with.</p>
-
-                @* Asked for only when we do not already know. Somebody who followed a link
-                   from a company's own careers site should not be asked which company. *@
-                @if (site is null)
-                {
-                    <label class="cand-field">
-                        <span>Company</span>
-                        <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
-                    </label>
-                }
-
-                <label class="cand-field">
-                    <span>Email</span>
-                    <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
-                </label>
-
-                <label class="cand-field">
-                    <span>Password</span>
-                    <input type="password" @bind="password" @bind:event="oninput"
-                           autocomplete="current-password" @onkeydown="SignInKey" />
-                </label>
-
-                <button class="cand-button" type="button" disabled="@busy" @onclick="SignInAsync">
-                    @(busy ? "Signing in…" : "Sign in")
-                </button>
-
-                <button class="cand-link" type="button" @onclick="() => mode = Mode.RequestLink">
-                    I have not set a password yet
-                </button>
-            }
-        </section>
-    }
-    else
-    {
-        <section class="cand-card">
-            <div class="cand-who">
-                <div>
-                    <strong>@progress.CandidateName</strong>
-                    <span class="cand-sub">@progress.Email</span>
-                </div>
-                <button class="cand-link" type="button" @onclick="SignOut">Sign out</button>
-            </div>
-        </section>
-
-        <h2 class="cand-section">Your applications</h2>
-
-        @foreach (var application in progress.Applications)
-        {
-            <section class="cand-card">
-                <div class="cand-row">
+                <header class="cand-head plain">
                     <div>
-                        <strong>@application.JobTitle</strong>
-                        <span class="cand-sub">@application.Department · @application.Reference</span>
+                        <h1>Your application</h1>
+                        <p>Track where things stand and complete your joining formalities.</p>
                     </div>
-                    <span class="cand-pill tone-@application.StageTone">@application.Stage</span>
-                </div>
+                </header>
+            }
 
-                <p class="cand-explain">@application.StageExplanation</p>
-                <p class="cand-sub">Applied @application.AppliedUtc.ToLocalTime().ToString("d MMMM yyyy")</p>
+            @if (notice is { } message)
+            {
+                <div class="cand-note success">@message</div>
+            }
 
-                @if (application.AwaitingMyDecision)
-                {
-                    @* Only the candidate can answer an offer — the server refuses anyone else,
-                       so this is the one place in the product where it can be done. *@
-                    <div class="cand-actions">
-                        <button class="cand-button" type="button" disabled="@busy"
-                                @onclick="() => RespondAsync(application.ApplicationId, true)">
-                            Accept the offer
-                        </button>
-                        <button class="cand-button quiet" type="button" disabled="@busy"
-                                @onclick="() => RespondAsync(application.ApplicationId, false)">
-                            Decline
-                        </button>
-                    </div>
-                }
-            </section>
-        }
+            @if (error is { } problem)
+            {
+                <div class="cand-note error">@problem</div>
+            }
 
-        @if (progress.Applications.Count == 0)
-        {
-            <section class="cand-card">
-                <p class="cand-sub">No applications on this account yet.</p>
-            </section>
-        }
-
-        @if (progress.Onboarding is { } checklist)
-        {
-            <h2 class="cand-section">Joining checklist</h2>
-
-            @*
-                Their progress, not ours. The DTO's CompletionPercent counts what HR has
-                approved, which is the right number for HR and a demoralising lie here — it
-                reads 0% to somebody who has just uploaded everything they were asked for.
-                What a candidate wants to know is whether anything is still on them.
-            *@
-            <section class="cand-card">
-                <div class="cand-row">
-                    <strong>
-                        @if (MyOutstanding == 0)
-                        {
-                            <text>You are all done</text>
-                        }
-                        else
-                        {
-                            <text>@MyOutstanding item@(MyOutstanding == 1 ? "" : "s") left for you</text>
-                        }
-                    </strong>
-                    <span class="cand-sub">@MyDone of @MyTotal sent</span>
-                </div>
-
-                <div class="cand-bar"><div style="width:@MyPercent%"></div></div>
-
-                @if (MyOutstanding == 0 && checklist.OutstandingRequiredCount > 0)
-                {
-                    <p class="cand-sub" style="margin-top:10px">
-                        We are checking what you sent. Nothing else is needed from you.
-                    </p>
-                }
-            </section>
-
-            @foreach (var task in checklist.Tasks.Where(item => item.OwnerKind == "Candidate"))
+            @if (progress is null)
             {
                 <section class="cand-card">
-                    <div class="cand-row">
-                        <div>
-                            <strong>@task.Title</strong>
-                            <span class="cand-sub">@(task.IsRequired ? "Required" : "Optional")</span>
-                        </div>
-                        <span class="cand-pill tone-@TaskTone(task.Status)">@TaskLabel(task.Status)</span>
-                    </div>
-
-                    <p class="cand-explain">@task.Instructions</p>
-
-                    @if (task.DecisionReason is { } reason)
+                    @if (HasToken)
                     {
-                        <p class="cand-note error inline">@reason</p>
+                        <h2>Choose a password</h2>
+                        <p class="cand-sub">
+                            This is how you will sign back in to check your application.
+                        </p>
+
+                        <label class="cand-field">
+                            <span>The email you applied with</span>
+                            <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                        </label>
+
+                        <label class="cand-field">
+                            <span>Password</span>
+                            <input type="password" @bind="password" @bind:event="oninput"
+                                   placeholder="At least 10 characters" autocomplete="new-password" />
+                        </label>
+
+                        <label class="cand-field">
+                            <span>Confirm password</span>
+                            <input type="password" @bind="confirm" @bind:event="oninput"
+                                   autocomplete="new-password" />
+                        </label>
+
+                        <button class="cand-button" type="button" disabled="@busy" @onclick="ActivateAsync">
+                            @(busy ? "Saving…" : "Set password and continue")
+                        </button>
+
+                        <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
+                            I already have a password
+                        </button>
                     }
-
-                    @if (CanSubmit(task.Status))
+                    else if (mode == Mode.RequestLink)
                     {
-                        @if (task.TaskType == "Document")
+                        <h2>Send me a link</h2>
+                        <p class="cand-sub">
+                            Enter the address you applied with. If it matches an application we will
+                            email you a link to set a password.
+                        </p>
+
+                        @if (site is null)
                         {
-                            <InputFile OnChange="args => UploadAsync(checklist.Id, task, args)"
-                                       accept=".pdf,.jpg,.jpeg,.png" class="cand-file" />
-                            <p class="cand-sub">PDF or a photo, up to 10 MB.</p>
+                            <label class="cand-field">
+                                <span>Company</span>
+                                <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
+                            </label>
                         }
-                        else
+
+                        <label class="cand-field">
+                            <span>Email</span>
+                            <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                        </label>
+
+                        <button class="cand-button" type="button" disabled="@busy" @onclick="RequestLinkAsync">
+                            @(busy ? "Sending…" : "Send the link")
+                        </button>
+
+                        <button class="cand-link" type="button" @onclick="() => mode = Mode.SignIn">
+                            Back to sign in
+                        </button>
+                    }
+                    else
+                    {
+                        <h2>Sign in</h2>
+                        <p class="cand-sub">Use the address you applied with.</p>
+
+                        @if (site is null)
                         {
-                            @*
-                                Read through a helper rather than bound straight to the
-                                dictionary: an indexer binding throws while rendering any task
-                                the candidate has not typed into yet, which is all of them the
-                                first time the checklist appears.
-                            *@
-                            <textarea class="cand-input" rows="3"
-                                      placeholder="Type your answer"
-                                      value="@AnswerFor(task.Id)"
-                                      @oninput="args => answers[task.Id] = args.Value?.ToString() ?? string.Empty"></textarea>
-                            <button class="cand-button" type="button"
-                                    disabled="@(busyTask == task.Id)"
-                                    @onclick="() => SubmitFormAsync(checklist.Id, task)">
-                                @(busyTask == task.Id ? "Sending…" : "Submit")
-                            </button>
+                            <label class="cand-field">
+                                <span>Company</span>
+                                <input type="text" @bind="tenant" @bind:event="oninput" placeholder="kapson" />
+                            </label>
                         }
+
+                        <label class="cand-field">
+                            <span>Email</span>
+                            <input type="email" @bind="email" @bind:event="oninput" autocomplete="email" />
+                        </label>
+
+                        <label class="cand-field">
+                            <span>Password</span>
+                            <input type="password" @bind="password" @bind:event="oninput"
+                                   autocomplete="current-password" @onkeydown="SignInKey" />
+                        </label>
+
+                        <button class="cand-button" type="button" disabled="@busy" @onclick="SignInAsync">
+                            @(busy ? "Signing in…" : "Sign in")
+                        </button>
+
+                        <button class="cand-link" type="button" @onclick="() => mode = Mode.RequestLink">
+                            I have not set a password yet
+                        </button>
                     }
                 </section>
             }
+            else
+            {
+                <section class="cand-card">
+                    <div class="cand-who">
+                        <div>
+                            <strong>@progress.CandidateName</strong>
+                            <span class="cand-sub">@progress.Email</span>
+                        </div>
+                        <button class="cand-link" type="button" @onclick="SignOut">Sign out</button>
+                    </div>
+                </section>
+
+                <h2 class="cand-section">Your applications</h2>
+
+                @foreach (var application in progress.Applications)
+                {
+                    <section class="cand-card">
+                        <div class="cand-row">
+                            <div>
+                                <strong>@application.JobTitle</strong>
+                                <span class="cand-sub">@application.Department · @application.Reference</span>
+                            </div>
+                            <span class="cand-pill tone-@application.StageTone">@application.Stage</span>
+                        </div>
+
+                        <p class="cand-explain">@application.StageExplanation</p>
+                        <p class="cand-sub">Applied @application.AppliedUtc.ToLocalTime().ToString("d MMMM yyyy")</p>
+
+                        @if (application.AwaitingMyDecision)
+                        {
+                            <div class="cand-actions">
+                                <button class="cand-button" type="button" disabled="@busy"
+                                        @onclick="() => RespondAsync(application.ApplicationId, true)">
+                                    Accept the offer
+                                </button>
+                                <button class="cand-button quiet" type="button" disabled="@busy"
+                                        @onclick="() => RespondAsync(application.ApplicationId, false)">
+                                    Decline
+                                </button>
+                            </div>
+                        }
+                    </section>
+                }
+
+                @if (progress.Applications.Count == 0)
+                {
+                    <section class="cand-card">
+                        <p class="cand-sub">No applications on this account yet.</p>
+                    </section>
+                }
+
+                @if (progress.Onboarding is { } checklist)
+                {
+                    <h2 class="cand-section">Joining checklist</h2>
+
+                    <section class="cand-card">
+                        <div class="cand-row">
+                            <strong>
+                                @if (MyOutstanding == 0)
+                                {
+                                    <text>You are all done</text>
+                                }
+                                else
+                                {
+                                    <text>@MyOutstanding required item@(MyOutstanding == 1 ? "" : "s") left for you</text>
+                                }
+                            </strong>
+                            <span class="cand-sub">@MyDone of @MyTotal required sent</span>
+                        </div>
+
+                        <div class="cand-bar"><div style="width:@MyPercent%"></div></div>
+
+                        @if (MyOutstanding == 0 && checklist.OutstandingRequiredCount > 0)
+                        {
+                            <p class="cand-sub" style="margin-top:10px">
+                                We are checking what you sent. Nothing else is required from you, though you may also add optional education or experience details below.
+                            </p>
+                        }
+                    </section>
+
+                    @foreach (var task in checklist.Tasks.Where(item => item.OwnerKind == "Candidate"))
+                    {
+                        <section class="cand-card">
+                            <div class="cand-row">
+                                <div>
+                                    <strong>@task.Title</strong>
+                                    <span class="cand-sub">@(task.IsRequired ? "Required" : "Optional")</span>
+                                </div>
+                                <span class="cand-pill tone-@TaskTone(task.Status)">@TaskLabel(task.Status)</span>
+                            </div>
+
+                            <p class="cand-explain">@task.Instructions</p>
+
+                            @if (task.DecisionReason is { } reason)
+                            {
+                                <p class="cand-note error inline">@reason</p>
+                            }
+
+                            @if (!CanSubmit(task.Status))
+                            {
+                                @if (task.TaskType == "Document" && !string.IsNullOrWhiteSpace(task.DocumentFileName))
+                                {
+                                    <p class="cand-sub" style="margin-top:6px">Uploaded file: <strong>@task.DocumentFileName</strong></p>
+                                }
+                                else if (task.FormValues is { Count: > 0 })
+                                {
+                                    <div class="cand-kv-grid">
+                                        @foreach (var kv in task.FormValues.Where(x => !string.IsNullOrWhiteSpace(x.Value)))
+                                        {
+                                            <div class="cand-kv-item">
+                                                <small>@PrettyKey(kv.Key)</small>
+                                                @MaskSensitiveValue(kv.Key, kv.Value)
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else if (task.TaskType == "Document")
+                            {
+                                <InputFile OnChange="args => UploadAsync(checklist.Id, task, args)"
+                                           accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" class="cand-file" />
+                                <p class="cand-sub">PDF, Word or clear photo, up to 10 MB.</p>
+                            }
+                            else if (task.Code == "PERSONAL_DETAILS")
+                            {
+                                <div class="cand-grid">
+                                    <label class="cand-field cand-span-2">
+                                        <span>Legal Full Name *</span>
+                                        <input type="text" value='@Field(task, "legalName", progress.CandidateName)'
+                                               @oninput='@(e => SetField(task.Id, "legalName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Date of Birth *</span>
+                                        <input type="date" value='@Field(task, "dateOfBirth")'
+                                               @onchange='@(e => SetField(task.Id, "dateOfBirth", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Gender *</span>
+                                        <select value='@Field(task, "gender")' @onchange='@(e => SetField(task.Id, "gender", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.Gender))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Marital Status *</span>
+                                        <select value='@Field(task, "maritalStatus")' @onchange='@(e => SetField(task.Id, "maritalStatus", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.MaritalStatus))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Blood Group</span>
+                                        <select value='@Field(task, "bloodGroup")' @onchange='@(e => SetField(task.Id, "bloodGroup", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.BloodGroup))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Religion</span>
+                                        <select value='@Field(task, "religion")' @onchange='@(e => SetField(task.Id, "religion", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.Religion))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Nationality</span>
+                                        <select value='@Field(task, "nationality", "INDIAN")' @onchange='@(e => SetField(task.Id, "nationality", e))'>
+                                            @foreach (var opt in Options(MasterCategories.Nationality))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+
+                                    <div class="cand-subhead">Statutory Identity</div>
+                                    <label class="cand-field">
+                                        <span>PAN Number (e.g. ABCDE1234F)</span>
+                                        <input type="text" maxlength="10" placeholder="ABCDE1234F"
+                                               value='@Field(task, "panNumber")'
+                                               @oninput='@(e => SetField(task.Id, "panNumber", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Aadhaar Number (12 digits)</span>
+                                        <input type="text" maxlength="14" placeholder="1234 5678 9012"
+                                               value='@Field(task, "aadhaarNumber")'
+                                               @oninput='@(e => SetField(task.Id, "aadhaarNumber", e))' />
+                                    </label>
+                                    <label class="cand-field cand-span-2">
+                                        <span>Voter ID (Optional)</span>
+                                        <input type="text" value='@Field(task, "voterId")'
+                                               @oninput='@(e => SetField(task.Id, "voterId", e))' />
+                                    </label>
+
+                                    <div class="cand-subhead">Family Details</div>
+                                    <label class="cand-field">
+                                        <span>Father's Name</span>
+                                        <input type="text" value='@Field(task, "fatherName")'
+                                               @oninput='@(e => SetField(task.Id, "fatherName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Father's Occupation</span>
+                                        <select value='@Field(task, "fatherOccupation")' @onchange='@(e => SetField(task.Id, "fatherOccupation", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.Occupation))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Mother's Name</span>
+                                        <input type="text" value='@Field(task, "motherName")'
+                                               @oninput='@(e => SetField(task.Id, "motherName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Mother's Occupation</span>
+                                        <select value='@Field(task, "motherOccupation")' @onchange='@(e => SetField(task.Id, "motherOccupation", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.Occupation))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+
+                                    @if (string.Equals(Field(task, "maritalStatus"), "MARRIED", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <label class="cand-field">
+                                            <span>Spouse Name</span>
+                                            <input type="text" value='@Field(task, "spouseName")'
+                                                   @oninput='@(e => SetField(task.Id, "spouseName", e))' />
+                                        </label>
+                                        <label class="cand-field">
+                                            <span>Spouse Occupation</span>
+                                            <select value='@Field(task, "spouseOccupation")' @onchange='@(e => SetField(task.Id, "spouseOccupation", e))'>
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.Occupation))
+                                                {
+                                                    <option value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                    }
+                                </div>
+                                <button class="cand-button" type="button" disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitStructuredFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Save & submit details")
+                                </button>
+                            }
+                            else if (task.Code == "ADDRESS_EMERGENCY")
+                            {
+                                <div class="cand-grid">
+                                    <div class="cand-subhead">Permanent Address</div>
+                                    <label class="cand-field cand-span-2">
+                                        <span>Address Line 1 *</span>
+                                        <input type="text" placeholder="House / Flat No., Street, Sector"
+                                               value='@Field(task, "permanentLine1")'
+                                               @oninput='@(e => SetField(task.Id, "permanentLine1", e))' />
+                                    </label>
+                                    <label class="cand-field cand-span-2">
+                                        <span>Address Line 2 / Landmark</span>
+                                        <input type="text" value='@Field(task, "permanentLine2")'
+                                               @oninput='@(e => SetField(task.Id, "permanentLine2", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>City *</span>
+                                        <select value='@Field(task, "permanentCity")' @onchange='@(e => SetField(task.Id, "permanentCity", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.City))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>State *</span>
+                                        <select value='@Field(task, "permanentState")' @onchange='@(e => SetField(task.Id, "permanentState", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.State))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Country</span>
+                                        <select value='@Field(task, "permanentCountry", "IN")' @onchange='@(e => SetField(task.Id, "permanentCountry", e))'>
+                                            @foreach (var opt in Options(MasterCategories.Country))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Pincode *</span>
+                                        <input type="text" maxlength="10" placeholder="160017"
+                                               value='@Field(task, "permanentPincode")'
+                                               @oninput='@(e => SetField(task.Id, "permanentPincode", e))' />
+                                    </label>
+
+                                    <label class="cand-check">
+                                        <input type="checkbox"
+                                               checked='@(Field(task, "sameAsPermanent", "true") == "true")'
+                                               @onchange='@(e => SetBoolField(task.Id, "sameAsPermanent", e))' />
+                                        <span>Current address is the same as permanent address</span>
+                                    </label>
+
+                                    @if (Field(task, "sameAsPermanent", "true") != "true")
+                                    {
+                                        <div class="cand-subhead">Current Residential Address</div>
+                                        <label class="cand-field cand-span-2">
+                                            <span>Current Address Line 1 *</span>
+                                            <input type="text" value='@Field(task, "currentLine1")'
+                                                   @oninput='@(e => SetField(task.Id, "currentLine1", e))' />
+                                        </label>
+                                        <label class="cand-field">
+                                            <span>City</span>
+                                            <select value='@Field(task, "currentCity")' @onchange='@(e => SetField(task.Id, "currentCity", e))'>
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.City))
+                                                {
+                                                    <option value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="cand-field">
+                                            <span>State</span>
+                                            <select value='@Field(task, "currentState")' @onchange='@(e => SetField(task.Id, "currentState", e))'>
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.State))
+                                                {
+                                                    <option value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="cand-field">
+                                            <span>Pincode</span>
+                                            <input type="text" maxlength="10" value='@Field(task, "currentPincode")'
+                                                   @oninput='@(e => SetField(task.Id, "currentPincode", e))' />
+                                        </label>
+                                    }
+
+                                    <div class="cand-subhead">Emergency Contact</div>
+                                    <label class="cand-field">
+                                        <span>Contact Person Name *</span>
+                                        <input type="text" value='@Field(task, "emergencyContact")'
+                                               @oninput='@(e => SetField(task.Id, "emergencyContact", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Relationship</span>
+                                        <input type="text" placeholder="Spouse / Father / Mother"
+                                               value='@Field(task, "emergencyRelationship")'
+                                               @oninput='@(e => SetField(task.Id, "emergencyRelationship", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Emergency Mobile Number *</span>
+                                        <input type="tel" placeholder="+91 98765 43210"
+                                               value='@Field(task, "emergencyPhone")'
+                                               @oninput='@(e => SetField(task.Id, "emergencyPhone", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Emergency Email (Optional)</span>
+                                        <input type="email" value='@Field(task, "emergencyEmail")'
+                                               @oninput='@(e => SetField(task.Id, "emergencyEmail", e))' />
+                                    </label>
+                                </div>
+                                <button class="cand-button" type="button" disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitStructuredFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Save & submit address")
+                                </button>
+                            }
+                            else if (task.Code == "BANK_ACCOUNT")
+                            {
+                                <div class="cand-grid">
+                                    <label class="cand-field">
+                                        <span>Account Holder Name *</span>
+                                        <input type="text" value='@Field(task, "accountHolderName", progress.CandidateName)'
+                                               @oninput='@(e => SetField(task.Id, "accountHolderName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Bank Name *</span>
+                                        <input type="text" placeholder="HDFC Bank / ICICI Bank / SBI"
+                                               value='@Field(task, "bank")'
+                                               @oninput='@(e => SetField(task.Id, "bank", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Account Number (9–18 digits) *</span>
+                                        <input type="text" maxlength="18" value='@Field(task, "accountNumber")'
+                                               @oninput='@(e => SetField(task.Id, "accountNumber", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>IFSC Code *</span>
+                                        <input type="text" maxlength="11" placeholder="HDFC0001204"
+                                               value='@Field(task, "ifsc")'
+                                               @oninput='@(e => SetField(task.Id, "ifsc", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Branch Name</span>
+                                        <input type="text" placeholder="Sector 17, Chandigarh"
+                                               value='@Field(task, "branchName")'
+                                               @oninput='@(e => SetField(task.Id, "branchName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Account Type</span>
+                                        <select value='@Field(task, "accountType", "Savings")' @onchange='@(e => SetField(task.Id, "accountType", e))'>
+                                            <option value="Savings">Savings</option>
+                                            <option value="Current">Current</option>
+                                        </select>
+                                    </label>
+
+                                    <div class="cand-subhead">PF / UAN / ESI (If Existing)</div>
+                                    <label class="cand-field">
+                                        <span>12-Digit UAN (Optional)</span>
+                                        <input type="text" maxlength="12" placeholder="101580001234"
+                                               value='@Field(task, "uanNumber")'
+                                               @oninput='@(e => SetField(task.Id, "uanNumber", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Previous PF Number (Optional)</span>
+                                        <input type="text" value='@Field(task, "pfNumber")'
+                                               @oninput='@(e => SetField(task.Id, "pfNumber", e))' />
+                                    </label>
+                                    <label class="cand-field cand-span-2">
+                                        <span>17-Digit ESI Insurance Number (Optional)</span>
+                                        <input type="text" maxlength="17" value='@Field(task, "esiNumber")'
+                                               @oninput='@(e => SetField(task.Id, "esiNumber", e))' />
+                                    </label>
+                                </div>
+                                <button class="cand-button" type="button" disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitStructuredFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Save & submit bank details")
+                                </button>
+                            }
+                            else if (task.Code == "EDUCATION_HISTORY")
+                            {
+                                <div class="cand-grid">
+                                    <label class="cand-field">
+                                        <span>Education Level *</span>
+                                        <select value='@Field(task, "educationLevel")' @onchange='@(e => SetField(task.Id, "educationLevel", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.EducationLevel))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Qualification *</span>
+                                        <select value='@Field(task, "qualification")' @onchange='@(e => SetField(task.Id, "qualification", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.Qualification))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Specialisation</span>
+                                        <input type="text" placeholder="Finance / Computer Science / Retail"
+                                               value='@Field(task, "specialisation")'
+                                               @oninput='@(e => SetField(task.Id, "specialisation", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Passing Year *</span>
+                                        <input type="number" min="1960" max="2035" placeholder="2021"
+                                               value='@Field(task, "passingYear")'
+                                               @oninput='@(e => SetField(task.Id, "passingYear", e))' />
+                                    </label>
+                                    <label class="cand-field cand-span-2">
+                                        <span>College / Institute *</span>
+                                        <input type="text" value='@Field(task, "institute")'
+                                               @oninput='@(e => SetField(task.Id, "institute", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Board / University</span>
+                                        <input type="text" value='@Field(task, "boardOrUniversity")'
+                                               @oninput='@(e => SetField(task.Id, "boardOrUniversity", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>CGPA (0–10) or Percentage</span>
+                                        <input type="text" placeholder="8.4"
+                                               value='@Field(task, "cgpa")'
+                                               @oninput='@(e => SetField(task.Id, "cgpa", e))' />
+                                    </label>
+                                </div>
+                                <button class="cand-button" type="button" disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitStructuredFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Save & submit education")
+                                </button>
+                            }
+                            else if (task.Code == "PREVIOUS_EMPLOYMENT")
+                            {
+                                <div class="cand-grid">
+                                    <label class="cand-field">
+                                        <span>Previous Company Name *</span>
+                                        <input type="text" value='@Field(task, "companyName")'
+                                               @oninput='@(e => SetField(task.Id, "companyName", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Designation *</span>
+                                        <input type="text" value='@Field(task, "designation")'
+                                               @oninput='@(e => SetField(task.Id, "designation", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Department</span>
+                                        <input type="text" value='@Field(task, "department")'
+                                               @oninput='@(e => SetField(task.Id, "department", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Employment Type</span>
+                                        <select value='@Field(task, "employmentType", "Permanent")' @onchange='@(e => SetField(task.Id, "employmentType", e))'>
+                                            <option value="Permanent">Permanent</option>
+                                            <option value="Contract">Contract</option>
+                                            <option value="Intern">Intern</option>
+                                            <option value="Consultant">Consultant</option>
+                                        </select>
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Joining Date *</span>
+                                        <input type="date" value='@Field(task, "joinedOn")'
+                                               @onchange='@(e => SetField(task.Id, "joinedOn", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Relieving Date *</span>
+                                        <input type="date" value='@Field(task, "leftOn")'
+                                               @onchange='@(e => SetField(task.Id, "leftOn", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Last Annual CTC (INR)</span>
+                                        <input type="number" min="0" step="1000" value='@Field(task, "lastAnnualCtc")'
+                                               @oninput='@(e => SetField(task.Id, "lastAnnualCtc", e))' />
+                                    </label>
+                                    <label class="cand-field">
+                                        <span>Reason for Leaving</span>
+                                        <select value='@Field(task, "leavingReason")' @onchange='@(e => SetField(task.Id, "leavingReason", e))'>
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.LeavingReason))
+                                            {
+                                                <option value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                </div>
+                                <button class="cand-button" type="button" disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitStructuredFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Save & submit experience")
+                                </button>
+                            }
+                            else
+                            {
+                                <textarea class="cand-input" rows="3"
+                                          placeholder="Type your answer"
+                                          value="@AnswerFor(task.Id)"
+                                          @oninput="args => answers[task.Id] = args.Value?.ToString() ?? string.Empty"></textarea>
+                                <button class="cand-button" type="button"
+                                        disabled="@(busyTask == task.Id)"
+                                        @onclick="() => SubmitFormAsync(checklist.Id, task)">
+                                    @(busyTask == task.Id ? "Sending…" : "Submit")
+                                </button>
+                            }
+                        </section>
+                    }
+
+                    <p class="cand-sub footnote">
+                        Items marked for the company are ours to complete — you do not need to do
+                        anything about those.
+                    </p>
+                }
+            }
 
             <p class="cand-sub footnote">
-                Items marked for the company are ours to complete — you do not need to do
-                anything about those.
+                We will never ask you for a payment. If anyone does, it is not us.
             </p>
-        }
-    }
-
-    <p class="cand-sub footnote">
-        We will never ask you for a payment. If anyone does, it is not us.
-    </p>
-</div>
+        </div>
     </main>
 
     @if (site is not null)
@@ -330,14 +747,16 @@
 @code {
     private enum Mode { SignIn, RequestLink }
 
-    /// <summary>Set on the career-site route; the bare /onboarding route reads ?tenant instead.</summary>
-    [Parameter] public string? TenantKey { get; set; }
+    private static readonly Regex PanRegex = new("^[A-Z]{5}[0-9]{4}[A-Z]$", RegexOptions.Compiled);
+    private static readonly Regex IfscRegex = new("^[A-Z]{4}0[A-Z0-9]{6}$", RegexOptions.Compiled);
 
+    [Parameter] public string? TenantKey { get; set; }
     [SupplyParameterFromQuery(Name = "tenant")] private string? TenantFromLink { get; set; }
     [SupplyParameterFromQuery(Name = "token")] private string? TokenFromLink { get; set; }
 
     private CareerSiteConfigurationDto? site;
     private ThemeTemplateDto? theme;
+    private IReadOnlyList<MasterOptionDto> masterOptions = [];
 
     private string ThemeStyle =>
         site is null
@@ -360,41 +779,30 @@
     private string? notice;
     private string? error;
 
-    /// <summary>
-    /// The candidate's own bearer token. Held in the circuit on the server, so it is never
-    /// written to the browser and cannot be read by anything running there.
-    /// </summary>
     private string? accessToken;
-
     private CandidateProgressDto? progress;
     private readonly Dictionary<long, string> answers = [];
+    private readonly Dictionary<long, Dictionary<string, string>> structuredForms = [];
 
-    /// <summary>
-    /// The required items this candidate owns. Optional ones are left out of the count on
-    /// purpose: telling somebody they have three things left when one of them is optional
-    /// makes the number useless for deciding whether they can stop.
-    /// </summary>
     private IReadOnlyList<OnboardingTaskDto> MyTasks =>
         progress?.Onboarding?.Tasks
             .Where(task => task.OwnerKind == "Candidate" && task.IsRequired)
             .ToList() ?? [];
 
     private int MyTotal => MyTasks.Count;
-
     private int MyOutstanding => MyTasks.Count(task => CanSubmit(task.Status));
-
     private int MyDone => MyTotal - MyOutstanding;
-
     private int MyPercent => MyTotal == 0 ? 100 : (int)Math.Round(MyDone * 100d / MyTotal);
 
     private string AnswerFor(long taskId) => answers.GetValueOrDefault(taskId, string.Empty);
+
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        masterOptions.Where(o => o.Category == category && o.IsActive).OrderBy(o => o.SortOrder);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     protected override async Task OnParametersSetAsync()
     {
-        // The route segment wins over the query string: /career/kapson/onboarding is an
-        // explicit statement of which company, where ?tenant= is a hint carried on a link.
         var resolved = TenantKey ?? TenantFromLink;
 
         if (!string.IsNullOrWhiteSpace(resolved) && string.IsNullOrWhiteSpace(tenant))
@@ -402,13 +810,57 @@
             tenant = resolved.Trim().ToLowerInvariant();
         }
 
-        if (site is null && !string.IsNullOrWhiteSpace(tenant))
+        if (!string.IsNullOrWhiteSpace(tenant))
         {
-            // Branding only. Nothing shown on this page is decided by it, and a client with no
-            // published career site still gets a working page — just an unbranded one.
-            site = await CareerSiteService.GetPublishedAsync(tenant);
-            theme = site is null ? null : await ThemeTemplateService.GetByKeyAsync(site.TemplateKey);
+            if (site is null)
+            {
+                site = await CareerSiteService.GetPublishedAsync(tenant);
+                theme = site is null ? null : await ThemeTemplateService.GetByKeyAsync(site.TemplateKey);
+            }
+
+            if (masterOptions.Count == 0)
+            {
+                masterOptions = await MasterDataService.GetAllAsync(tenant);
+            }
         }
+    }
+
+    private string Field(OnboardingTaskDto task, string key, string fallback = "")
+    {
+        if (structuredForms.TryGetValue(task.Id, out var dict) && dict.TryGetValue(key, out var val))
+        {
+            return val;
+        }
+
+        if (task.FormValues is not null && task.FormValues.TryGetValue(key, out var prev))
+        {
+            return prev;
+        }
+
+        return fallback;
+    }
+
+    private void SetField(long taskId, string key, ChangeEventArgs args)
+    {
+        if (!structuredForms.TryGetValue(taskId, out var dict))
+        {
+            dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            structuredForms[taskId] = dict;
+        }
+
+        dict[key] = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void SetBoolField(long taskId, string key, ChangeEventArgs args)
+    {
+        if (!structuredForms.TryGetValue(taskId, out var dict))
+        {
+            dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            structuredForms[taskId] = dict;
+        }
+
+        var isChecked = args.Value is bool b ? b : string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        dict[key] = isChecked ? "true" : "false";
     }
 
     private HttpClient Client()
@@ -466,24 +918,16 @@
                 error = await ProblemTitle(response) ??
                         "That link is no longer valid. Ask for a new one below.";
                 mode = Mode.RequestLink;
-
-                // The token in the address is spent either way; leaving it there invites a
-                // second attempt that cannot succeed.
                 Navigation.NavigateTo("/onboarding", replace: true);
                 return;
             }
 
             notice = "Your password is set.";
-
-            // Straight in, so somebody arriving from a mail link does not have to type
-            // what they just typed. The token in the address is spent and has to go.
             Navigation.NavigateTo("/onboarding", replace: true);
             await SignInAsync();
 
             if (progress is null)
             {
-                // Signing in did not take. The password is set, so the sign-in form is the
-                // right place to land rather than an activation form that cannot work twice.
                 notice = "Your password is set. Sign in with it below.";
                 error = null;
                 mode = Mode.SignIn;
@@ -505,9 +949,6 @@
         {
             using var client = Client();
             await client.PostAsJsonAsync("api/public/v1/candidate/activation-link", new { tenant, email });
-
-            // Deliberately the same answer whether or not that address has applied. Saying
-            // which would turn this box into a way of testing who has applied where.
             notice = "If that address matches an application, we have sent a link to it.";
             mode = Mode.SignIn;
         }
@@ -524,6 +965,11 @@
 
         try
         {
+            if (!string.IsNullOrWhiteSpace(tenant) && masterOptions.Count == 0)
+            {
+                masterOptions = await MasterDataService.GetAllAsync(tenant.Trim().ToLowerInvariant());
+            }
+
             using var client = Client();
             var response = await client.PostAsJsonAsync("api/mobile/v1/auth/token", new
             {
@@ -615,6 +1061,159 @@
         }
     }
 
+    private async Task SubmitStructuredFormAsync(long onboardingId, OnboardingTaskDto task)
+    {
+        error = null;
+        notice = null;
+
+        var payload = BuildStructuredPayload(task, out var validationError);
+        if (validationError is not null)
+        {
+            error = validationError;
+            return;
+        }
+
+        await SendFormValuesAsync(onboardingId, task, payload);
+    }
+
+    private Dictionary<string, string> BuildStructuredPayload(OnboardingTaskDto task, out string? validationError)
+    {
+        validationError = null;
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (task.FormValues is not null)
+        {
+            foreach (var kv in task.FormValues)
+            {
+                map[kv.Key] = kv.Value;
+            }
+        }
+
+        if (structuredForms.TryGetValue(task.Id, out var edits))
+        {
+            foreach (var kv in edits)
+            {
+                map[kv.Key] = kv.Value.Trim();
+            }
+        }
+
+        if (task.Code == "PERSONAL_DETAILS")
+        {
+            if (!map.ContainsKey("legalName") && progress is not null)
+            {
+                map["legalName"] = progress.CandidateName;
+            }
+            if (!map.ContainsKey("nationality"))
+            {
+                map["nationality"] = "INDIAN";
+            }
+
+            if (string.IsNullOrWhiteSpace(map.GetValueOrDefault("legalName")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("dateOfBirth")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("gender")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("maritalStatus")))
+            {
+                validationError = "Enter your legal name, date of birth, gender and marital status.";
+                return map;
+            }
+
+            if (map.TryGetValue("panNumber", out var pan) && !string.IsNullOrWhiteSpace(pan))
+            {
+                var upperPan = pan.Trim().ToUpperInvariant();
+                if (!PanRegex.IsMatch(upperPan))
+                {
+                    validationError = "PAN must be 5 letters, 4 digits and 1 letter (for example ABCDE1234F).";
+                    return map;
+                }
+                map["panNumber"] = upperPan;
+            }
+
+            if (map.TryGetValue("aadhaarNumber", out var aadhaar) && !string.IsNullOrWhiteSpace(aadhaar))
+            {
+                var digits = new string(aadhaar.Where(char.IsAsciiDigit).ToArray());
+                if (digits.Length != 12)
+                {
+                    validationError = "Aadhaar number must be 12 digits.";
+                    return map;
+                }
+                map["aadhaarNumber"] = digits;
+            }
+        }
+        else if (task.Code == "ADDRESS_EMERGENCY")
+        {
+            if (!map.ContainsKey("permanentCountry")) map["permanentCountry"] = "IN";
+            if (!map.ContainsKey("sameAsPermanent")) map["sameAsPermanent"] = "true";
+
+            if (string.IsNullOrWhiteSpace(map.GetValueOrDefault("permanentLine1")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("permanentCity")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("permanentState")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("permanentPincode")))
+            {
+                validationError = "Complete your permanent address line, city, state and pincode.";
+                return map;
+            }
+
+            if (string.IsNullOrWhiteSpace(map.GetValueOrDefault("emergencyContact")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("emergencyPhone")))
+            {
+                validationError = "Enter an emergency contact person and mobile number.";
+                return map;
+            }
+        }
+        else if (task.Code == "BANK_ACCOUNT")
+        {
+            if (!map.ContainsKey("accountHolderName") && progress is not null)
+            {
+                map["accountHolderName"] = progress.CandidateName;
+            }
+            if (!map.ContainsKey("accountType")) map["accountType"] = "Savings";
+
+            var bank = map.GetValueOrDefault("bank") ?? string.Empty;
+            var acc = new string((map.GetValueOrDefault("accountNumber") ?? string.Empty).Where(char.IsAsciiDigit).ToArray());
+            var ifsc = (map.GetValueOrDefault("ifsc") ?? string.Empty).Trim().ToUpperInvariant();
+
+            if (string.IsNullOrWhiteSpace(bank) || acc.Length is < 9 or > 18)
+            {
+                validationError = "Enter your bank name and a valid 9 to 18 digit account number.";
+                return map;
+            }
+            if (!IfscRegex.IsMatch(ifsc))
+            {
+                validationError = "IFSC code must match 4 letters + '0' + 6 characters (for example HDFC0001204).";
+                return map;
+            }
+
+            map["accountNumber"] = acc;
+            map["ifsc"] = ifsc;
+        }
+        else if (task.Code == "EDUCATION_HISTORY")
+        {
+            if (string.IsNullOrWhiteSpace(map.GetValueOrDefault("educationLevel")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("qualification")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("institute")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("passingYear")))
+            {
+                validationError = "Select education level, qualification, college/institute and passing year.";
+                return map;
+            }
+        }
+        else if (task.Code == "PREVIOUS_EMPLOYMENT")
+        {
+            if (string.IsNullOrWhiteSpace(map.GetValueOrDefault("companyName")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("designation")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("joinedOn")) ||
+                string.IsNullOrWhiteSpace(map.GetValueOrDefault("leftOn")))
+            {
+                validationError = "Enter your previous company name, designation, joining date and relieving date.";
+                return map;
+            }
+        }
+
+        return map
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
     private async Task SubmitFormAsync(long onboardingId, OnboardingTaskDto task)
     {
         error = null;
@@ -628,6 +1227,11 @@
             return;
         }
 
+        await SendFormValuesAsync(onboardingId, task, new Dictionary<string, string> { [task.Code] = answer });
+    }
+
+    private async Task SendFormValuesAsync(long onboardingId, OnboardingTaskDto task, Dictionary<string, string> values)
+    {
         busyTask = task.Id;
 
         try
@@ -636,7 +1240,7 @@
             using var request = new HttpRequestMessage(
                 HttpMethod.Post, $"api/candidate/v1/onboarding/{onboardingId}/tasks/{task.Id}/form")
             {
-                Content = JsonContent.Create(new { values = new Dictionary<string, string> { [task.Code] = answer } })
+                Content = JsonContent.Create(new { values })
             };
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -650,6 +1254,7 @@
 
             notice = $"{task.Title} sent.";
             answers.Remove(task.Id);
+            structuredForms.Remove(task.Id);
             await LoadAsync();
         }
         finally
@@ -667,9 +1272,6 @@
         try
         {
             var file = args.File;
-
-            // The server enforces its own limit; this one is here so an oversized file fails
-            // on the candidate's screen rather than after a long upload.
             const long limit = 10 * 1024 * 1024;
 
             if (file.Size > limit)
@@ -723,6 +1325,7 @@
         password = string.Empty;
         notice = null;
         error = null;
+        structuredForms.Clear();
     }
 
     private static async Task<string?> ProblemTitle(HttpResponseMessage response)
@@ -738,7 +1341,6 @@
         }
     }
 
-    /// <summary>A submitted or approved item is not theirs to change again.</summary>
     private static bool CanSubmit(string status) =>
         status is OnboardingTaskStatuses.Pending or OnboardingTaskStatuses.Rejected;
 
@@ -758,4 +1360,22 @@
         OnboardingTaskStatuses.Rejected => "danger",
         _ => "muted"
     };
+
+    private static string PrettyKey(string key) =>
+        Regex.Replace(key, "([a-z])([A-Z])", "$1 $2") switch
+        {
+            var s when s.Length > 0 => char.ToUpperInvariant(s[0]) + s[1..],
+            var s => s
+        };
+
+    private static string MaskSensitiveValue(string key, string value)
+    {
+        if ((key.Contains("aadhaar", StringComparison.OrdinalIgnoreCase) ||
+             key.Contains("accountNumber", StringComparison.OrdinalIgnoreCase)) &&
+            value.Length > 4)
+        {
+            return $"••••{value[^4..]}";
+        }
+        return value;
+    }
 }

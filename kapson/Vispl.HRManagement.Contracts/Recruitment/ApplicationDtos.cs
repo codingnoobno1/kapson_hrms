@@ -236,7 +236,9 @@ public sealed record OnboardingTaskDto(
     string Status,
     long? DocumentId,
     string? DecisionReason,
-    string? RowVersion);
+    string? RowVersion,
+    IReadOnlyDictionary<string, string>? FormValues = null,
+    string? DocumentFileName = null);
 
 public sealed record OnboardingDto(
     long Id,

@@ -92,6 +92,10 @@
                     </div>
 
                     <div class="emp-explorer-actions">
+                        <div class="emp-view-toggle" role="group" aria-label="Choose view">
+                            <button type="button" class="@(CardView ? "active" : null)" aria-pressed="@CardView" @onclick="() => CardView = true">▦ Cards</button>
+                            <button type="button" class="@(CardView ? null : "active")" aria-pressed="@(!CardView)" @onclick="() => CardView = false">☰ Table</button>
+                        </div>
                         <a class="hr-button small ghost" href="@Href("people/change-requests")">Change Requests</a>
                         <a class="hr-button small ghost" href="@Href("payroll/bank-accounts")">Bank Accounts</a>
                         <button type="button" class="hr-button small ghost" disabled="@(FilteredRows.Count == 0)" @onclick="ExportAsync">
@@ -114,6 +118,66 @@
                             <span></span>
                         }
                     </div>
+                }
+                else if (CardView)
+                {
+                    <div class="emp-card-grid">
+                        @if (PagedRows.Count == 0)
+                        {
+                            <div class="emp-card-empty">
+                                @(Rows.Count == 0 ? "No employees added yet. Click '+ Add New Employee' to create one." : "No employees match the selected filters.")
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var row in PagedRows)
+                            {
+                                <a class="emp-card @(row.IsDraft ? "is-draft" : null)" @key="row.EmployeeId" href="@Href($"employees/{row.EmployeeId}")" title="Open @row.DisplayName">
+                                    <span class="emp-card-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">
+                                        @if (!string.IsNullOrWhiteSpace(row.AvatarUrl))
+                                        {
+                                            <img src="@row.AvatarUrl" alt="@row.DisplayName" />
+                                        }
+                                        else
+                                        {
+                                            @PayrollFormat.Initials(row.DisplayName)
+                                        }
+                                    </span>
+                                    <h3 class="emp-card-name">@row.DisplayName</h3>
+                                    <span class="emp-card-code">@row.EmployeeNumber</span>
+                                    <span class="emp-card-role">@(row.Designation ?? "No designation") (@row.DepartmentName)</span>
+                                    <span class="emp-card-line"><b>Mobile:</b> @(row.Phone ?? "—")</span>
+                                    <span class="emp-card-line" title="@row.Email"><b>Email:</b> @(row.Email ?? "—")</span>
+                                    <span class="emp-card-chips">
+                                        <span>@row.DivisionName</span>
+                                        @if (!string.IsNullOrWhiteSpace(row.GradeName))
+                                        {
+                                            <span>@row.GradeName</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(row.ManagerName))
+                                        {
+                                            <span title="Reporting manager">↑ @row.ManagerName</span>
+                                        }
+                                    </span>
+                                    <span class="emp-card-foot">
+                                        <span class="emp-status-dot tone-@row.StatusTone">@row.StatusLabel</span>
+                                        <span class="emp-card-edit"><HrIcon Name="edit" Size="13" /> Edit</span>
+                                    </span>
+                                </a>
+                            }
+                        }
+                    </div>
+
+                    @if (FilteredRows.Count > PageSize)
+                    {
+                        <div class="emp-pager">
+                            <span>Showing @(PageIndex * PageSize + 1)–@Math.Min((PageIndex + 1) * PageSize, FilteredRows.Count) of @FilteredRows.Count</span>
+                            <div class="emp-pager-btns">
+                                <button type="button" class="hr-button small ghost" disabled="@(PageIndex == 0)" @onclick="() => PageIndex--">Previous</button>
+                                <button type="button" class="hr-button small ghost" disabled="@((PageIndex + 1) * PageSize >= FilteredRows.Count)" @onclick="() => PageIndex++">Next</button>
+                            </div>
+                        </div>
+                    }
                 }
                 else
                 {
@@ -222,6 +286,7 @@
     private string DepartmentCode = string.Empty;
     private string Status = string.Empty;
     private int PageIndex;
+    private bool CardView = true;
 
     private bool IsLoading = true;
     private bool CanCreate;

@@ -160,6 +160,11 @@ public sealed class EmployeeWorkspaceRepository(HrManagementDbContext dbContext)
             IsDraft = emp.IsDraft,
             IsActive = emp.IsActive,
             EmploymentStatusCode = emp.EmploymentStatusCode,
+            EmploymentTypeCode = emp.EmploymentTypeCode,
+            CompanyCode = emp.CompanyCode,
+            ProbationEndsOn = emp.ProbationEndsOn,
+            CostCentre = emp.CostCentre,
+            CandidateId = emp.CandidateId,
             LeavingOn = emp.LeavingOn,
             AadhaarProtected = statutory?.AadhaarProtected,
             Personal = new EmployeePersonalWorkspaceDto
@@ -384,7 +389,9 @@ public sealed class EmployeeWorkspaceRepository(HrManagementDbContext dbContext)
             {
                 TenantKey = tenantKey,
                 CreatedUtc = now,
-                EmploymentTypeCode = "FULL_TIME"
+                EmploymentTypeCode = string.IsNullOrWhiteSpace(aggregate.EmploymentTypeCode)
+                    ? "FULL_TIME"
+                    : aggregate.EmploymentTypeCode.Trim()
             };
             dbContext.Employees.Add(emp);
         }
@@ -393,6 +400,28 @@ public sealed class EmployeeWorkspaceRepository(HrManagementDbContext dbContext)
             emp = await dbContext.Employees
                       .FirstOrDefaultAsync(item => item.TenantKey == tenantKey && item.Id == aggregate.EmployeeId, ct)
                   ?? throw new InvalidOperationException("Employee record was not found.");
+
+            if (!string.IsNullOrWhiteSpace(aggregate.EmploymentTypeCode))
+            {
+                emp.EmploymentTypeCode = aggregate.EmploymentTypeCode.Trim();
+            }
+        }
+
+        if (aggregate.CompanyCode is not null)
+        {
+            emp.CompanyCode = NullIfBlank(aggregate.CompanyCode);
+        }
+        if (aggregate.ProbationEndsOn is not null)
+        {
+            emp.ProbationEndsOn = aggregate.ProbationEndsOn;
+        }
+        if (aggregate.CostCentre is not null)
+        {
+            emp.CostCentre = NullIfBlank(aggregate.CostCentre);
+        }
+        if (aggregate.CandidateId is not null)
+        {
+            emp.CandidateId = aggregate.CandidateId;
         }
 
         long? managerId = long.TryParse(p.ReportingManagerId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMgr) &&

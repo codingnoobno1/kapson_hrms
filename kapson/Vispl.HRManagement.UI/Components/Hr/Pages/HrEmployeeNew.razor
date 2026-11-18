@@ -1260,6 +1260,9 @@
 
     private bool IsEditing => EmployeeId is > 0;
 
+    /// <summary>Set by the org chart's "Add Direct Report" action to pre-select the reporting manager.</summary>
+    [SupplyParameterFromQuery(Name = "managerId")] private string? PresetManagerId { get; set; }
+
     private string EmployeeLabel
     {
         get
@@ -1347,6 +1350,19 @@
             else
             {
                 Model = await Workspace.GetNewTemplateAsync(caller);
+                if (!string.IsNullOrWhiteSpace(PresetManagerId) &&
+                    AllEmployees.FirstOrDefault(e => e.EmployeeId == PresetManagerId) is { } presetManager)
+                {
+                    Model.Personal.ReportingManagerId = presetManager.EmployeeId;
+                    if (string.IsNullOrWhiteSpace(Model.Personal.DepartmentCode))
+                    {
+                        Model.Personal.DepartmentCode = presetManager.DepartmentCode;
+                    }
+                    if (string.IsNullOrWhiteSpace(Model.Personal.DivisionCode))
+                    {
+                        Model.Personal.DivisionCode = presetManager.DivisionCode;
+                    }
+                }
                 ActiveSection = SecPersonal;
             }
         }

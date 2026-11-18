@@ -31,6 +31,11 @@ public sealed class EmployeeWorkspaceAggregate
     public bool IsDraft { get; set; }
     public bool IsActive { get; set; } = true;
     public string EmploymentStatusCode { get; set; } = "Active";
+    public string? EmploymentTypeCode { get; set; }
+    public string? CompanyCode { get; set; }
+    public DateOnly? ProbationEndsOn { get; set; }
+    public string? CostCentre { get; set; }
+    public long? CandidateId { get; set; }
     public DateOnly? LeavingOn { get; set; }
 
     public EmployeePersonalWorkspaceDto Personal { get; set; } = new();

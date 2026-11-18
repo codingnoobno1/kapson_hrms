@@ -5,9 +5,13 @@
 @using Vispl.HRManagement.BM.ITF.Mobile
 @using Vispl.HRManagement.Contracts.Admin
 @using Vispl.HRManagement.UI.Components.Hr.Shared
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
 @inject IEmployeeReportService Reports
+@inject IEmployeeWorkspaceService Workspace
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
 
 <PageTitle>Organization Hierarchy | HR Portal</PageTitle>
 
@@ -95,6 +99,9 @@
                     }
 
                     <div class="pay-tabs" role="tablist">
+                        <button type="button" role="tab" class="@(View == OrgView.Chart ? "active" : null)" @onclick="ShowChart">
+                            📊 Org chart <span>@org.TotalEmployees</span>
+                        </button>
                         <button type="button" role="tab" class="@(View == OrgView.Reporting ? "active" : null)" @onclick="() => View = OrgView.Reporting">
                             🧭 Reporting lines <span>@org.ReportingRoots.Count</span>
                         </button>
@@ -107,6 +114,46 @@
                         @if (org.TotalEmployees == 0)
                         {
                             <p class="hr-empty">Nobody matches these filters.</p>
+                        }
+                        else if (View == OrgView.Chart)
+                        {
+                            <div class="ocx-shell" id="@ChartElementId">
+                                <div class="ocx-toolbar">
+                                    <span class="ocx-toolbar-title"><i>⛬</i> Organisation Chart</span>
+                                    <span class="ocx-divider"></span>
+                                    <div class="ocx-search">
+                                        <input type="text" placeholder="Search name, code or title…" autocomplete="off" />
+                                        <button type="button" data-oc="clear" title="Clear search">✕</button>
+                                    </div>
+                                    <button type="button" class="ocx-btn" data-oc="focus" title="Show only the selected person's team">🔍 Focus</button>
+                                    <button type="button" class="ocx-btn" data-oc="reset" title="Show the whole organisation">↻ Reset</button>
+                                    <button type="button" class="ocx-btn" data-oc="expand">Expand all</button>
+                                    <button type="button" class="ocx-btn" data-oc="collapse">Collapse all</button>
+                                    <div class="ocx-right">
+                                        <button type="button" class="ocx-btn" data-oc="png">🖼 PNG</button>
+                                        <button type="button" class="ocx-btn" data-oc="pdf">📄 PDF</button>
+                                        <button type="button" class="ocx-btn" data-oc="print">🖨 Print</button>
+                                        <span class="ocx-divider"></span>
+                                        <button type="button" class="ocx-btn" data-oc="fit" title="Fit the chart to the screen">⤢ Fit</button>
+                                        <div class="ocx-zoom">
+                                            <input type="range" min="15" max="150" value="100" aria-label="Zoom" />
+                                            <span>100%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="ocx-legend">
+                                    @foreach (var dept in LegendDepartments(org))
+                                    {
+                                        <span @key="dept.Code"><i style="background:@DeptColor(dept.Code)"></i>@dept.Name</span>
+                                    }
+                                </div>
+                                <div class="ocx-breadcrumb" hidden></div>
+                                <div class="ocx-viewport">
+                                    <div class="ocx-inner"></div>
+                                </div>
+                                <div class="ocx-hint">Click a card to see its reporting line · double-click to open the employee · right-click for team actions · drag to pan · Ctrl + scroll to zoom</div>
+                                <div class="ocx-toast" hidden></div>
+                            </div>
                         }
                         else if (View == OrgView.Reporting)
                         {
@@ -166,12 +213,17 @@
 @code {
     [Parameter] public string? TenantKey { get; set; }
 
-    private enum OrgView { Reporting, Divisions }
+    private enum OrgView { Chart, Reporting, Divisions }
 
-    private OrgView View = OrgView.Reporting;
+    private const string ChartElementId = "hrOrgChart";
+
+    private OrgView View = OrgView.Chart;
     private OrgHierarchyDto? Hierarchy;
     private IReadOnlyList<MasterOptionDto> AllOptions = [];
+    private Dictionary<string, string?> Avatars = new(StringComparer.Ordinal);
     private readonly HashSet<string> Collapsed = [];
+    private bool ChartPending = true;
+    private bool ChartRendered;
 
     private string DivisionCode = string.Empty;
     private string DepartmentCode = string.Empty;
@@ -187,6 +239,17 @@
         {
             var caller = await PortalCaller.GetAsync();
             AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+
+            try
+            {
+                // Photos only; the chart still works with initials when this account cannot read the explorer.
+                var people = await Workspace.GetExplorerAsync(caller, new EmployeeExplorerQuery());
+                Avatars = people.ToDictionary(p => p.EmployeeId, p => p.AvatarUrl, StringComparer.Ordinal);
+            }
+            catch (MobileAccessDeniedException)
+            {
+                Avatars = new(StringComparer.Ordinal);
+            }
         }
         catch (Exception ex)
         {
@@ -223,6 +286,155 @@
         finally
         {
             IsLoading = false;
+            ChartPending = true;
+        }
+    }
+
+    private void ShowChart()
+    {
+        View = OrgView.Chart;
+        ChartPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (View != OrgView.Chart)
+        {
+            ChartRendered = false;
+            return;
+        }
+
+        if (Hierarchy is not { TotalEmployees: > 0 } org || (!ChartPending && ChartRendered))
+        {
+            return;
+        }
+
+        ChartPending = false;
+        ChartRendered = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("hrOrgChart.render", ChartElementId, BuildChartNodes(org), new
+            {
+                title = "Kapson Organisation Chart",
+                addUrl = Href("employees/new")
+            });
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException ex)
+        {
+            LoadError = $"The organisation chart could not be drawn: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Flattens the reporting tree into the id / pid list the chart script draws, carrying the
+    /// reporting path so a selected card can show who it rolls up to.
+    /// </summary>
+    private List<object> BuildChartNodes(OrgHierarchyDto org)
+    {
+        var nodes = new List<object>();
+
+        void Walk(OrgHierarchyNodeDto node, string? parentId, string path)
+        {
+            var person = node.Employee;
+            var breadcrumb = string.IsNullOrEmpty(path) ? person.DisplayName : $"{path} > {person.DisplayName}";
+
+            nodes.Add(new
+            {
+                id = person.EmployeeId,
+                pid = parentId,
+                name = person.DisplayName,
+                empCode = person.EmployeeNumber,
+                designation = person.JobTitle,
+                department = person.DepartmentName,
+                departmentCode = person.DepartmentCode,
+                division = person.DivisionName,
+                grade = person.GradeName,
+                photoUrl = Avatars.GetValueOrDefault(person.EmployeeId),
+                directReportCount = node.Reports.Count,
+                teamSize = node.TeamSize,
+                isActive = person.IsActive,
+                breadcrumb,
+                editUrl = Href($"employees/{person.EmployeeId}")
+            });
+
+            foreach (var child in node.Reports)
+            {
+                Walk(child, person.EmployeeId, breadcrumb);
+            }
+        }
+
+        foreach (var root in org.ReportingRoots)
+        {
+            Walk(root, null, string.Empty);
+        }
+
+        return nodes;
+    }
+
+    private static IEnumerable<(string Code, string Name)> LegendDepartments(OrgHierarchyDto org)
+    {
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        void Walk(OrgHierarchyNodeDto node)
+        {
+            seen.TryAdd(node.Employee.DepartmentCode ?? string.Empty, node.Employee.DepartmentName);
+            foreach (var child in node.Reports)
+            {
+                Walk(child);
+            }
+        }
+
+        foreach (var root in org.ReportingRoots)
+        {
+            Walk(root);
+        }
+
+        return seen.OrderBy(kv => kv.Value).Select(kv => (kv.Key, kv.Value));
+    }
+
+    // Mirrors DEPT_COLORS in hr-orgchart.js so the legend matches the card headers.
+    private static readonly string[] FallbackColors = ["#1976D2", "#00897B", "#5E35B1", "#EF6C00", "#2E7D32", "#AD1457"];
+
+    private static string DeptColor(string? code)
+    {
+        var key = (code ?? string.Empty).ToUpperInvariant();
+        switch (key)
+        {
+            case "HR": return "#1565C0";
+            case "FINOPS": return "#FFD600";
+            case "DIGITAL": return "#0288D1";
+            case "RETAIL": return "#0097A7";
+            case "BRAND": return "#6A4FC8";
+        }
+
+        var hash = 0;
+        foreach (var ch in key)
+        {
+            hash = unchecked(hash * 31 + ch);
+        }
+
+        return FallbackColors[Math.Abs(hash % FallbackColors.Length)];
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("hrOrgChart.dispose", ChartElementId);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (JSException)
+        {
         }
     }
 

@@ -358,6 +358,29 @@ public sealed class OnboardingService(
 
         if (candidate is not null && opening is not null)
         {
+            var refreshedTasks = await applications.GetOnboardingTasksAsync(tenantKey, onboardingId, cancellationToken);
+            var taskForms = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var task in refreshedTasks)
+            {
+                var parsed = ParseFormValues(task.FormValuesJson);
+                if (parsed is { Count: > 0 })
+                {
+                    taskForms[task.Code] = parsed;
+                }
+            }
+
+            var appDocs = await applications.GetDocumentsAsync(tenantKey, application.Id, cancellationToken);
+            var hiredDocs = appDocs
+                .Select(doc => new ITF.Employee.HiredCandidateDocument(
+                    doc.CategoryCode,
+                    doc.OriginalFileName,
+                    doc.ContentType,
+                    doc.SizeBytes,
+                    doc.StoragePath,
+                    doc.UploadedUtc))
+                .ToList();
+
             await employeeProvisioning.HireAsync(
                 new ITF.Employee.HireRequest(
                     tenantKey,
@@ -369,7 +392,12 @@ public sealed class OnboardingService(
                     opening.Department,
                     opening.Location,
                     opening.Title,
-                    opening.EmploymentType),
+                    opening.EmploymentType,
+                    candidate.CurrentLocation,
+                    candidate.TotalExperienceYears,
+                    application.ExpectedCtc,
+                    taskForms,
+                    hiredDocs),
                 cancellationToken);
         }
     }
@@ -442,6 +470,13 @@ public sealed class OnboardingService(
         var candidate = await applications.GetCandidateByIdAsync(tenantKey, onboarding.CandidateId, cancellationToken);
         var application = await applications.GetAsync(tenantKey, onboarding.ApplicationId, cancellationToken);
         var opening = application is null ? null : await openings.GetByIdAsync(application.JobOpeningId, cancellationToken);
+        var documents = application is null
+            ? []
+            : await applications.GetDocumentsAsync(tenantKey, application.Id, cancellationToken);
+        var docById = documents.ToDictionary(doc => doc.Id);
+        var docByCategory = documents
+            .GroupBy(doc => doc.CategoryCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(d => d.UploadedUtc).First(), StringComparer.OrdinalIgnoreCase);
 
         var required = tasks.Where(task => task.IsRequired).ToList();
         var approved = required.Count(task =>
@@ -459,10 +494,52 @@ public sealed class OnboardingService(
             onboarding.JoiningOn,
             percent,
             required.Count - approved,
-            tasks.Select(task => new OnboardingTaskDto(
-                task.Id, task.Code, task.Title, task.Instructions, task.TaskType, task.OwnerKind,
-                task.IsRequired, task.Status, task.DocumentId, task.DecisionReason, null)).ToList(),
+            tasks.Select(task =>
+            {
+                string? fileName = null;
+                if (task.DocumentId is { } docId && docById.TryGetValue(docId, out var byId))
+                {
+                    fileName = byId.OriginalFileName;
+                }
+                else if (docByCategory.TryGetValue(task.Code, out var byCode))
+                {
+                    fileName = byCode.OriginalFileName;
+                }
+
+                return new OnboardingTaskDto(
+                    task.Id,
+                    task.Code,
+                    task.Title,
+                    task.Instructions,
+                    task.TaskType,
+                    task.OwnerKind,
+                    task.IsRequired,
+                    task.Status,
+                    task.DocumentId,
+                    task.DecisionReason,
+                    null,
+                    ParseFormValues(task.FormValuesJson),
+                    fileName);
+            }).ToList(),
             onboarding.StartedUtc,
             onboarding.CompletedUtc);
+    }
+
+    private static IReadOnlyDictionary<string, string>? ParseFormValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json, Json);
+            return parsed is { Count: > 0 } ? parsed : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

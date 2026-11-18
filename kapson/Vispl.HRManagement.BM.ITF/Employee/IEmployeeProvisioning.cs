@@ -1,5 +1,13 @@
 namespace Vispl.HRManagement.BM.ITF.Employee;
 
+public sealed record HiredCandidateDocument(
+    string CategoryCode,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string StoragePath,
+    DateTimeOffset UploadedUtc);
+
 public sealed record HireRequest(
     string TenantKey,
     long CandidateId,
@@ -10,7 +18,12 @@ public sealed record HireRequest(
     string DepartmentCode,
     string LocationCode,
     string? JobTitle,
-    string EmploymentTypeCode);
+    string EmploymentTypeCode,
+    string? CurrentLocation = null,
+    decimal TotalExperienceYears = 0m,
+    decimal? ExpectedCtc = null,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? TaskForms = null,
+    IReadOnlyList<HiredCandidateDocument>? Documents = null);
 
 /// <summary>
 /// The employee module's own entry point for turning a completed hire into an employee record.
