@@ -1,0 +1,51 @@
+@implements IDisposable
+@inject HrToastService Toasts
+
+@* Bottom-right "Saved" message. Rendered once by HrNav, so it appears on every HR page. *@
+
+@if (Toasts.Current is { } toast)
+{
+    <div class="hr-toast @(toast.IsError ? "error" : "success")" role="status" aria-live="polite" @key="toast.Id">
+        <span class="hr-toast-icon" aria-hidden="true">@(toast.IsError ? "!" : "✓")</span>
+        <span class="hr-toast-text">@toast.Message</span>
+        <button type="button" class="hr-toast-close" aria-label="Dismiss" @onclick="() => Toasts.Dismiss(toast.Id)">✕</button>
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan Visible = TimeSpan.FromSeconds(4);
+
+    protected override void OnInitialized()
+    {
+        Toasts.Changed += OnChanged;
+
+        // A host on a newly opened page picks up a message raised just before navigating.
+        if (Toasts.Current is { } toast)
+        {
+            _ = HideLaterAsync(toast);
+        }
+    }
+
+    private void OnChanged()
+    {
+        if (Toasts.Current is { } toast)
+        {
+            _ = HideLaterAsync(toast);
+        }
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HideLaterAsync(HrToastService.Toast toast)
+    {
+        var remaining = Visible - (DateTimeOffset.UtcNow - toast.ShownUtc);
+        if (remaining > TimeSpan.Zero)
+        {
+            await Task.Delay(remaining);
+        }
+
+        await InvokeAsync(() => Toasts.Dismiss(toast.Id));
+    }
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+}

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -10,7 +10,9 @@ namespace Vispl.HRManagement.Mobile.Client.Http;
 /// <summary>Options the app head supplies once.</summary>
 public sealed class MobileApiOptions
 {
-    public const string DefaultBaseAddress = "https://untutelary-francisco-overtrustfully.ngrok-free.dev";
+    // The hosted server (Cloudflare tunnel). Users can still change it on the sign-in screen.
+    // server-tools\vertex-links\pipeline.ps1 rewrites this line with the live address before each APK build.
+    public const string DefaultBaseAddress = "https://arnold-notes-relief-net.trycloudflare.com";
 
     /// <summary>Host root, without the api path. For example https://hr.kapsons.com.</summary>
     public string BaseAddress { get; set; } = DefaultBaseAddress;
@@ -166,7 +168,17 @@ public sealed class MobileApiClient(
         string? rowVersion,
         CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(method, options.ResolveUri(path));
+        Uri address;
+        try
+        {
+            address = options.ResolveUri(path);
+        }
+        catch (UriFormatException exception)
+        {
+            throw new MobileOfflineException("The server address in the app is not valid. Sign out and check it.", exception);
+        }
+
+        using var request = new HttpRequestMessage(method, address);
 
         if (body is not null)
         {
@@ -210,7 +222,30 @@ public sealed class MobileApiClient(
     {
         await EnsureSuccessAsync(response, ct);
 
-        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<T>>(Json, ct);
+        // Screens catch MobileApiException. A body that is not the expected JSON (a proxy's
+        // HTML page, a cut-off download) must arrive as one too, not as a raw exception that
+        // nothing catches and that closes the app.
+        ApiEnvelope<T>? envelope;
+        try
+        {
+            envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<T>>(Json, ct);
+        }
+        catch (JsonException exception)
+        {
+            throw new MobileServerException(
+                $"The server sent a response the app could not read ({exception.GetType().Name}).",
+                (int)response.StatusCode);
+        }
+        catch (NotSupportedException)
+        {
+            throw new MobileServerException(
+                "The server sent a response the app could not read.", (int)response.StatusCode);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException ||
+                                          (exception is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            throw new MobileOfflineException("The connection dropped while loading. Try again.", exception);
+        }
 
         if (envelope is null)
         {
@@ -407,7 +442,14 @@ public sealed class MobileApiClient(
             await tokens.SaveAsync(next, ct);
             return true;
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException ||
+                                          (exception is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            // No network is not "signed out": keep the session, so the screen shows offline
+            // and works again once the connection is back, instead of logging the person out.
+            throw new MobileOfflineException("No connection to the Kapsons server.", exception);
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException or UriFormatException)
         {
             return false;
         }

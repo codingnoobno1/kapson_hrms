@@ -12,6 +12,12 @@ public sealed class MobileApiOptions
     public string StatusUrl { get; set; } = "/api/mobile/v1/discovery/metadata";
     public string[] SupportedPlatforms { get; set; } = [];
     public Dictionary<string, string> LegalLinks { get; set; } = [];
+
+    /// <summary>When set, the apps show this and stay closed until it is cleared (maintenance).</summary>
+    public string? MaintenanceMessage { get; set; }
+
+    /// <summary>Where an app older than <see cref="MinimumAppVersion"/> sends people for a new build.</summary>
+    public string? UpdateUrl { get; set; }
 }
 
 public static class MobileAuthenticationDefaults

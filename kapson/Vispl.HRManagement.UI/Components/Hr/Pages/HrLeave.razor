@@ -8,6 +8,7 @@
 @inject IWorkforceReportService Reports
 @inject IMobileLeaveService Leave
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Leave | HR Portal</PageTitle>
 
@@ -265,6 +266,7 @@
             ActionMessage = approve
                 ? $"{request.DisplayName}'s {request.Days:0.#} day {request.LeaveTypeCode} was approved."
                 : $"{request.DisplayName}'s {request.LeaveTypeCode} request was rejected.";
+            Toast.Success(ActionMessage);
 
             await LoadAsync();
         }

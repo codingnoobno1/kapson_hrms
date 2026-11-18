@@ -24,7 +24,9 @@ public sealed record PublicMobileMetadataDto(
     string Authority,
     string Audience,
     string StatusUrl,
-    IReadOnlyDictionary<string, string> LegalLinks);
+    IReadOnlyDictionary<string, string> LegalLinks,
+    string? MaintenanceMessage = null,
+    string? UpdateUrl = null);
 
 public sealed record SessionUserDto(
     string UserId,

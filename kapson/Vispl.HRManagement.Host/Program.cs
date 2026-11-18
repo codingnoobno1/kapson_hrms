@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http;
 using Vispl.HRManagement.Api.Shared;
 using Vispl.HRManagement.Composition.Shared;
@@ -33,6 +35,7 @@ builder.Services
 // Resolves the signed-in HR user into the caller context the business services expect, so a
 // portal page and a mobile request reach those services the same way.
 builder.Services.AddScoped<Vispl.HRManagement.UI.Components.Hr.Shared.HrPortalCaller>();
+builder.Services.AddScoped<Vispl.HRManagement.UI.Components.Hr.Shared.HrToastService>();
 
 var dataProtectionApplicationName = builder.Configuration["DataProtection:ApplicationName"]
     ?? "Vispl.HRManagement";
@@ -60,6 +63,22 @@ builder.Services.AddAntiforgery(options =>
         : CookieSecurePolicy.Always;
 });
 
+// Behind a reverse proxy or tunnel (Cloudflare, nginx, IIS ARR) TLS ends at the proxy and the app
+// sees plain HTTP. Honour X-Forwarded-Proto/For so Secure cookies, antiforgery and redirects see the
+// real HTTPS scheme. Only loopback proxies are trusted by default; add others under
+// ForwardedHeaders:KnownProxies (IP addresses).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+    {
+        if (IPAddress.TryParse(proxy, out var address))
+        {
+            options.KnownProxies.Add(address);
+        }
+    }
+});
+
 builder.Services.AddHrManagement(builder.Configuration);
 builder.Services.AddMobileApi(builder.Configuration);
 builder.Services
@@ -69,6 +88,9 @@ builder.Services
 var app = builder.Build();
 
 await app.InitializeHrManagementAsync();
+
+// Must run first so everything after it sees the original scheme and client IP.
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -88,6 +110,12 @@ app.UseMobileRealtimeNotifications();
 app.UseAntiforgery();
 
 app.MapGet("/", () => Results.Redirect("/kapson_home"));
+
+// Target of UseExceptionHandler. Without it the handler returned 404 and hid the real error.
+app.Map("/Error", () => Results.Content(
+    "<!doctype html><title>Error</title><h1>Something went wrong</h1><p>The error has been logged. Please try again.</p>",
+    "text/html",
+    statusCode: StatusCodes.Status500InternalServerError));
 app.MapHrManagement();
 app.MapControllers();
 app.MapHub<MobileRealtimeHub>("/hubs/hr");

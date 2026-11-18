@@ -184,7 +184,12 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("TenantKey", "AccountLabel")
                         .IsUnique();
 
-                    b.ToTable("CompanyBankAccounts", "platform");
+                    b.ToTable("CompanyBankAccounts", "platform", t =>
+                        {
+                            t.HasCheckConstraint("CK_CompanyBankAccounts_Ifsc", "[Ifsc] LIKE '[A-Z][A-Z][A-Z][A-Z]0[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]'");
+
+                            t.HasCheckConstraint("CK_CompanyBankAccounts_Last4", "[AccountLast4] LIKE '[0-9][0-9][0-9][0-9]'");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.DesignationEntity", b =>
@@ -372,10 +377,17 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "EmployeeId")
                         .IsUnique();
 
-                    b.ToTable("EmployeeBankAccounts", "employee");
+                    b.ToTable("EmployeeBankAccounts", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeeBankAccounts_Ifsc", "[Ifsc] LIKE '[A-Z][A-Z][A-Z][A-Z]0[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]'");
+
+                            t.HasCheckConstraint("CK_EmployeeBankAccounts_Last4", "[AccountLast4] LIKE '[0-9][0-9][0-9][0-9]'");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.GradeSalaryEntity", b =>
@@ -418,7 +430,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("TenantKey", "GradeCode")
                         .IsUnique();
 
-                    b.ToTable("GradeSalaryStructures", "platform");
+                    b.ToTable("GradeSalaryStructures", "platform", t =>
+                        {
+                            t.HasCheckConstraint("CK_GradeSalaryStructures_Basic", "[BasicMonthly] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.LoanEntity", b =>
@@ -520,12 +535,23 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "VoucherNo")
                         .IsUnique();
 
                     b.HasIndex("TenantKey", "EmployeeId", "Status");
 
-                    b.ToTable("Loans", "payroll");
+                    b.ToTable("Loans", "payroll", t =>
+                        {
+                            t.HasCheckConstraint("CK_Loans_Installments", "[Installments] > 0");
+
+                            t.HasCheckConstraint("CK_Loans_Interest", "[InterestPercent] BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("CK_Loans_Principal", "[Principal] > 0");
+
+                            t.HasCheckConstraint("CK_Loans_StartMonth", "[StartMonth] BETWEEN 1 AND 12");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.LoanRepaymentEntity", b =>
@@ -578,13 +604,20 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("LoanId");
+
                     b.HasIndex("TenantKey", "LoanId");
 
                     b.HasIndex("TenantKey", "LoanId", "Year", "Month", "Source")
                         .IsUnique()
                         .HasFilter("[Source] = 'Payroll'");
 
-                    b.ToTable("LoanRepayments", "payroll");
+                    b.ToTable("LoanRepayments", "payroll", t =>
+                        {
+                            t.HasCheckConstraint("CK_LoanRepayments_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_LoanRepayments_Month", "[Month] BETWEEN 1 AND 12");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.MailSettingsEntity", b =>
@@ -891,12 +924,21 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("RunId");
+
                     b.HasIndex("TenantKey", "RunId", "EmployeeId")
                         .IsUnique();
 
                     b.HasIndex("TenantKey", "RunId", "Status");
 
-                    b.ToTable("PayrollLines", "payroll");
+                    b.ToTable("PayrollLines", "payroll", t =>
+                        {
+                            t.HasCheckConstraint("CK_PayrollLines_Amounts", "[Basic] >= 0 AND [Gross] >= 0 AND [Deductions] >= 0");
+
+                            t.HasCheckConstraint("CK_PayrollLines_PayableDays", "[PayableDays] BETWEEN 0 AND [DaysInMonth]");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.PayrollRunEntity", b =>
@@ -948,7 +990,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("TenantKey", "Year", "Month", "SalaryType")
                         .IsUnique();
 
-                    b.ToTable("PayrollRuns", "payroll");
+                    b.ToTable("PayrollRuns", "payroll", t =>
+                        {
+                            t.HasCheckConstraint("CK_PayrollRuns_Month", "[Month] BETWEEN 1 AND 12");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Admin.PolicyAcknowledgementEntity", b =>
@@ -1177,6 +1222,70 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.ToTable("ThemeTemplates", "platform");
                 });
 
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeAddressEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AddressType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("CityCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Line1")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Line2")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Pincode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("StateCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId", "AddressType")
+                        .IsUnique();
+
+                    b.ToTable("EmployeeAddresses", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeeAddresses_Pincode", "[Pincode] IS NULL OR ([Pincode] NOT LIKE '%[^0-9]%' AND LEN([Pincode]) BETWEEN 4 AND 10)");
+
+                            t.HasCheckConstraint("CK_EmployeeAddresses_Type", "[AddressType] IN ('Permanent', 'Current')");
+                        });
+                });
+
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeChangeRequestEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -1236,6 +1345,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("nvarchar(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("TenantKey", "EmployeeId");
 
@@ -1302,6 +1413,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "EmployeeId");
 
                     b.ToTable("EmployeeContacts", "employee");
@@ -1350,9 +1463,85 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "EmployeeId");
 
                     b.ToTable("EmployeeDependants", "employee");
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEducationEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BoardOrUniversity")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal?>("Cgpa")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<string>("EducationLevelCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("GradeLetter")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<string>("Institute")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsHighest")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("PassingYear")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("Percentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("QualificationCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Specialisation")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId");
+
+                    b.ToTable("EmployeeEducation", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeeEducation_Cgpa", "[Cgpa] IS NULL OR [Cgpa] BETWEEN 0 AND 10");
+
+                            t.HasCheckConstraint("CK_EmployeeEducation_Percentage", "[Percentage] IS NULL OR [Percentage] BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("CK_EmployeeEducation_Year", "[PassingYear] BETWEEN 1950 AND 2100");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEntity", b =>
@@ -1497,6 +1686,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("CandidateId")
                         .HasFilter("[CandidateId] IS NOT NULL");
 
+                    b.HasIndex("ManagerEmployeeId");
+
                     b.HasIndex("TenantKey", "DepartmentCode");
 
                     b.HasIndex("TenantKey", "Email")
@@ -1512,7 +1703,196 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasIndex("TenantKey", "ManagerEmployeeId");
 
-                    b.ToTable("Employees", "employee");
+                    b.HasIndex("TenantKey", "Phone")
+                        .IsUnique()
+                        .HasFilter("[Phone] IS NOT NULL");
+
+                    b.ToTable("Employees", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_Employees_LeavingAfterJoining", "[LeavingOn] IS NULL OR [LeavingOn] >= [JoinedOn]");
+
+                            t.HasCheckConstraint("CK_Employees_NotOwnManager", "[ManagerEmployeeId] IS NULL OR [ManagerEmployeeId] <> [Id]");
+
+                            t.HasCheckConstraint("CK_Employees_ProbationAfterJoining", "[ProbationEndsOn] IS NULL OR [ProbationEndsOn] >= [JoinedOn]");
+                        });
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeePreviousEmploymentEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Department")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Designation")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EmploymentType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly>("JoinedOn")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("LastAnnualCtc")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("LeavingReasonCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateOnly>("LeftOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool?>("NoticeServed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PreviousEmployeeId")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ReportingManagerName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId");
+
+                    b.ToTable("EmployeePreviousEmployment", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeePreviousEmployment_Ctc", "[LastAnnualCtc] IS NULL OR [LastAnnualCtc] >= 0");
+
+                            t.HasCheckConstraint("CK_EmployeePreviousEmployment_Dates", "[LeftOn] >= [JoinedOn]");
+
+                            t.HasCheckConstraint("CK_EmployeePreviousEmployment_Type", "[EmploymentType] IS NULL OR [EmploymentType] IN ('Permanent', 'Contract', 'Intern', 'Consultant')");
+                        });
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeStatutoryEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AadhaarLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("nchar(4)")
+                        .IsFixedLength();
+
+                    b.Property<string>("AadhaarProtected")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("EsiApplicable")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("EsiNumber")
+                        .HasMaxLength(17)
+                        .HasColumnType("nvarchar(17)");
+
+                    b.Property<string>("PanNumber")
+                        .HasMaxLength(10)
+                        .HasColumnType("nchar(10)")
+                        .IsFixedLength();
+
+                    b.Property<bool>("PfApplicable")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("PfJoinedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("PfNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("PfScheme")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("UanNumber")
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("VoterId")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantKey", "PanNumber")
+                        .IsUnique()
+                        .HasFilter("[PanNumber] IS NOT NULL");
+
+                    b.ToTable("EmployeeStatutory", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeeStatutory_AadhaarLast4", "[AadhaarLast4] IS NULL OR [AadhaarLast4] LIKE '[0-9][0-9][0-9][0-9]'");
+
+                            t.HasCheckConstraint("CK_EmployeeStatutory_Esi", "[EsiNumber] IS NULL OR ([EsiNumber] NOT LIKE '%[^0-9]%' AND LEN([EsiNumber]) = 17)");
+
+                            t.HasCheckConstraint("CK_EmployeeStatutory_Pan", "[PanNumber] IS NULL OR [PanNumber] LIKE '[A-Z][A-Z][A-Z][A-Z][A-Z][0-9][0-9][0-9][0-9][A-Z]'");
+
+                            t.HasCheckConstraint("CK_EmployeeStatutory_PfScheme", "[PfScheme] IS NULL OR [PfScheme] IN ('Govt', 'Company')");
+
+                            t.HasCheckConstraint("CK_EmployeeStatutory_Uan", "[UanNumber] IS NULL OR ([UanNumber] NOT LIKE '%[^0-9]%' AND LEN([UanNumber]) = 12)");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeTimelineEntity", b =>
@@ -1561,6 +1941,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("nvarchar(180)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("TenantKey", "EmployeeId", "OccurredUtc");
 
@@ -1706,6 +2088,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CandidateId");
+
+                    b.HasIndex("JobOpeningId");
+
                     b.HasIndex("TenantKey", "CandidateId");
 
                     b.HasIndex("TenantKey", "Stage");
@@ -1713,7 +2099,12 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("TenantKey", "JobOpeningId", "CandidateId")
                         .IsUnique();
 
-                    b.ToTable("Applications", "recruitment");
+                    b.ToTable("Applications", "recruitment", t =>
+                        {
+                            t.HasCheckConstraint("CK_Applications_ExpectedCtc", "[ExpectedCtc] IS NULL OR [ExpectedCtc] >= 0");
+
+                            t.HasCheckConstraint("CK_Applications_Rating", "[Rating] IS NULL OR [Rating] BETWEEN 0 AND 5");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.ApplicationEventEntity", b =>
@@ -1759,6 +2150,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("nvarchar(40)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId");
 
                     b.HasIndex("TenantKey", "ApplicationId");
 
@@ -1822,7 +2215,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.HasIndex("TenantKey", "Email")
                         .IsUnique();
 
-                    b.ToTable("Candidates", "recruitment");
+                    b.ToTable("Candidates", "recruitment", t =>
+                        {
+                            t.HasCheckConstraint("CK_Candidates_Experience", "[TotalExperienceYears] BETWEEN 0 AND 60");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.InterviewEntity", b =>
@@ -1911,6 +2307,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId");
 
                     b.HasIndex("TenantKey", "ApplicationId");
 
@@ -2141,7 +2539,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasIndex("TenantKey", "Status");
 
-                    b.ToTable("JobOpenings", "recruitment");
+                    b.ToTable("JobOpenings", "recruitment", t =>
+                        {
+                            t.HasCheckConstraint("CK_JobOpenings_SalaryBand", "[SalaryMinimum] IS NULL OR [SalaryMaximum] IS NULL OR [SalaryMaximum] >= [SalaryMinimum]");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.OnboardingEntity", b =>
@@ -2187,6 +2588,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId");
 
                     b.HasIndex("TenantKey", "ApplicationId")
                         .IsUnique();
@@ -2275,6 +2678,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OnboardingId");
 
                     b.HasIndex("TenantKey", "OnboardingId");
 
@@ -2421,6 +2826,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "State");
 
                     b.HasIndex("TenantKey", "EmployeeId", "WorkDate");
@@ -2476,6 +2883,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("TenantKey", "EmployeeId", "WorkDate")
                         .IsUnique();
@@ -2557,6 +2966,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "State");
 
                     b.HasIndex("TenantKey", "EmployeeId", "WorkDate");
@@ -2626,6 +3037,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("TenantKey", "EmployeeId", "ClientEventId")
                         .IsUnique()
@@ -2710,6 +3123,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "State");
 
                     b.HasIndex("TenantKey", "VerificationToken")
@@ -2754,6 +3169,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("nvarchar(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GatePassId");
 
                     b.HasIndex("TenantKey", "GatePassId");
 
@@ -2861,6 +3278,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("PolicyId");
 
                     b.HasIndex("TenantKey", "EmployeeId", "PolicyId", "Year")
                         .IsUnique();
@@ -3146,6 +3567,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RequestId");
+
                     b.HasIndex("TenantKey", "RequestId");
 
                     b.HasIndex("TenantKey", "EmployeeId", "Date");
@@ -3234,11 +3657,20 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("PolicyId");
+
                     b.HasIndex("TenantKey", "State");
 
                     b.HasIndex("TenantKey", "EmployeeId", "FromDate");
 
-                    b.ToTable("LeaveRequests", "workforce");
+                    b.ToTable("LeaveRequests", "workforce", t =>
+                        {
+                            t.HasCheckConstraint("CK_LeaveRequests_Dates", "[ToDate] >= [FromDate]");
+
+                            t.HasCheckConstraint("CK_LeaveRequests_Days", "[Days] > 0");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.MovementRecordEntity", b =>
@@ -3299,6 +3731,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("TenantKey", "EmployeeId")
                         .IsUnique()
@@ -3377,6 +3811,8 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
                     b.HasIndex("TenantKey", "State");
 
                     b.HasIndex("TenantKey", "EmployeeId", "FromDate");
@@ -3422,9 +3858,16 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("ShiftDefinitionId");
+
                     b.HasIndex("TenantKey", "EmployeeId", "EffectiveFrom");
 
-                    b.ToTable("ShiftAssignments", "workforce");
+                    b.ToTable("ShiftAssignments", "workforce", t =>
+                        {
+                            t.HasCheckConstraint("CK_ShiftAssignments_Dates", "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
+                        });
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.ShiftDefinitionEntity", b =>
@@ -3493,6 +3936,323 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .IsUnique();
 
                     b.ToTable("ShiftDefinitions", "workforce");
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Admin.EmployeeBankAccountEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Admin.LoanEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Admin.LoanRepaymentEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Admin.LoanEntity", null)
+                        .WithMany()
+                        .HasForeignKey("LoanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Admin.PayrollLineEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vispl.HRManagement.DL.Admin.PayrollRunEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeAddressEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeChangeRequestEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeContactEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeDependantEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEducationEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerEmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeePreviousEmploymentEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeStatutoryEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeTimelineEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.ApplicationEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.CandidateEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CandidateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.JobOpeningEntity", null)
+                        .WithMany()
+                        .HasForeignKey("JobOpeningId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.ApplicationEventEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.ApplicationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.InterviewEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.ApplicationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.InterviewEvaluationEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.InterviewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("InterviewId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.InterviewPanelistEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.InterviewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("InterviewId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.OnboardingEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.ApplicationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Recruitment.OnboardingTaskEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Recruitment.OnboardingEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OnboardingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.AttendanceCorrectionEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.AttendanceDayEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.AttendanceExceptionEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.AttendancePunchEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.GatePassEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.GatePassScanEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Workforce.GatePassEntity", null)
+                        .WithMany()
+                        .HasForeignKey("GatePassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.LeaveBalanceEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vispl.HRManagement.DL.Workforce.LeavePolicyEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PolicyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.LeaveRequestDayEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Workforce.LeaveRequestEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.LeaveRequestEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vispl.HRManagement.DL.Workforce.LeavePolicyEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PolicyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.MovementRecordEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.OnDutyRequestEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Workforce.ShiftAssignmentEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Vispl.HRManagement.DL.Workforce.ShiftDefinitionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ShiftDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

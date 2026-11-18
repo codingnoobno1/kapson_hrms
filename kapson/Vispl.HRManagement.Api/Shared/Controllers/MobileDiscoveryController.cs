@@ -30,7 +30,9 @@ public sealed class MobileDiscoveryController(
             value.Authority,
             value.Audience,
             value.StatusUrl,
-            value.LegalLinks));
+            value.LegalLinks,
+            string.IsNullOrWhiteSpace(value.MaintenanceMessage) ? null : value.MaintenanceMessage,
+            string.IsNullOrWhiteSpace(value.UpdateUrl) ? null : value.UpdateUrl));
     }
 
     [HttpPost("resolve-tenant")]

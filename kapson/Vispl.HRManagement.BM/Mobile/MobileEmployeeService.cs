@@ -225,6 +225,12 @@ public sealed class MobileEmployeeService(
         var employee = await LoadAsync(caller, employeeId, ct);
         var now = DateTimeOffset.UtcNow;
 
+        var phone = request.Phone is null ? employee.Phone : NormalizePhone(request.Phone);
+        if (phone is not null && phone != employee.Phone)
+        {
+            await EnsureContactUniqueAsync(caller.TenantKey, employee.Id, null, phone, ct);
+        }
+
         var updated = employee with
         {
             LegalFirstName = request.LegalFirstName.Trim(),
@@ -235,7 +241,7 @@ public sealed class MobileEmployeeService(
             GenderCode = request.Gender ?? employee.GenderCode,
             MaritalStatusCode = request.MaritalStatus ?? employee.MaritalStatusCode,
             NationalityCode = request.Nationality ?? employee.NationalityCode,
-            Phone = request.Phone ?? employee.Phone,
+            Phone = phone,
             UpdatedUtc = now
         };
 
@@ -392,6 +398,11 @@ public sealed class MobileEmployeeService(
                 "EMPLOYEE_NUMBER_TAKEN", $"Employee number {request.EmployeeNumber} is already in use.");
         }
 
+        // An employee is identified by email and phone; two people may share a name.
+        var email = request.Email.Trim().ToLowerInvariant();
+        var phone = NormalizePhone(request.Phone);
+        await EnsureContactUniqueAsync(caller.TenantKey, null, email, phone, ct);
+
         // Placement codes must be real master values, so payroll, reports and the organisation
         // chart can resolve them. The stored code is the master's own spelling.
         var department = await ResolveMasterCodeAsync(caller.TenantKey, "Department", request.DepartmentCode, null, "DEPARTMENT_UNKNOWN", ct)
@@ -436,7 +447,7 @@ public sealed class MobileEmployeeService(
                 0, caller.TenantKey, number,
                 names.First, names.Middle, names.Last, null,
                 request.DateOfBirth, gender, null, null,
-                request.Email.Trim().ToLowerInvariant(), OptionalText(request.Phone), null,
+                email, phone, null,
                 request.JoinedOn, employmentType, request.ProbationEndsOn is null ? "Active" : "Probation",
                 grade, OptionalText(request.JobTitle), request.ProbationEndsOn,
                 null, division, department, location,
@@ -456,10 +467,65 @@ public sealed class MobileEmployeeService(
     {
         Require(caller, CreatePermission);
 
+        string? phone;
+        try
+        {
+            phone = EmployeePhone.Normalize(request.Phone);
+        }
+        catch (FormatException)
+        {
+            phone = null;   // CreateAsync reports the bad number; this only looks for clashes.
+        }
+
         var matches = await employees.FindPossibleDuplicatesAsync(
-            caller.TenantKey, request.Email, null, request.EmployeeNumber, ct);
+            caller.TenantKey, request.Email, phone, request.EmployeeNumber, ct);
 
         return matches.Select(MapListItem).ToList();
+    }
+
+    private static string? NormalizePhone(string? phone)
+    {
+        try
+        {
+            return EmployeePhone.Normalize(phone);
+        }
+        catch (FormatException invalid)
+        {
+            throw new MobileValidationException("PHONE_INVALID", invalid.Message);
+        }
+    }
+
+    /// <summary>
+    /// Email and phone each belong to one employee in a company. Names are not unique — two
+    /// people can be called Rahul Sharma — so these are what tell employees apart. The database
+    /// enforces the same rule with unique indexes; this check gives the readable message.
+    /// </summary>
+    private async Task EnsureContactUniqueAsync(
+        string tenantKey, long? selfId, string? email, string? phone, CancellationToken ct)
+    {
+        if (email is null && phone is null)
+        {
+            return;
+        }
+
+        var matches = await employees.FindPossibleDuplicatesAsync(tenantKey, email, phone, null, ct);
+
+        foreach (var match in matches.Where(item => item.Id != selfId))
+        {
+            if (email is not null && string.Equals(match.Email, email, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new MobileValidationException(
+                    "EMAIL_TAKEN",
+                    $"The email {email} already belongs to {match.DisplayName} ({match.EmployeeNumber}). Each employee needs their own email.");
+            }
+
+            if (phone is not null && match.Phone == phone)
+            {
+                throw new MobileValidationException(
+                    "PHONE_TAKEN",
+                    $"The phone number {phone} already belongs to {match.DisplayName} ({match.EmployeeNumber}). Each employee needs their own phone number.");
+            }
+        }
     }
 
     public async Task<MutationResultDto> CreateChangeRequestAsync(

@@ -60,6 +60,13 @@ public sealed class App : Application
             await Task.Yield();
             var restored = await authenticator.TryRestoreAsync();
 
+            // Closed the app on the change-password page: it reopens there, not on Home.
+            if (restored && session.MustChangePassword)
+            {
+                window.Page = services.GetRequiredService<ChangePasswordPage>();
+                return;
+            }
+
             if (restored)
             {
                 await realtime.StartAsync();

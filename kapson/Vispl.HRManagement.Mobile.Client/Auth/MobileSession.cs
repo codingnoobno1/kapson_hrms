@@ -92,7 +92,10 @@ public sealed class MobileSession
             identity?.Permissions is { Count: > 0 } granted ? granted : All(claims, "permission"),
             StringComparer.OrdinalIgnoreCase);
 
-        MustChangePassword = identity?.MustChangePassword ?? false;
+        // A session restored at launch has no response, only the token; its claim still says
+        // whether a password change is pending.
+        MustChangePassword = identity?.MustChangePassword
+                             ?? string.Equals(Single(claims, "must_change_password"), "true", StringComparison.OrdinalIgnoreCase);
 
         Changed?.Invoke(this, EventArgs.Empty);
     }

@@ -6,7 +6,7 @@ using Vispl.HRManagement.DL.Recruitment;
 
 namespace Vispl.HRManagement.DL.Shared;
 
-public sealed class HrManagementDbContext(DbContextOptions<HrManagementDbContext> options)
+public sealed partial class HrManagementDbContext(DbContextOptions<HrManagementDbContext> options)
     : DbContext(options)
 {
     public DbSet<CareerSiteEntity> CareerSites => Set<CareerSiteEntity>();
@@ -39,6 +39,10 @@ public sealed class HrManagementDbContext(DbContextOptions<HrManagementDbContext
     public DbSet<EmployeeDependantEntity> EmployeeDependants => Set<EmployeeDependantEntity>();
     public DbSet<EmployeeTimelineEntity> EmployeeTimeline => Set<EmployeeTimelineEntity>();
     public DbSet<EmployeeChangeRequestEntity> EmployeeChangeRequests => Set<EmployeeChangeRequestEntity>();
+    public DbSet<EmployeeStatutoryEntity> EmployeeStatutory => Set<EmployeeStatutoryEntity>();
+    public DbSet<EmployeeEducationEntity> EmployeeEducation => Set<EmployeeEducationEntity>();
+    public DbSet<EmployeePreviousEmploymentEntity> EmployeePreviousEmployment => Set<EmployeePreviousEmploymentEntity>();
+    public DbSet<EmployeeAddressEntity> EmployeeAddresses => Set<EmployeeAddressEntity>();
     public DbSet<InterviewEntity> Interviews => Set<InterviewEntity>();
     public DbSet<InterviewPanelistEntity> InterviewPanelists => Set<InterviewPanelistEntity>();
     public DbSet<InterviewEvaluationEntity> InterviewEvaluations => Set<InterviewEvaluationEntity>();
@@ -337,6 +341,11 @@ public sealed class HrManagementDbContext(DbContextOptions<HrManagementDbContext
             entity.HasIndex(item => new { item.TenantKey, item.Email })
                   .IsUnique()
                   .HasFilter("[Email] IS NOT NULL");
+            // Phone identifies an employee as email does (names may repeat). Stored in one
+            // spelling (EmployeePhone.Normalize) so "98765 43210" and "+919876543210" collide.
+            entity.HasIndex(item => new { item.TenantKey, item.Phone })
+                  .IsUnique()
+                  .HasFilter("[Phone] IS NOT NULL");
             entity.HasIndex(item => new { item.TenantKey, item.DepartmentCode });
             entity.HasIndex(item => new { item.TenantKey, item.LocationCode });
             entity.HasIndex(item => new { item.TenantKey, item.EmploymentStatusCode });
@@ -918,5 +927,9 @@ public sealed class HrManagementDbContext(DbContextOptions<HrManagementDbContext
             entity.Property(item => item.State).HasMaxLength(20).IsRequired();
             entity.Property(item => item.Comment).HasMaxLength(2000);
         });
+
+        // HrManagementDbContext.Integrity.cs
+        ConfigureEmployeeMaster(modelBuilder);
+        ConfigureIntegrity(modelBuilder);
     }
 }

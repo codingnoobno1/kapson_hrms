@@ -6,6 +6,7 @@
 @using Vispl.HRManagement.Contracts.Mobile.Workforce
 @inject ILeaveConfigurationService LeaveConfiguration
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Leave Type Colours | HR Portal</PageTitle>
 
@@ -162,6 +163,7 @@
             }
 
             Notice = $"Saved {changed.Count} leave type{(changed.Count == 1 ? "" : "s")}. The app shows the new colours the next time it loads leave.";
+            Toast.Success(Notice);
             await LoadAsync();
         }
         catch (Exception ex)

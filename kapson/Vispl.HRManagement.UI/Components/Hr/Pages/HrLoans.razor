@@ -10,6 +10,7 @@
 @inject IEmployeeReportService Reports
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Loan and Advance | HR Portal</PageTitle>
 
@@ -605,6 +606,7 @@
         {
             var caller = await PortalCaller.GetAsync();
             Notice = await write(caller);
+            Toast.Success(Notice ?? "Saved.");
             Modal = LoanModal.None;
             await LoadAsync();
         }

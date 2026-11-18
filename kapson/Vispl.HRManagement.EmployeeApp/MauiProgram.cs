@@ -12,6 +12,7 @@ using Vispl.HRManagement.EmployeeApp.Shared.Services;
 using Vispl.HRManagement.EmployeeApp.Shared.Theme;
 using Vispl.HRManagement.Mobile.Client;
 using Vispl.HRManagement.Mobile.Client.Auth;
+using Vispl.HRManagement.Mobile.Client.Http;
 
 namespace Vispl.HRManagement.EmployeeApp;
 
@@ -29,16 +30,25 @@ public static class MauiProgram
     /// </summary>
     private static string ResolveApiBaseAddress()
     {
-        var saved = Preferences.Default.Get(
-            "kapsons.api.base_url",
-            "https://untutelary-francisco-overtrustfully.ngrok-free.dev");
-        return string.IsNullOrWhiteSpace(saved)
-            ? "https://untutelary-francisco-overtrustfully.ngrok-free.dev"
-            : saved.Trim();
+        // A server the user entered on the sign-in screen wins; otherwise the hosted default.
+        var saved = Preferences.Default.Get("kapsons.api.base_url", MobileApiOptions.DefaultBaseAddress);
+        if (string.IsNullOrWhiteSpace(saved)) return MobileApiOptions.DefaultBaseAddress;
+        saved = saved.Trim();
+        // Quick-tunnel addresses are temporary. A saved one from an older build is stale once an
+        // update ships a newer address, so the built-in address replaces it.
+        if (saved.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(saved.TrimEnd('/'), MobileApiOptions.DefaultBaseAddress, StringComparison.OrdinalIgnoreCase))
+        {
+            Preferences.Default.Set("kapsons.api.base_url", MobileApiOptions.DefaultBaseAddress);
+            return MobileApiOptions.DefaultBaseAddress;
+        }
+        return saved;
     }
 
     public static MauiApp CreateMauiApp()
     {
+        CrashGuard.Install();
+
         var builder = MauiApp.CreateBuilder();
 
         builder
@@ -65,7 +75,10 @@ public static class MauiProgram
         // Replaces the library's in-memory fallback with the platform's protected store.
         builder.Services.AddSingleton<ITokenStore, SecureTokenStore>();
 
-        builder.Services.AddSingleton<AppShell>();
+        // Transient: each sign-in gets a fresh shell. Re-attaching a shell that was already
+        // shown (and torn down at sign-out) to the window crashes MAUI, and would also keep the
+        // previous person's pages.
+        builder.Services.AddTransient<AppShell>();
         builder.Services.AddSingleton<EmployeeThemeService>();
 
         // The coral (+) sheet every tab root opens.
@@ -76,6 +89,7 @@ public static class MauiProgram
         // Transient: a page holds loaded records, and a tab returned to should re-read rather
         // than show what was true when it was last open.
         builder.Services.AddTransient<SignInPage>();
+        builder.Services.AddTransient<ChangePasswordPage>();
         builder.Services.AddTransient<HomePage>();
         builder.Services.AddTransient<HomeViewModel>();
         builder.Services.AddTransient<AttendancePage>();

@@ -42,11 +42,24 @@ public sealed record TokenResult(TokenGrant? Grant, TokenFailure Failure)
     public static TokenResult Fail(TokenFailure failure) => new(null, failure);
 }
 
+/// <summary>
+/// What a mobile password change produced. On success the caller gets a fresh grant, so the
+/// app can carry on without a second sign-in; on failure, the reasons to show the person.
+/// </summary>
+public sealed record PasswordChangeResult(TokenGrant? Grant, IReadOnlyList<string> Errors, bool AccountUnavailable)
+{
+    public bool Succeeded => Grant is not null;
+    public static PasswordChangeResult Ok(TokenGrant grant) => new(grant, [], false);
+    public static PasswordChangeResult Invalid(IReadOnlyList<string> errors) => new(null, errors, false);
+    public static PasswordChangeResult Unavailable() => new(null, [], true);
+}
+
 public interface IMobileTokenService
 {
     Task<TokenResult> IssueAsync(LoginIdentifier login, string password, string? deviceId, CancellationToken cancellationToken = default);
     Task<TokenResult> RefreshAsync(string refreshToken, string? deviceId, CancellationToken cancellationToken = default);
     Task RevokeAsync(string refreshToken, bool revokeFamily, CancellationToken cancellationToken = default);
+    Task<PasswordChangeResult> ChangePasswordAsync(string userId, string currentPassword, string newPassword, string? deviceId, CancellationToken cancellationToken = default);
 }
 
 public sealed class MobileTokenService(
@@ -190,6 +203,72 @@ public sealed class MobileTokenService(
         stored.RevokedUtc = now;
         stored.RevokedReason = "Signed out";
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Changes the signed-in account's password and clears the forced-change flag.
+    ///
+    /// Every refresh token the account already holds is revoked, so a session opened with the
+    /// old password (a temporary one HR handed out, say) cannot outlive it. A new grant is
+    /// issued in their place for the device making the change.
+    /// </summary>
+    public async Task<PasswordChangeResult> ChangePasswordAsync(
+        string userId,
+        string currentPassword,
+        string newPassword,
+        string? deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = string.IsNullOrWhiteSpace(userId) ? null : await userManager.FindByIdAsync(userId);
+
+        if (user is null || !user.IsActive ||
+            user.Portal is not (AccountPortal.Hr or AccountPortal.Employee or AccountPortal.Candidate) ||
+            (user.Portal is not AccountPortal.Candidate && !user.MobileAccessEnabled))
+        {
+            return PasswordChangeResult.Unavailable();
+        }
+
+        if (string.Equals(currentPassword, newPassword, StringComparison.Ordinal))
+        {
+            return PasswordChangeResult.Invalid(["The new password must be different from the current one."]);
+        }
+
+        var result = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+
+        if (!result.Succeeded)
+        {
+            // A wrong current password counts towards lockout, so a stolen access token cannot
+            // be used to guess the password behind it without limit.
+            if (result.Errors.Any(error => error.Code == nameof(IdentityErrorDescriber.PasswordMismatch)))
+            {
+                await userManager.AccessFailedAsync(user);
+                return PasswordChangeResult.Invalid(["Your current password is not correct."]);
+            }
+
+            return PasswordChangeResult.Invalid(result.Errors.Select(error => error.Description).ToList());
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        user.MustChangePassword = false;
+        user.PasswordChangedUtc = now;
+        user.UpdatedUtc = now;
+        await userManager.ResetAccessFailedCountAsync(user);
+        await userManager.UpdateAsync(user);
+
+        var live = await dbContext.RefreshTokens
+            .Where(item => item.UserId == user.Id && item.RevokedUtc == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var item in live)
+        {
+            item.RevokedUtc = now;
+            item.RevokedReason = "Password changed";
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return PasswordChangeResult.Ok(
+            await GrantAsync(user, Guid.NewGuid().ToString("N"), deviceId, cancellationToken));
     }
 
     /// <summary>

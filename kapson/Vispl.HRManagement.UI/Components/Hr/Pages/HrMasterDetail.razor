@@ -3,6 +3,7 @@
 @attribute [Authorize(Policy = "HrPortal")]
 @inject IMasterDataService MasterDataService
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 @*
     One page for every "GenericMaster" card in HrMasterRegistry — not one page per master. The
@@ -482,9 +483,13 @@
         {
             Editor.Code = Editor.Code.Trim().ToUpperInvariant();
             Editor.Name = Editor.Name.Trim();
+            var isNew = Editor.Id == 0;
+            var savedName = Editor.Name;
+            var savedLabel = CardTitle(Editor.Category);
             await MasterDataService.SaveAsync(Editor, CancellationToken.None);
             Editor = null;
             await LoadAsync();
+            Toast.Success($"{savedLabel} \"{savedName}\" {(isNew ? "added" : "updated")} successfully.");
         }
         catch (Exception ex)
         {
@@ -513,6 +518,7 @@
             retired.IsActive = false;
             await MasterDataService.SaveAsync(retired, CancellationToken.None);
             await LoadAsync();
+            Toast.Success($"{CardTitle(doomed.Category)} \"{doomed.Name}\" deleted.");
         }
         catch (Exception ex)
         {
@@ -566,8 +572,10 @@
                 await MasterDataService.SaveAsync(moved, CancellationToken.None);
             }
 
+            var orderedLabel = OrderingCategory is null ? "Display" : CardTitle(OrderingCategory);
             OrderingCategory = null;
             await LoadAsync();
+            Toast.Success($"{orderedLabel} order saved.");
         }
         catch (Exception ex)
         {

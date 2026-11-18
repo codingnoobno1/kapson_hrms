@@ -16,7 +16,7 @@
     <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <ApplicationTitle>HR Management</ApplicationTitle>
+    <ApplicationTitle>Kapsons HR</ApplicationTitle>
     <ApplicationId>com.vertex.hrmanagement</ApplicationId>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>

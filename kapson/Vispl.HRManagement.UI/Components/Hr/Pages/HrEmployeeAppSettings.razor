@@ -9,6 +9,7 @@
 @using Vispl.HRManagement.UI.Components.Hr.Shared
 @inject IEmployeeAppSettingsService AppSettings
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Employee App Controls | HR Portal</PageTitle>
 
@@ -201,6 +202,7 @@
             await AppSettings.SaveAsync(caller, Settings);
             Settings = await AppSettings.GetAsync(caller.TenantKey);
             Notice = "Saved. The employee app picks these up the next time it loads a screen.";
+            Toast.Success(Notice);
         }
         catch (MobileAccessDeniedException denied)
         {

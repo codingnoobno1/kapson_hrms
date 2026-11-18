@@ -75,6 +75,18 @@ public sealed class RevokeRequest
     public bool AllDevices { get; set; }
 }
 
+public sealed class ChangePasswordRequest
+{
+    [Required, StringLength(256, MinimumLength = 1)]
+    public string CurrentPassword { get; set; } = string.Empty;
+
+    [Required, StringLength(256, MinimumLength = 1)]
+    public string NewPassword { get; set; } = string.Empty;
+
+    [StringLength(200)]
+    public string? DeviceId { get; set; }
+}
+
 public sealed record TokenResponse(
     string AccessToken,
     string RefreshToken,
@@ -87,11 +99,11 @@ public sealed record TokenResponse(
     IReadOnlyList<string> Permissions);
 
 [ApiController]
-[AllowAnonymous]
 [Route("api/mobile/v1/auth")]
 public sealed class MobileAuthController(IMobileTokenService tokens) : ControllerBase
 {
     [HttpPost("token")]
+    [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> IssueAsync(
@@ -108,6 +120,7 @@ public sealed class MobileAuthController(IMobileTokenService tokens) : Controlle
     }
 
     [HttpPost("refresh")]
+    [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RefreshAsync(
@@ -123,6 +136,7 @@ public sealed class MobileAuthController(IMobileTokenService tokens) : Controlle
     /// would let a caller test whether a token exists.
     /// </summary>
     [HttpPost("revoke")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> RevokeAsync(
         [FromBody] RevokeRequest request,
@@ -130,6 +144,52 @@ public sealed class MobileAuthController(IMobileTokenService tokens) : Controlle
     {
         await tokens.RevokeAsync(request.RefreshToken, request.AllDevices, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Sets a new password for the signed-in account and clears a forced change. Allowed while
+    /// a change is still pending — that is the whole point — so it takes the bearer token
+    /// directly rather than going through the policies that gate ordinary mobile calls.
+    /// Returns a fresh token pair; every older refresh token for the account is revoked.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize(AuthenticationSchemes = MobileAuthenticationDefaults.BearerScheme)]
+    [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePasswordAsync(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value
+            ?? string.Empty;
+
+        var result = await tokens.ChangePasswordAsync(
+            userId, request.CurrentPassword, request.NewPassword, request.DeviceId, cancellationToken);
+
+        if (result.Succeeded)
+        {
+            return Ok(Map(result.Grant!));
+        }
+
+        if (result.AccountUnavailable)
+        {
+            return Deny(TokenFailure.Disabled);
+        }
+
+        var problem = new ProblemDetails
+        {
+            Title = "The password could not be changed.",
+            Detail = string.Join(" ", result.Errors),
+            Status = StatusCodes.Status400BadRequest,
+            Instance = HttpContext.Request.Path
+        };
+        problem.Extensions["code"] = "PASSWORD_CHANGE_REJECTED";
+        problem.Extensions["errors"] = result.Errors;
+        problem.Extensions["correlationId"] = HttpContext.TraceIdentifier;
+
+        return BadRequest(problem);
     }
 
     private static TokenResponse Map(TokenGrant grant) => new(

@@ -4,6 +4,7 @@
 @inject IDesignationService Designations
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Designation | HR Portal</PageTitle>
 
@@ -393,9 +394,12 @@
 
         try
         {
+            var isNew = string.IsNullOrEmpty(Editor.Id);
+            var savedName = Editor.Name;
             await Designations.SaveAsync(_tenantKey, Editor);
             Editor = null;
             await LoadAsync();
+            Toast.Success($"Designation \"{savedName}\" {(isNew ? "added" : "updated")} successfully.");
         }
         catch (Exception ex)
         {
@@ -423,6 +427,7 @@
             await Designations.DeleteAsync(_tenantKey, doomed.Id);
             PendingDelete = null;
             await LoadAsync();
+            Toast.Success($"Designation \"{doomed.Name}\" deleted.");
         }
         catch (Exception ex)
         {
@@ -464,6 +469,7 @@
             await Designations.ReorderAsync(_tenantKey, OrderDraft.Select(item => item.Id).ToList());
             IsOrdering = false;
             await LoadAsync();
+            Toast.Success("Designation order saved.");
         }
         catch (Exception ex)
         {

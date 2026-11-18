@@ -15,6 +15,27 @@ public sealed class EmployeeProvisioning(IEmployeeRepository employees) : IEmplo
             return existing.Id;
         }
 
+        // Email and phone identify an employee; a candidate whose email or phone already
+        // belongs to an employee is stopped here with a reason rather than by the database.
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
+        string? phone;
+        try
+        {
+            phone = EmployeePhone.Normalize(request.Phone);
+        }
+        catch (FormatException)
+        {
+            phone = null;   // A candidate's free-typed number is not worth blocking the hire over.
+        }
+
+        var clashes = await employees.FindPossibleDuplicatesAsync(request.TenantKey, email, phone, null, cancellationToken);
+        if (clashes.FirstOrDefault() is { } clash)
+        {
+            var field = email is not null && string.Equals(clash.Email, email, StringComparison.OrdinalIgnoreCase) ? "email" : "phone number";
+            throw new InvalidOperationException(
+                $"This candidate's {field} already belongs to employee {clash.DisplayName} ({clash.EmployeeNumber}). Each employee needs their own email and phone number.");
+        }
+
         var now = DateTimeOffset.UtcNow;
         var names = SplitName(request.FullName);
 
@@ -29,7 +50,7 @@ public sealed class EmployeeProvisioning(IEmployeeRepository employees) : IEmplo
                 employeeNumber,
                 names.First, names.Middle, names.Last, null,
                 null, null, null, null,
-                request.Email, request.Phone, null,
+                email, phone, null,
                 request.JoinedOn,
                 request.EmploymentTypeCode,
                 "Active",

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
     x:Class="Vispl.HRManagement.EmployeeApp.Features.Authentication.SignInPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
@@ -50,7 +50,10 @@
                 </Border.StrokeShape>
                 <Entry
                     x:Name="UserNameEntry"
-                    Placeholder="employee.number"
+                    Placeholder="emp.1003"
+                    Keyboard="Plain"
+                    IsSpellCheckEnabled="False"
+                    IsTextPredictionEnabled="False"
                     ReturnType="Next"
                     HeightRequest="44"
                     BackgroundColor="Transparent"
@@ -92,7 +95,7 @@
                 </Border.StrokeShape>
                 <Entry
                     x:Name="ServerUrlEntry"
-                    Placeholder="https://untutelary-francisco-overtrustfully.ngrok-free.dev"
+                    Placeholder="https://arnold-notes-relief-net.trycloudflare.com"
                     Keyboard="Url"
                     ReturnType="Done"
                     HeightRequest="44"

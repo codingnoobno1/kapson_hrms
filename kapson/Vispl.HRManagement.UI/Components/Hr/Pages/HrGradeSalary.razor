@@ -5,6 +5,7 @@
 @inject IGradeSalaryService GradeSalary
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Link Allowances / Deductions With Grade | HR Portal</PageTitle>
 
@@ -401,6 +402,7 @@
             await GradeSalary.SaveAsync(_tenantKey, Editing);
             await LoadAsync(gradeCode);
             SaveMessage = $"{gradeName} salary structure saved.";
+            Toast.Success(SaveMessage);
         }
         catch (Exception ex)
         {

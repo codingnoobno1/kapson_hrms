@@ -8,6 +8,7 @@
 @using Vispl.HRManagement.UI.Components.Hr.Shared
 @inject IBankAccountService BankAccounts
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Bank Accounts | HR Portal</PageTitle>
 
@@ -471,6 +472,7 @@
             PendingRemoval = null;
             PendingDelete = null;
             Notice = message;
+            Toast.Success(message);
             await LoadAsync();
         }
         catch (MobileAccessDeniedException denied)

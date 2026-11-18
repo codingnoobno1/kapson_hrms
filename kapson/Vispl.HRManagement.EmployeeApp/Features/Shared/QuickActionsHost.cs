@@ -88,8 +88,28 @@ public sealed class QuickActionsHost(
             throw new InvalidOperationException("HR requires your location to punch. Allow location access for the app and try again.");
         }
 
-        var location = await Geolocation.Default.GetLocationAsync(
-            new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(12)));
+        Location? location;
+        try
+        {
+            location = await Geolocation.Default.GetLocationAsync(
+                new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(12)));
+
+            // No fresh fix (indoors, GPS warming up): the phone's last known position is
+            // still a real reading and better than refusing the punch.
+            location ??= await Geolocation.Default.GetLastKnownLocationAsync();
+        }
+        catch (FeatureNotEnabledException)
+        {
+            throw new InvalidOperationException("Location is switched off on your phone. Turn it on and try again.");
+        }
+        catch (FeatureNotSupportedException)
+        {
+            throw new InvalidOperationException("This phone cannot read its location, which HR requires to punch.");
+        }
+        catch (PermissionException)
+        {
+            throw new InvalidOperationException("HR requires your location to punch. Allow location access for the app and try again.");
+        }
 
         return location ?? throw new InvalidOperationException("Your location could not be read. Turn on location services and try again.");
     }

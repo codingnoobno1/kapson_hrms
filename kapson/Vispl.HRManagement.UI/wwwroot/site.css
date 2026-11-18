@@ -2062,3 +2062,27 @@ td.att-cell { display: table-cell; border-radius: 0; }
     .admin-header { gap: 18px; padding: 0 22px; }
     .admin-header nav { gap: 17px; font-size: .8rem; }
 }
+
+/* Saved / failed toast shown after every HR portal write (HrToastHost). */
+.hr-toast {
+    position: fixed; right: 20px; bottom: 20px; z-index: 2000;
+    display: flex; align-items: center; gap: 10px;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 12px 12px 12px 14px; border-radius: 10px;
+    font-size: .86rem; font-weight: 600;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+    animation: hr-toast-in .18s ease-out;
+}
+.hr-toast.success { color: #14532d; background: #f2fbf6; border: 1px solid #b6e2c8; }
+.hr-toast.error { color: #8b2531; background: #fff2f3; border: 1px solid #f0bdc4; }
+.hr-toast-icon {
+    flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    color: #fff; font-size: .78rem; font-weight: 800;
+}
+.hr-toast.success .hr-toast-icon { background: #16a34a; }
+.hr-toast.error .hr-toast-icon { background: #dc2626; }
+.hr-toast-text { flex: 1; }
+.hr-toast-close { flex: none; border: 0; background: transparent; color: inherit; opacity: .6; cursor: pointer; font-size: .9rem; padding: 2px 4px; }
+.hr-toast-close:hover { opacity: 1; }
+@keyframes hr-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) { .hr-toast { right: 16px; left: 16px; bottom: 16px; max-width: none; } }

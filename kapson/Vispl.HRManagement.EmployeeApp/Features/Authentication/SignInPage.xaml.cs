@@ -61,20 +61,19 @@ public partial class SignInPage : ContentPage
 
             if (outcome.MustChangePassword)
             {
-                // The server can demand a change before real work. There is no change-password
-                // screen in the plan yet, so the person is told plainly rather than dropped
-                // into an app that will refuse every call.
-                await DisplayAlert(
-                    "Password change required",
-                    "Your account needs a new password before you can use the app. " +
-                    "Please set one through HR, then sign in again.",
-                    "OK");
-
-                await authenticator.SignOutAsync();
+                // The server demands a new password before real work (a first sign-in with
+                // HR's temporary one). The change page is the only way on from here.
+                Application.Current!.Windows[0].Page = App.Services.GetRequiredService<ChangePasswordPage>();
                 return;
             }
 
             Application.Current!.Windows[0].Page = App.Services.GetRequiredService<AppShell>();
+        }
+        catch (Exception exception)
+        {
+            Vispl.HRManagement.EmployeeApp.Shared.Services.CrashGuard.Report(exception);
+            ErrorLabel.Text = "Could not sign in. Check the server address and try again.";
+            ErrorLabel.IsVisible = true;
         }
         finally
         {

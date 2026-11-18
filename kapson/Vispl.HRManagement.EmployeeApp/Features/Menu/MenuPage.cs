@@ -555,10 +555,8 @@ public sealed class MenuPage : ContentPage
             return;
         }
 
+        // Clearing the session raises SignedOut, and App returns the window to sign-in once.
         await authenticator.SignOutAsync();
-
-        Application.Current!.Windows[0].Page =
-            App.Services.GetRequiredService<Features.Authentication.SignInPage>();
     }
 
     private static View Loading() => new ActivityIndicator

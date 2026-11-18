@@ -13,6 +13,7 @@ using Vispl.HRManagement.Mobile.Features.Notifications.Pages;
 using Vispl.HRManagement.Mobile.Features.Notifications.ViewModels;
 using Vispl.HRManagement.Mobile.Client;
 using Vispl.HRManagement.Mobile.Client.Auth;
+using Vispl.HRManagement.Mobile.Client.Http;
 using Vispl.HRManagement.Mobile.Shared.Motion;
 using Vispl.HRManagement.Mobile.Shared.Services;
 
@@ -26,16 +27,34 @@ public static class MauiProgram
     /// </summary>
     private static string ResolveApiBaseAddress()
     {
-        var saved = Preferences.Default.Get(
-            "kapsons.api.base_url",
-            "https://untutelary-francisco-overtrustfully.ngrok-free.dev");
-        return string.IsNullOrWhiteSpace(saved)
-            ? "https://untutelary-francisco-overtrustfully.ngrok-free.dev"
-            : saved.Trim();
+        // The built-in address is MobileApiOptions.DefaultBaseAddress, which the Vertex pipeline
+        // sets to the live secure address before every build (shared with the employee app).
+        var fallback = MobileApiOptions.DefaultBaseAddress;
+        var saved = Preferences.Default.Get("kapsons.api.base_url", fallback);
+        if (string.IsNullOrWhiteSpace(saved))
+        {
+            return fallback;
+        }
+
+        saved = saved.Trim();
+
+        // Temporary tunnel addresses (and the old ngrok one) go stale once a newer build ships;
+        // the built-in address replaces a saved one that is not the current address.
+        if ((saved.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) ||
+             saved.Contains(".ngrok", StringComparison.OrdinalIgnoreCase)) &&
+            !string.Equals(saved.TrimEnd('/'), fallback, StringComparison.OrdinalIgnoreCase))
+        {
+            Preferences.Default.Set("kapsons.api.base_url", fallback);
+            return fallback;
+        }
+
+        return saved;
     }
 
     public static MauiApp CreateMauiApp()
     {
+        CrashGuard.Install();
+
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()

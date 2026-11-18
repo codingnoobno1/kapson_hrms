@@ -12,6 +12,7 @@
 @inject IDesignationService Designations
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Add New Employee | HR Portal</PageTitle>
 
@@ -68,8 +69,9 @@
                             <InputText @bind-Value="Form.Email" type="email" placeholder="name@kapsons.com" />
                         </label>
                         <label>
-                            Phone
+                            Phone <em>*</em>
                             <InputText @bind-Value="Form.Phone" inputmode="tel" placeholder="+91 98765 43210" />
+                            <small class="hr-hint">Email and phone must each belong to one employee only.</small>
                         </label>
                         <label>
                             Gender
@@ -187,8 +189,8 @@
                 @if (Duplicates.Count > 0)
                 {
                     <section class="hr-panel emp-duplicates">
-                        <h2>⚠️ Possible duplicates</h2>
-                        <p>These existing records share the email or employee number. Check before creating another record.</p>
+                        <h2>⚠️ Already an employee</h2>
+                        <p>This email, phone number or employee number is already used by the record below. Change it to create a new employee — two people may share a name, but not an email or phone.</p>
                         <ul>
                             @foreach (var match in Duplicates)
                             {
@@ -201,7 +203,7 @@
                 <div class="emp-actions">
                     <a class="hr-button small ghost" href="@Href("people")">Cancel</a>
                     <button class="hr-button small" type="submit" disabled="@IsSaving">
-                        @(IsSaving ? "Saving…" : Duplicates.Count > 0 ? "Create anyway" : "Create employee")
+                        @(IsSaving ? "Saving…" : "Create employee")
                     </button>
                 </div>
             </EditForm>
@@ -224,7 +226,6 @@
     private bool IsLoading = true;
     private bool IsSaving;
     private bool CanCreate;
-    private bool DuplicatesAcknowledged;
     private string? LoadError;
     private string? SaveError;
     private CreatedEmployee? Created;
@@ -268,7 +269,6 @@
         };
         DesignationCode = string.Empty;
         Duplicates = [];
-        DuplicatesAcknowledged = false;
         SaveError = null;
     }
 
@@ -298,17 +298,21 @@
 
         try
         {
+            if (string.IsNullOrWhiteSpace(Form.Phone))
+            {
+                SaveError = "Enter the employee's phone number.";
+                return;
+            }
+
             var caller = await PortalCaller.GetAsync();
 
-            // Show likely duplicates once; a second submit is the explicit "create anyway".
-            if (!DuplicatesAcknowledged)
+            // Email, phone and employee number each identify one employee, so a match blocks
+            // the save until it is changed. The service enforces the same rule.
+            Duplicates = await Employees.CheckDuplicateAsync(caller, Form, CancellationToken.None);
+            if (Duplicates.Count > 0)
             {
-                Duplicates = await Employees.CheckDuplicateAsync(caller, Form, CancellationToken.None);
-                if (Duplicates.Count > 0)
-                {
-                    DuplicatesAcknowledged = true;
-                    return;
-                }
+                SaveError = "This employee already exists. Use a different email, phone number or employee number.";
+                return;
             }
 
             var name = Form.LegalName.Trim();
@@ -317,6 +321,7 @@
 
             await Employees.CreateAsync(caller, Form, CancellationToken.None);
             Created = new CreatedEmployee(name, number);
+            Toast.Success($"Employee {name} ({number}) saved successfully.");
 
             Directory = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery());
         }

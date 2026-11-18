@@ -7,6 +7,7 @@
 @using Vispl.HRManagement.UI.Components.Hr.Shared
 @inject IMobileEmployeeService Employees
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 @inject IMasterDataService Masters
 @inject Vispl.HRManagement.BM.ITF.Admin.IEmployeeReportService Reports
 
@@ -538,6 +539,7 @@
             }
 
             PlacementMessage = $"Saved the new {string.Join(" and ", saved)} for {overview.Summary.DisplayName}.";
+            Toast.Success(PlacementMessage);
         }
         catch (MobileAccessDeniedException denied)
         {

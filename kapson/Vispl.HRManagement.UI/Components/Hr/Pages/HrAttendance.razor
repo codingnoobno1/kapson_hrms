@@ -14,6 +14,7 @@
 @inject IGatePassService GatePassService
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
+@inject HrToastService Toast
 
 <PageTitle>Attendance | HR Portal</PageTitle>
 
@@ -385,6 +386,7 @@
             Notice = approve
                 ? $"Approved {pass.DisplayName}'s {(pass.PassType == "MultiDayPass" ? "multi-day" : "day")} pass."
                 : $"Rejected {pass.DisplayName}'s pass.";
+            Toast.Success(Notice);
         }
         catch (MobileAccessDeniedException denied)
         {

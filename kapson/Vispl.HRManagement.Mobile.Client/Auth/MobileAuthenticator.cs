@@ -43,7 +43,9 @@ public sealed class MobileAuthenticator(
                 options.ResolveUri("api/mobile/v1/auth/token"),
                 new
                 {
-                    userName = userName.Trim(),
+                    // Usernames never contain spaces, but phone keyboards add one after a full
+                    // stop ("emp. 1003"); an unknown username fails like a wrong password.
+                    userName = string.Concat(userName.Where(c => !char.IsWhiteSpace(c))),
                     password,
                     deviceId = options.DeviceId
                 },
@@ -96,7 +98,75 @@ public sealed class MobileAuthenticator(
 
             return SignInOutcome.Ok(issued.MustChangePassword);
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or UriFormatException or NotSupportedException)
+        {
+            return SignInOutcome.Failed("No connection to the Kapsons server.");
+        }
+    }
+
+    /// <summary>
+    /// Sets a new password for the signed-in account. On success the server hands back a fresh
+    /// token pair with the forced-change flag cleared, which replaces the current session.
+    /// </summary>
+    public async Task<SignInOutcome> ChangePasswordAsync(
+        string currentPassword, string newPassword, CancellationToken ct = default)
+    {
+        var tokens = session.Tokens ?? await store.LoadAsync(ct);
+
+        if (tokens is null)
+        {
+            return SignInOutcome.Failed("Your session has ended. Sign in again.");
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post, options.ResolveUri("api/mobile/v1/auth/change-password"))
+            {
+                Content = JsonContent.Create(
+                    new { currentPassword, newPassword, deviceId = options.DeviceId }, options: Json)
+            };
+
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+
+            using var response = await http.SendAsync(request, ct);
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                return SignInOutcome.Failed("Your session has ended. Sign in again.");
+            }
+
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden)
+            {
+                return SignInOutcome.Failed(await DescribeProblemAsync(
+                    response, "The password could not be changed.", ct));
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return SignInOutcome.Failed("Could not change the password right now. Try again shortly.");
+            }
+
+            var issued = await response.Content
+                .ReadFromJsonAsync<MobileApiClient.TokenResponsePayload>(Json, ct);
+
+            if (issued is null || string.IsNullOrWhiteSpace(issued.AccessToken))
+            {
+                return SignInOutcome.Failed("The server did not return a usable sign-in.");
+            }
+
+            var fresh = new MobileTokens(
+                issued.AccessToken,
+                issued.RefreshToken,
+                DateTimeOffset.UtcNow.AddSeconds(issued.ExpiresIn));
+
+            session.Apply(fresh, issued.ToIdentity());
+            await store.SaveAsync(fresh, ct);
+
+            return SignInOutcome.Ok(issued.MustChangePassword);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or UriFormatException or NotSupportedException)
         {
             return SignInOutcome.Failed("No connection to the Kapsons server.");
         }
@@ -157,7 +227,7 @@ public sealed class MobileAuthenticator(
             await store.SaveAsync(tokens, ct);
             return true;
         }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or UriFormatException or NotSupportedException)
         {
             // Offline at launch. The tokens are kept — the person is not signed out because
             // their train went into a tunnel — and the shell shows the offline state instead.
@@ -188,7 +258,7 @@ public sealed class MobileAuthenticator(
 
                 using var _ = await http.SendAsync(request, ct);
             }
-            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or UriFormatException or NotSupportedException)
             {
                 // Revocation is best effort. Leaving the tokens on the device because the
                 // network was down would be the worse failure.
@@ -227,6 +297,37 @@ public sealed class MobileAuthenticator(
         }
 
         return "This account cannot sign in to the app. Ask HR or your administrator.";
+    }
+
+    /// <summary>Reads a ProblemDetails body: its <c>detail</c>, else its <c>title</c>.</summary>
+    private static async Task<string> DescribeProblemAsync(
+        HttpResponseMessage response, string fallback, CancellationToken ct)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync(ct);
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                using var document = JsonDocument.Parse(text);
+
+                foreach (var name in new[] { "detail", "title" })
+                {
+                    if (document.RootElement.TryGetProperty(name, out var value) &&
+                        value.ValueKind == JsonValueKind.String &&
+                        value.GetString() is { Length: > 0 } message)
+                    {
+                        return message;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Not ProblemDetails; the fallback still tells the truth.
+        }
+
+        return fallback;
     }
 
     private async Task SignOutLocallyAsync(CancellationToken ct)
