@@ -563,7 +563,7 @@ public sealed class EmployeeRepository(HrManagementDbContext dbContext) : IEmplo
         item.JobTitle, item.ProbationEndsOn,
         item.CompanyCode, item.DivisionCode, item.DepartmentCode, item.LocationCode,
         item.ManagerEmployeeId, item.CostCentre, item.AccountId, item.CandidateId,
-        item.IsActive, item.CreatedUtc, item.UpdatedUtc, item.LeavingOn);
+        item.IsActive, item.CreatedUtc, item.UpdatedUtc, item.LeavingOn, item.ExcludeFromPayroll, item.IsDraft);
 
     private static EmployeeContactRecord MapContact(EmployeeContactEntity item) => new(
         item.Id, item.TenantKey, item.EmployeeId, item.Kind, item.Name, item.Relationship,

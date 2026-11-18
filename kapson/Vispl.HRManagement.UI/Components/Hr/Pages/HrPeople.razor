@@ -1,614 +1,330 @@
 @page "/hr/people"
 @page "/hr/{TenantKey}/people"
+@page "/hr/employees"
+@page "/hr/{TenantKey}/employees"
 @attribute [Authorize(Policy = "HrPortal")]
+@using System.Globalization
+@using Microsoft.JSInterop
+@using Vispl.HRManagement.BM.ITF.Admin
 @using Vispl.HRManagement.BM.ITF.Mobile
-@using Vispl.HRManagement.Contracts.Mobile.Employee
-@using Vispl.HRManagement.Contracts.Mobile.Shared
+@using Vispl.HRManagement.BM.ITF.Shared
+@using Vispl.HRManagement.Contracts.Admin
 @using Vispl.HRManagement.UI.Components.Hr.Shared
-@inject IMobileEmployeeService Employees
-@inject HrPortalCaller PortalCaller
-@inject HrToastService Toast
+@inject IEmployeeWorkspaceService Workspace
 @inject IMasterDataService Masters
-@inject Vispl.HRManagement.BM.ITF.Admin.IEmployeeReportService Reports
+@inject IExcelExporter Excel
+@inject HrPortalCaller PortalCaller
+@inject IJSRuntime JS
 
-<PageTitle>People | HR Portal</PageTitle>
+<PageTitle>Employees Explorer | HR Portal</PageTitle>
 
-<HrPageShell ActivePage="people" TenantKey="@TenantKey"
-             Kicker="DIRECTORY" Title="People"
-             Subtitle="Everyone on your client, and what the record says about them."
-             Error="@LoadError">
-    <Filters>
-        <label>
-            Search
-            <input type="search" placeholder="Name or employee number"
-                   value="@Search" @onchange="ChangeSearch" @onkeydown="SearchKey" />
-        </label>
+<div class="hr-app">
+    <HrNav ActivePage="people" TenantKey="@TenantKey" />
 
-        <label>
-            Status
-            <select value="@Status" @onchange="ChangeStatus">
-                <option value="">Everyone</option>
-                <option value="Active">Active</option>
-                <option value="OnLeave">On leave</option>
-                <option value="Exited">Exited</option>
-            </select>
-        </label>
+    <main class="hr-page">
+        <h1 class="hr-title-blue">Employees Explorer</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Href("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <strong>Employees Explorer</strong>
+        </nav>
 
-        <button class="hr-button small" type="button" @onclick="SearchAsync" disabled="@IsBusy">
-            @(IsBusy ? "Loading…" : "Search")
-        </button>
+        <HrEmployeeTabs ActiveTab="explorer" TenantKey="@TenantKey" />
 
-        <a class="hr-button small ghost" href="@(string.IsNullOrWhiteSpace(TenantKey) ? "/hr/payroll/bank-accounts" : $"/hr/{TenantKey}/payroll/bank-accounts")">
-            Bank accounts
-        </a>
-
-        <a class="hr-button small ghost" href="@(string.IsNullOrWhiteSpace(TenantKey) ? "/hr/people/change-requests" : $"/hr/{TenantKey}/people/change-requests")">
-            Change requests
-        </a>
-    </Filters>
-
-    <ChildContent>
-        <HrDataTable TRow="EmployeeListItemDto"
-                     Title="Employees"
-                     Meta="@PageMeta()"
-                     Total="@(Page?.ApproximateTotal is { } total ? (int)total : null)"
-                     Error="@TableError"
-                     IsLoading="IsBusy"
-                     EmptyMessage="@EmptyMessage()"
-                     Rows="Page?.Items">
-            <Header>
-                <th>Employee</th><th>Number</th><th>Job title</th>
-                <th>Department</th><th>Location</th><th>Status</th><th></th>
-            </Header>
-            <Row Context="person">
-                <td class="strong">@person.DisplayName</td>
-                <td>@person.EmployeeNumber</td>
-                <td>@person.JobTitle</td>
-                <td>@person.Department</td>
-                <td>@person.Location</td>
-                <td>
-                    <span class="hr-tag tone-@person.Status.Tone">@person.Status.Name</span>
-                    @if (person.Presence is { } presence)
-                    {
-                        <small class="hr-hint">@presence</small>
-                    }
-                </td>
-                <td>
-                    <button class="hr-button small ghost" type="button"
-                            disabled="@(OpeningId == person.Id)"
-                            @onclick="() => OpenAsync(person)">
-                        @(OpeningId == person.Id ? "Opening…" : "Open")
-                    </button>
-                </td>
-            </Row>
-            <Footer>
-                <span class="hr-page-position">@Position()</span>
-                <span class="hr-page-controls">
-                    <button class="hr-button small ghost" type="button"
-                            disabled="@(History.Count == 0 || IsBusy)" @onclick="BackAsync">Back</button>
-                    <button class="hr-button small ghost" type="button"
-                            disabled="@(Page?.HasMore != true || IsBusy)" @onclick="NextAsync">Next</button>
-                </span>
-            </Footer>
-        </HrDataTable>
-
-        @if (Selected is { } overview)
+        @if (LoadError is not null)
         {
-            <section class="hr-panel">
-                <div class="hr-panel-head">
-                    <h2>@overview.Summary.DisplayName</h2>
-                    <div class="hr-panel-meta">
-                        <small>@overview.Summary.EmployeeNumber</small>
-                        <button class="hr-button small ghost" type="button"
-                                @onclick="() => Selected = null">Close</button>
-                    </div>
+            <div class="hr-alert error">@LoadError</div>
+        }
+        else
+        {
+            <section class="org-tiles emp-mt-sm">
+                <div><span>Total Records</span><strong>@Rows.Count</strong></div>
+                <div><span>Active</span><strong>@Rows.Count(r => r.IsActive && !r.IsDraft)</strong></div>
+                <div class="@(Rows.Any(r => r.IsDraft) ? "warn" : null)">
+                    <span>Drafts</span><strong>@Rows.Count(r => r.IsDraft)</strong>
                 </div>
+                <div><span>Exited</span><strong>@Rows.Count(r => !r.IsActive && !r.IsDraft)</strong></div>
+            </section>
 
-                @if (DetailError is not null)
-                {
-                    <div class="hr-alert error compact">@DetailError</div>
-                }
+            <section class="hr-panel emp-explorer-card">
+                <div class="emp-explorer-toolbar">
+                    <div class="emp-explorer-filters">
+                        <label class="emp-field">
+                            <span class="emp-label">Search</span>
+                            <input type="search" placeholder="Name, code, email or mobile…"
+                                   value="@Search"
+                                   @oninput="e => { Search = e.Value?.ToString() ?? string.Empty; PageIndex = 0; }"
+                                   @onkeydown="OnSearchKeyAsync" />
+                        </label>
 
-                <dl class="hr-detail-grid">
-                    <div><dt>Job title</dt><dd>@overview.Summary.JobTitle</dd></div>
-                    <div><dt>Department</dt><dd>@overview.Summary.Department</dd></div>
-                    <div><dt>Location</dt><dd>@overview.Summary.Location</dd></div>
-                    <div>
-                        <dt>Reports to</dt>
-                        <dd>@(overview.Manager?.DisplayName ?? "Nobody recorded")</dd>
-                    </div>
-                    <div>
-                        <dt>Joined</dt>
-                        <dd>
-                            @if (overview.JoinedOn is { } joined)
-                            {
-                                <text>@joined.ToString("dd MMM yyyy")</text>
-                                @if (joined > DateOnly.FromDateTime(DateTime.UtcNow))
+                        <label class="emp-field">
+                            <span class="emp-label">Division</span>
+                            <select value="@DivisionCode" @onchange="e => ApplyFilterAsync(() => DivisionCode = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">All Divisions</option>
+                                @foreach (var opt in Options(MasterCategories.Division))
                                 {
-                                    <span class="hr-tag tone-info">Not started yet</span>
+                                    <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
                                 }
-                            }
-                            else
-                            {
-                                <text>Not recorded</text>
-                            }
-                        </dd>
-                    </div>
-                    <div>
-                        <dt>Status</dt>
-                        <dd><span class="hr-tag tone-@overview.Summary.Status.Tone">@overview.Summary.Status.Name</span></dd>
-                    </div>
-                </dl>
+                            </select>
+                        </label>
 
-                @*
-                    Grade and division are what payroll prices and groups an employee by, so they are
-                    edited here against the masters rather than typed as free text.
-                *@
-                <div class="hr-placement">
-                    <div class="hr-placement-head">
-                        <h3>Grade &amp; division</h3>
-                        <small>Payroll takes basic pay and linked components from the grade.</small>
-                    </div>
-
-                    @if (PlacementError is not null)
-                    {
-                        <div class="hr-alert error compact">@PlacementError</div>
-                    }
-                    @if (PlacementMessage is not null)
-                    {
-                        <div class="hr-alert success compact">@PlacementMessage</div>
-                    }
-
-                    @if (IsLoadingPlacement)
-                    {
-                        <p class="hr-hint">Loading grade and division…</p>
-                    }
-                    else
-                    {
-                        <div class="hr-form-grid">
-                            <label>
-                                Grade
-                                <select value="@EditGrade" disabled="@(!CanEditEmployment || IsSavingPlacement)"
-                                        @onchange="args => EditGrade = args.Value?.ToString() ?? string.Empty">
-                                    @if (string.IsNullOrEmpty(CurrentGrade))
-                                    {
-                                        <option value="">Not assigned</option>
-                                    }
-                                    else if (!Listed(CurrentGrade, Grades))
-                                    {
-                                        <option value="@CurrentGrade">@CurrentGrade (not in the Grade master)</option>
-                                    }
-                                    @foreach (var grade in Grades)
-                                    {
-                                        <option @key="grade.Code" value="@grade.Code">@grade.Name</option>
-                                    }
-                                </select>
-                                @if (!CanEditEmployment)
+                        <label class="emp-field">
+                            <span class="emp-label">Department</span>
+                            <select value="@DepartmentCode" @onchange="e => ApplyFilterAsync(() => DepartmentCode = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">All Departments</option>
+                                @foreach (var opt in Options(MasterCategories.Department).Where(d => string.IsNullOrWhiteSpace(d.ParentCode)))
                                 {
-                                    <small class="hr-hint">Changing grade needs EMPLOYEES.EMPLOYMENT_MANAGE.</small>
+                                    <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
                                 }
-                            </label>
+                            </select>
+                        </label>
 
-                            <label>
-                                Division
-                                <select value="@EditDivision" disabled="@(!CanEditOrganisation || IsSavingPlacement)"
-                                        @onchange="args => EditDivision = args.Value?.ToString() ?? string.Empty">
-                                    @if (string.IsNullOrEmpty(CurrentDivision))
-                                    {
-                                        <option value="">Not assigned</option>
-                                    }
-                                    else if (!Listed(CurrentDivision, Divisions))
-                                    {
-                                        <option value="@CurrentDivision">@CurrentDivision (not in the Division master)</option>
-                                    }
-                                    @foreach (var division in Divisions)
-                                    {
-                                        <option @key="division.Code" value="@division.Code">@division.Name</option>
-                                    }
-                                </select>
-                                @if (!CanEditOrganisation)
-                                {
-                                    <small class="hr-hint">Changing division needs EMPLOYEES.ORGANISATION_MANAGE.</small>
-                                }
-                            </label>
-                            <label class="hr-form-wide">
-                                Reports to
-                                <select value="@EditManager" disabled="@(!CanEditOrganisation || IsSavingPlacement)"
-                                        @onchange="args => EditManager = args.Value?.ToString() ?? string.Empty">
-                                    @if (string.IsNullOrEmpty(CurrentManager))
-                                    {
-                                        <option value="">Nobody recorded</option>
-                                    }
-                                    @foreach (var person in ManagerOptions)
-                                    {
-                                        <option @key="person.EmployeeId" value="@person.EmployeeId">@person.DisplayName (@person.EmployeeNumber)@(person.JobTitle is { } title ? " · " + title : null)</option>
-                                    }
-                                </select>
-                                <small class="hr-hint">Builds the Organisation Hierarchy. A reporting line can be changed here, not cleared.</small>
-                            </label>
-                        </div>
+                        <label class="emp-field">
+                            <span class="emp-label">Status</span>
+                            <select value="@Status" @onchange="e => ApplyFilterAsync(() => Status = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">Everyone</option>
+                                <option value="Active">Active</option>
+                                <option value="Draft">Draft</option>
+                                <option value="OnLeave">On Leave</option>
+                                <option value="Exited">Exited</option>
+                            </select>
+                        </label>
+                    </div>
 
-                        <div class="hr-placement-actions">
-                            <button class="hr-button small ghost" type="button"
-                                    disabled="@(!PlacementDirty || IsSavingPlacement)" @onclick="ResetPlacement">Undo</button>
-                            <button class="hr-button small" type="button"
-                                    disabled="@(!PlacementDirty || IsSavingPlacement)" @onclick="SavePlacementAsync">
-                                @(IsSavingPlacement ? "Saving…" : "Save changes")
-                            </button>
-                        </div>
-                    }
-                </div>
-
-                @*
-                    What this account may do with the record, straight from the service. Showing
-                    the refusal reason is the point: "you cannot edit this" without a why is the
-                    complaint every HR tool earns.
-                *@
-                @if (overview.Actions.Count > 0)
-                {
-                    <div class="hr-action-list">
-                        @foreach (var action in overview.Actions)
+                    <div class="emp-explorer-actions">
+                        <a class="hr-button small ghost" href="@Href("people/change-requests")">Change Requests</a>
+                        <a class="hr-button small ghost" href="@Href("payroll/bank-accounts")">Bank Accounts</a>
+                        <button type="button" class="hr-button small ghost" disabled="@(FilteredRows.Count == 0)" @onclick="ExportAsync">
+                            <HrIcon Name="download" Size="14" /> Export
+                        </button>
+                        @if (CanCreate)
                         {
-                            <span class="hr-chip @(action.IsAllowed ? "" : "muted")">
-                                @action.Action
-                                @if (!action.IsAllowed && action.Reason is { } reason)
-                                {
-                                    <small>@reason</small>
-                                }
-                            </span>
+                            <a class="hr-button small" href="@Href("employees/new")">
+                                <HrIcon Name="plus" Size="14" StrokeWidth="2.4" /> Add New Employee
+                            </a>
+                        }
+                    </div>
+                </div>
+
+                @if (IsLoading)
+                {
+                    <div class="hr-table-skeleton">
+                        @for (var i = 0; i < 6; i++)
+                        {
+                            <span></span>
                         }
                     </div>
                 }
+                else
+                {
+                    <div class="emp-table-wrap">
+                        <table class="emp-table">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Designation</th>
+                                    <th>Department</th>
+                                    <th>Division</th>
+                                    <th>Grade</th>
+                                    <th>Mobile</th>
+                                    <th>Email</th>
+                                    <th>Reporting Manager</th>
+                                    <th>Joining Date</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (PagedRows.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="11" class="emp-empty-cell">
+                                            @(Rows.Count == 0 ? "No employees added yet. Click '+ Add New Employee' to create one." : "No employees match the selected filters.")
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var row in PagedRows)
+                                    {
+                                        <tr @key="row.EmployeeId">
+                                            <td>
+                                                <div class="emp-person-cell">
+                                                    @if (!string.IsNullOrWhiteSpace(row.AvatarUrl))
+                                                    {
+                                                        <img class="emp-row-photo" src="@row.AvatarUrl" alt="@row.DisplayName" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="pay-avatar c@(PayrollFormat.AvatarTone(row.DisplayName))">@PayrollFormat.Initials(row.DisplayName)</span>
+                                                    }
+                                                    <div class="emp-person-meta">
+                                                        <strong>@row.DisplayName</strong>
+                                                        <small>@row.EmployeeNumber</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>@(row.Designation ?? "—")</td>
+                                            <td>
+                                                @row.DepartmentName
+                                                @if (!string.IsNullOrWhiteSpace(row.SubDepartmentName))
+                                                {
+                                                    <small class="emp-sub-meta">@row.SubDepartmentName</small>
+                                                }
+                                            </td>
+                                            <td>@row.DivisionName</td>
+                                            <td>@(row.GradeName ?? "—")</td>
+                                            <td>@(row.Phone ?? "—")</td>
+                                            <td>@(row.Email ?? "—")</td>
+                                            <td>@(row.ManagerName ?? "—")</td>
+                                            <td>@row.JoinedOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)</td>
+                                            <td>
+                                                <span class="hr-tag tone-@row.StatusTone">@row.StatusLabel</span>
+                                            </td>
+                                            <td class="emp-row-actions">
+                                                <a class="emp-act-link" href="@Href($"employees/{row.EmployeeId}")">
+                                                    <HrIcon Name="edit" Size="14" /> Edit
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (FilteredRows.Count > PageSize)
+                    {
+                        <div class="emp-pager">
+                            <span>Showing @(PageIndex * PageSize + 1)–@Math.Min((PageIndex + 1) * PageSize, FilteredRows.Count) of @FilteredRows.Count</span>
+                            <div class="emp-pager-btns">
+                                <button type="button" class="hr-button small ghost" disabled="@(PageIndex == 0)" @onclick="() => PageIndex--">Previous</button>
+                                <button type="button" class="hr-button small ghost" disabled="@((PageIndex + 1) * PageSize >= FilteredRows.Count)" @onclick="() => PageIndex++">Next</button>
+                            </div>
+                        </div>
+                    }
+                }
             </section>
         }
-    </ChildContent>
-</HrPageShell>
+    </main>
+</div>
 
 @code {
-    /// <summary>
-    /// Presentational only. The people shown are always the client on the signed-in account,
-    /// never one named in the address.
-    /// </summary>
     [Parameter] public string? TenantKey { get; set; }
 
-    private CursorPage<EmployeeListItemDto>? Page;
-    private EmployeeOverviewDto? Selected;
+    private const int PageSize = 25;
+
+    private IReadOnlyList<EmployeeExplorerRowDto> Rows = [];
+    private IReadOnlyList<MasterOptionDto> AllOptions = [];
 
     private string Search = string.Empty;
+    private string DivisionCode = string.Empty;
+    private string DepartmentCode = string.Empty;
     private string Status = string.Empty;
+    private int PageIndex;
 
+    private bool IsLoading = true;
+    private bool CanCreate;
     private string? LoadError;
-    private string? TableError;
-    private string? DetailError;
-    private bool IsBusy = true;
-    private string? OpeningId;
 
-    /// <summary>
-    /// Cursors are one-way, so stepping back means remembering where each page started rather
-    /// than asking the server for a page number it does not have.
-    /// </summary>
-    private readonly Stack<string?> History = new();
+    private IReadOnlyList<EmployeeExplorerRowDto> FilteredRows =>
+        string.IsNullOrWhiteSpace(Search)
+            ? Rows
+            : Rows.Where(r =>
+                r.DisplayName.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                r.EmployeeNumber.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                (r.Designation?.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (r.Email?.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (r.Phone?.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+              .ToList();
 
-    private string? CurrentCursor;
-    private int Offset;
+    private IReadOnlyList<EmployeeExplorerRowDto> PagedRows =>
+        FilteredRows.Skip(PageIndex * PageSize).Take(PageSize).ToList();
 
-    protected override Task OnInitializedAsync() => LoadAsync();
-
-    private void ChangeSearch(ChangeEventArgs args) => Search = args.Value?.ToString() ?? string.Empty;
-
-    private void ChangeStatus(ChangeEventArgs args) => Status = args.Value?.ToString() ?? string.Empty;
-
-    private async Task SearchKey(KeyboardEventArgs args)
+    protected override async Task OnInitializedAsync()
     {
-        if (args.Key == "Enter")
+        try
         {
-            await SearchAsync();
+            var caller = await PortalCaller.GetAsync();
+            CanCreate = await PortalCaller.HasAsync("EMPLOYEES.CREATE");
+            AllOptions = await Masters.GetAllAsync(caller.TenantKey);
+            await ReloadAsync();
+        }
+        catch (MobileAccessDeniedException denied)
+        {
+            LoadError = $"This account requires {denied.Permission} to view Employees Explorer.";
+            IsLoading = false;
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+            IsLoading = false;
         }
     }
 
-    /// <summary>A new filter starts a new sequence: old cursors point into the old result set.</summary>
-    private async Task SearchAsync()
+    private async Task ReloadAsync()
     {
-        History.Clear();
-        CurrentCursor = null;
-        Offset = 0;
-        Selected = null;
-        await LoadAsync();
-    }
-
-    private async Task NextAsync()
-    {
-        if (Page?.NextCursor is not { } next)
-        {
-            return;
-        }
-
-        History.Push(CurrentCursor);
-        Offset += Page.Items.Count;
-        CurrentCursor = next;
-        await LoadAsync();
-    }
-
-    private async Task BackAsync()
-    {
-        if (History.Count == 0)
-        {
-            return;
-        }
-
-        CurrentCursor = History.Pop();
-        Offset = Math.Max(0, Offset - (Page?.Items.Count ?? 0));
-        await LoadAsync();
-    }
-
-    private async Task LoadAsync()
-    {
-        IsBusy = true;
-        TableError = null;
+        IsLoading = true;
+        PageIndex = 0;
 
         try
         {
             var caller = await PortalCaller.GetAsync();
-
-            Page = await Employees.ListAsync(caller, new EmployeeListQuery
+            Rows = await Workspace.GetExplorerAsync(caller, new EmployeeExplorerQuery
             {
-                Query = string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),
-                Status = string.IsNullOrWhiteSpace(Status) ? null : Status,
-                Cursor = CurrentCursor,
-                PageSize = 25
-            }, CancellationToken.None);
-        }
-        catch (MobileAccessDeniedException denied)
-        {
-            LoadError = $"This account does not hold {denied.Permission}, so the directory cannot be shown.";
+                DivisionCode = DivisionCode,
+                DepartmentCode = DepartmentCode,
+                Status = Status
+            });
         }
         catch (Exception ex)
         {
-            TableError = ex.Message;
+            LoadError = ex.Message;
         }
         finally
         {
-            IsBusy = false;
+            IsLoading = false;
         }
     }
 
-    private async Task OpenAsync(EmployeeListItemDto person)
+    private async Task ApplyFilterAsync(Action update)
     {
-        OpeningId = person.Id;
-        DetailError = null;
-
-        try
-        {
-            var caller = await PortalCaller.GetAsync();
-            Selected = await Employees.GetOverviewAsync(caller, person.Id, CancellationToken.None);
-            OpeningId = null;
-            await LoadPlacementAsync(person.Id);
-        }
-        catch (MobileAccessDeniedException denied)
-        {
-            Selected = null;
-            DetailError = $"Opening a record needs {denied.Permission}.";
-        }
-        catch (Exception ex)
-        {
-            Selected = null;
-            DetailError = ex.Message;
-        }
-        finally
-        {
-            OpeningId = null;
-        }
+        update();
+        await ReloadAsync();
     }
 
-    // ---- Grade & division -------------------------------------------------
-
-    private IReadOnlyList<MasterOptionDto> Grades = [];
-    private IReadOnlyList<MasterOptionDto> Divisions = [];
-
-    private string CurrentGrade = string.Empty;
-    private string CurrentDivision = string.Empty;
-    private string EditGrade = string.Empty;
-    private string EditDivision = string.Empty;
-    private string CurrentManager = string.Empty;
-    private string EditManager = string.Empty;
-    private IReadOnlyList<Vispl.HRManagement.Contracts.Admin.EmployeeDirectoryRowDto> ManagerOptions = [];
-
-    private bool CanEditEmployment;
-    private bool CanEditOrganisation;
-    private bool IsLoadingPlacement;
-    private bool IsSavingPlacement;
-    private string? PlacementError;
-    private string? PlacementMessage;
-
-    private bool PlacementDirty =>
-        (EditGrade.Length > 0 && !Same(EditGrade, CurrentGrade)) ||
-        (EditDivision.Length > 0 && !Same(EditDivision, CurrentDivision)) ||
-        (EditManager.Length > 0 && !Same(EditManager, CurrentManager));
-
-    private async Task LoadPlacementAsync(string employeeId)
+    private async Task OnSearchKeyAsync(KeyboardEventArgs e)
     {
-        IsLoadingPlacement = true;
-        PlacementError = null;
-        PlacementMessage = null;
-
-        try
+        if (e.Key == "Enter")
         {
-            var caller = await PortalCaller.GetAsync();
-            CanEditEmployment = await PortalCaller.HasAsync("EMPLOYEES.EMPLOYMENT_MANAGE");
-            CanEditOrganisation = await PortalCaller.HasAsync("EMPLOYEES.ORGANISATION_MANAGE");
-
-            if (Grades.Count == 0 || Divisions.Count == 0)
-            {
-                var options = await Masters.GetAllAsync(caller.TenantKey);
-                Grades = ActiveOptions(options, MasterCategories.Grade);
-                Divisions = ActiveOptions(options, MasterCategories.Division);
-            }
-
-            var employment = await Employees.GetEmploymentAsync(caller, employeeId, CancellationToken.None);
-            var organisation = await Employees.GetOrganisationAsync(caller, employeeId, CancellationToken.None);
-
-            CurrentGrade = employment.GradeCode ?? string.Empty;
-            CurrentDivision = organisation.DivisionCode ?? string.Empty;
-
-            if (await PortalCaller.HasAsync("EMPLOYEES.VIEW"))
-            {
-                var directory = await Reports.GetDirectoryAsync(caller, new Vispl.HRManagement.Contracts.Admin.EmployeeReportQuery());
-                CurrentManager = directory.FirstOrDefault(row => row.EmployeeId == employeeId)?.ManagerId ?? string.Empty;
-                ManagerOptions = directory.Where(row => row.IsActive && row.EmployeeId != employeeId).ToList();
-            }
-
-            ResetPlacement();
-        }
-        catch (MobileAccessDeniedException denied)
-        {
-            CanEditEmployment = CanEditOrganisation = false;
-            PlacementError = $"Reading grade and division needs {denied.Permission}.";
-        }
-        catch (Exception ex)
-        {
-            PlacementError = ex.Message;
-        }
-        finally
-        {
-            IsLoadingPlacement = false;
+            await ReloadAsync();
         }
     }
 
-    private void ResetPlacement()
+    private async Task ExportAsync()
     {
-        EditGrade = CurrentGrade;
-        EditDivision = CurrentDivision;
-        EditManager = CurrentManager;
+        var list = FilteredRows.ToList();
+        var sheet = new ExcelSheet(
+            "Employees Explorer",
+            "Employees Explorer Directory",
+            $"{list.Count} employee(s) · exported {DateTime.Now:dd MMM yyyy, h:mm tt}",
+            [
+                new("Employee Code"), new("Name"), new("Designation"), new("Department"), new("Sub-Department"),
+                new("Division"), new("Location"), new("Grade"), new("Joined", ExcelFormat.Date),
+                new("Status"), new("Reporting Manager"), new("Mobile"), new("Email")
+            ],
+            list.Select(r => ExcelDownload.Row(
+                r.EmployeeNumber, r.DisplayName, r.Designation, r.DepartmentName, r.SubDepartmentName,
+                r.DivisionName, r.LocationName, r.GradeName, r.JoinedOn,
+                r.StatusLabel, r.ManagerName, r.Phone, r.Email)).ToList());
+
+        await ExcelDownload.SaveAsync(JS, Excel, $"employees-explorer-{DateTime.Today:yyyy-MM-dd}.xlsx", sheet);
     }
 
-    /// <summary>
-    /// Two separate writes, because grade and division are guarded by different permissions. If the
-    /// second is refused the first has still landed, and the message says so.
-    /// </summary>
-    private async Task SavePlacementAsync()
-    {
-        if (Selected is not { } overview)
-        {
-            return;
-        }
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(o => o.Category == category && o.IsActive)
+            .OrderBy(o => o.SortOrder).ThenBy(o => o.Name);
 
-        IsSavingPlacement = true;
-        PlacementError = null;
-        PlacementMessage = null;
-        var saved = new List<string>();
-
-        try
-        {
-            var caller = await PortalCaller.GetAsync();
-            var employeeId = overview.Summary.Id;
-
-            if (EditGrade.Length > 0 && !Same(EditGrade, CurrentGrade))
-            {
-                await Employees.UpdateEmploymentAsync(caller, employeeId,
-                    new UpdateEmployeeEmploymentRequest { Grade = EditGrade }, CancellationToken.None);
-                CurrentGrade = EditGrade;
-                saved.Add("grade");
-            }
-
-            // Division and reporting line share one permission and one write.
-            var divisionChanged = EditDivision.Length > 0 && !Same(EditDivision, CurrentDivision);
-            var managerChanged = EditManager.Length > 0 && !Same(EditManager, CurrentManager);
-
-            if (divisionChanged || managerChanged)
-            {
-                await Employees.UpdateOrganisationAsync(caller, employeeId, new UpdateEmployeeOrganisationRequest
-                {
-                    OrganisationUnitCode = divisionChanged ? EditDivision : null,
-                    ManagerEmployeeId = managerChanged ? EditManager : null
-                }, CancellationToken.None);
-
-                if (divisionChanged)
-                {
-                    CurrentDivision = EditDivision;
-                    saved.Add("division");
-                }
-
-                if (managerChanged)
-                {
-                    CurrentManager = EditManager;
-                    saved.Add("reporting line");
-                }
-
-                // The overview's "Reports to" reflects the new manager straight away.
-                Selected = await Employees.GetOverviewAsync(caller, employeeId, CancellationToken.None);
-            }
-
-            PlacementMessage = $"Saved the new {string.Join(" and ", saved)} for {overview.Summary.DisplayName}.";
-            Toast.Success(PlacementMessage);
-        }
-        catch (MobileAccessDeniedException denied)
-        {
-            PlacementError = $"Saving needs {denied.Permission}.{SavedSoFar(saved)}";
-        }
-        catch (MobileValidationException invalid)
-        {
-            PlacementError = invalid.Message + SavedSoFar(saved);
-        }
-        catch (Exception ex)
-        {
-            PlacementError = ex.Message + SavedSoFar(saved);
-        }
-        finally
-        {
-            IsSavingPlacement = false;
-        }
-    }
-
-    private static string SavedSoFar(List<string> saved) =>
-        saved.Count == 0 ? string.Empty : $" The {string.Join(" and ", saved)} change was saved.";
-
-    private static IReadOnlyList<MasterOptionDto> ActiveOptions(IReadOnlyList<MasterOptionDto> options, string category) =>
-        options
-            .Where(option => option.Category == category && option.IsActive)
-            .OrderBy(option => option.SortOrder)
-            .ThenBy(option => option.Name)
-            .ToList();
-
-    private static bool Listed(string code, IReadOnlyList<MasterOptionDto> options) =>
-        options.Any(option => Same(option.Code, code));
-
-    private static bool Same(string? left, string? right) =>
-        string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
-
-    private string PageMeta()
-    {
-        var parts = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(Search))
-        {
-            parts.Add("matching " + Search.Trim());
-        }
-
-        if (!string.IsNullOrWhiteSpace(Status))
-        {
-            parts.Add("status " + Status);
-        }
-
-        return parts.Count == 0 ? "Everyone on this client" : "Filtered: " + string.Join(", ", parts);
-    }
-
-    private string EmptyMessage() =>
-        string.IsNullOrWhiteSpace(Search) && string.IsNullOrWhiteSpace(Status)
-            ? "This client has no employees yet."
-            : "Nobody matches those filters.";
-
-    private string Position()
-    {
-        if (Page is null || Page.Items.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var first = Offset + 1;
-        var last = Offset + Page.Items.Count;
-
-        return Page.ApproximateTotal is { } total
-            ? $"{first}–{last} of {total}"
-            : $"{first}–{last}";
-    }
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
 }

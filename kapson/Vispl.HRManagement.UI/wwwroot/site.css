@@ -2086,3 +2086,250 @@ td.att-cell { display: table-cell; border-radius: 0; }
 .hr-toast-close:hover { opacity: 1; }
 @keyframes hr-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (max-width: 600px) { .hr-toast { right: 16px; left: 16px; bottom: 16px; max-width: none; } }
+
+/* ── Employee Explorer & 8-Section Employee Workspace (scopedocs/employeeexplorer) ─────────── */
+.emp-top-tabs {
+    display: flex; align-items: stretch; gap: 4px;
+    margin: 12px 0 14px; padding: 0 8px;
+    background: #EBECEF; border-bottom: 1px solid #D8DDE6; border-radius: 4px 4px 0 0;
+    overflow-x: auto;
+}
+.emp-top-tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 22px 11px; border-bottom: 3px solid transparent;
+    color: #1F2937; font-size: .86rem; font-weight: 600; white-space: nowrap;
+    text-decoration: none; transition: color .15s ease, background .15s ease;
+}
+.emp-top-tab:hover { background: rgba(255, 255, 255, .55); color: #1D63DC; }
+.emp-top-tab.active { border-bottom-color: #2563EB; color: #0F172A; font-weight: 700; }
+
+.emp-workspace-card {
+    display: grid; grid-template-columns: 215px minmax(0, 1fr);
+    min-height: 620px; background: #FFFFFF;
+    border: 1px solid #DCE3EC; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .03);
+}
+.emp-side-nav {
+    display: flex; flex-direction: column;
+    background: #EBF2FC; border-right: 1px solid #D8E3F2;
+}
+.emp-side-tab {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 14px 18px; border: 0; border-bottom: 1px solid #D5E2F4;
+    background: transparent; color: #1F2937; font-size: .84rem; font-weight: 500;
+    text-align: left; cursor: pointer; transition: background .12s ease, color .12s ease;
+}
+.emp-side-tab:hover { background: #DDEAFE; }
+.emp-side-tab.active { background: #2A72E8; color: #FFFFFF; font-weight: 600; border-bottom-color: #2A72E8; }
+
+.emp-main-pane {
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 22px 26px 20px; min-width: 0; background: #FFFFFF;
+}
+.emp-pane-body { flex: 1 1 auto; min-width: 0; }
+
+.emp-sec-title {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 0 16px; color: #1D63DC; font-size: 1rem; font-weight: 700;
+}
+.emp-divider { border: 0; border-top: 1px solid #EAEEF4; margin: 22px 0; }
+.emp-mt-sm { margin-top: 14px; }
+.emp-mt-md { margin-top: 22px; }
+
+.emp-grid-4 {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px 20px; align-items: start;
+}
+.emp-grid-4.emp-align-center { align-items: center; }
+.emp-span-2 { grid-column: span 2; }
+
+.emp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.emp-label { font-size: .8rem; font-weight: 600; color: #1F2937; }
+.emp-label em { color: #E53935; font-style: normal; margin-left: 2px; }
+.emp-field input,
+.emp-field select {
+    width: 100%; height: 36px; padding: 0 11px;
+    border: 1px solid #D1D7E0; border-radius: 4px;
+    background: #FFFFFF; color: #1F2937; font: inherit; font-size: .84rem;
+}
+.emp-field input:focus,
+.emp-field select:focus { outline: none; border-color: #2A72E8; box-shadow: 0 0 0 2px rgba(42, 114, 232, .14); }
+.emp-field input:disabled,
+.emp-field select:disabled { background: #F4F6F9; color: #94A3B8; cursor: not-allowed; }
+.emp-sub-input { margin-top: 6px; }
+
+/* Profile photo dropzone */
+.emp-photo-row { display: flex; align-items: center; gap: 8px; height: 36px; }
+.emp-photo-thumb {
+    width: 36px; height: 36px; flex: 0 0 36px;
+    display: grid; place-items: center; overflow: hidden;
+    border: 1px solid #CBD5E1; border-radius: 4px; background: #E2E8F0; color: #334155;
+}
+.emp-photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.emp-photo-drop {
+    flex: 1; height: 36px; display: inline-flex; align-items: center; gap: 7px;
+    padding: 0 10px; border: 1px solid #D1D7E0; border-radius: 4px;
+    background: #FFFFFF; color: #64748B; font-size: .78rem; cursor: pointer;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.emp-photo-drop strong { color: #111827; font-weight: 600; }
+.emp-photo-drop input[type="file"] { display: none; }
+.emp-photo-drop:hover { border-color: #2A72E8; background: #F8FAFF; }
+
+/* Checkboxes, radios & grey sub-banners */
+.emp-check-inline,
+.emp-check-bold,
+.emp-scheme-toggle {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: .83rem; color: #1F2937;
+}
+.emp-check-inline input,
+.emp-check-bold input,
+.emp-scheme-toggle input { width: 16px; height: 16px; margin: 0; accent-color: #2563EB; }
+.emp-check-bold { font-weight: 600; margin-bottom: 10px; }
+.emp-scheme-toggle { color: #1D63DC; font-size: .95rem; font-weight: 700; margin-bottom: 10px; }
+.emp-sub-banner {
+    padding: 8px 12px; margin: 4px 0 14px;
+    background: #E0E2E5; border-radius: 2px;
+    color: #111827; font-size: .8rem; font-weight: 700;
+}
+.emp-radio-row { display: flex; align-items: center; gap: 20px; height: 36px; font-size: .84rem; }
+.emp-radio-row label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.emp-radio-row input { width: 16px; height: 16px; margin: 0; accent-color: #2563EB; }
+
+/* Plus button, inline sub-editors & Salary toolbar */
+.emp-add-bar { margin-bottom: 14px; }
+.emp-plus-btn {
+    width: 34px; height: 34px; display: inline-grid; place-items: center;
+    border: 0; border-radius: 5px; background: #2A72E8; color: #FFFFFF; cursor: pointer;
+}
+.emp-plus-btn:hover { background: #1D5FD0; }
+
+.emp-inline-editor {
+    padding: 16px; margin-bottom: 16px;
+    border: 1px solid #D5E2F4; border-radius: 6px; background: #F8FAFF;
+}
+.emp-inline-actions { display: flex; gap: 8px; margin-top: 14px; }
+.emp-btn-sm {
+    height: 32px; padding: 0 14px; border: 0; border-radius: 4px;
+    font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.emp-btn-sm.primary { background: #2A72E8; color: #FFFFFF; }
+.emp-btn-sm.muted { background: #9CA3AF; color: #FFFFFF; }
+.emp-btn-sm.disabled, .emp-btn-sm:disabled { background: #A8AEB8; color: #FFFFFF; cursor: not-allowed; }
+
+.emp-salary-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 16px 0 10px;
+}
+.emp-salary-bar-left { display: flex; gap: 6px; }
+.emp-chart-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 14px; border: 0; border-radius: 4px;
+    background: #2A72E8; color: #FFFFFF; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.emp-chart-btn:hover { background: #1D5FD0; }
+
+.emp-salary-chart-card {
+    padding: 14px 16px; margin-bottom: 14px;
+    border: 1px solid #C8D9F5; border-radius: 6px; background: #F4F8FF;
+}
+.emp-salary-chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: .86rem; color: #1E3A8A; }
+.emp-salary-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.emp-salary-summary-grid div { padding: 10px 12px; border-radius: 5px; background: #FFFFFF; border: 1px solid #DCE6F7; }
+.emp-salary-summary-grid span { display: block; font-size: .72rem; color: #64748B; }
+.emp-salary-summary-grid strong { display: block; margin-top: 3px; font-size: 1rem; color: #0F172A; }
+.emp-salary-summary-grid div.net { background: #EAF8EE; border-color: #9BD8A6; }
+.emp-salary-summary-grid div.net strong { color: #15803D; }
+
+/* Blue-headed tables (Education, Previous Company, Salary, Documents, Explorer) */
+.emp-table-wrap { overflow-x: auto; border: 1px solid #EAEEF4; border-radius: 4px; }
+.emp-table { width: 100%; border-collapse: collapse; font-size: .81rem; background: #FFFFFF; }
+.emp-table thead th {
+    padding: 11px 12px; background: #EAF2FF;
+    border-bottom: 2px solid #4A85EE; color: #1D63DC;
+    font-weight: 700; text-align: left; white-space: nowrap;
+}
+.emp-table tbody td {
+    padding: 11px 12px; border-bottom: 1px solid #F1F4F8;
+    color: #374151; vertical-align: middle;
+}
+.emp-table tbody tr:hover td { background: #FAFBFD; }
+.emp-empty-cell { padding: 26px 14px !important; text-align: center; color: #6B7280 !important; }
+.emp-row-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.emp-act-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 0; border: 0; background: none;
+    color: #374151; font: inherit; font-size: .8rem; cursor: pointer; text-decoration: none;
+}
+.emp-act-link:hover { color: #1D63DC; }
+.emp-act-link.danger:hover { color: #DC2626; }
+
+/* Documents table inputs */
+.emp-doc-table input[type="text"],
+.emp-doc-table input[type="date"] {
+    width: 100%; min-width: 130px; height: 34px; padding: 0 9px;
+    border: 1px solid #D1D7E0; border-radius: 4px; font: inherit; font-size: .82rem;
+}
+.emp-doc-file-box {
+    display: flex; flex-direction: column; gap: 4px; min-width: 200px;
+    padding: 5px 8px; border: 1px solid #D1D7E0; border-radius: 4px; background: #FFFFFF;
+}
+.emp-doc-file-box input[type="file"] { font-size: .78rem; }
+.emp-doc-uploaded { font-size: .75rem; color: #1D63DC; font-weight: 600; text-decoration: underline; }
+.emp-remove-btn {
+    height: 30px; padding: 0 12px; border: 0; border-radius: 4px;
+    background: #DC4C4C; color: #FFFFFF; font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
+}
+.emp-remove-btn:hover { background: #B91C1C; }
+
+/* Bottom Cancel / Save Draft / Submit bar */
+.emp-footer-actions {
+    display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 28px; padding-top: 16px;
+}
+.emp-footer-btn {
+    min-width: 126px; height: 38px; padding: 0 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 5px; font: inherit; font-size: .84rem; font-weight: 700;
+    cursor: pointer; text-decoration: none; transition: filter .14s ease;
+}
+.emp-footer-btn:hover { filter: brightness(.95); }
+.emp-footer-btn:disabled { opacity: .6; cursor: wait; }
+.emp-footer-btn.cancel { background: #E5E5E5; color: #111827; }
+.emp-footer-btn.draft { background: #2563EB; color: #FFFFFF; }
+.emp-footer-btn.submit { background: #36AF47; color: #FFFFFF; }
+
+/* Employees Explorer directory card */
+.emp-explorer-card { padding: 18px 20px; }
+.emp-explorer-toolbar {
+    display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+    gap: 14px; margin-bottom: 16px;
+}
+.emp-explorer-filters { display: flex; flex-wrap: wrap; gap: 12px; flex: 1 1 560px; }
+.emp-explorer-filters .emp-field { min-width: 170px; flex: 1 1 170px; }
+.emp-explorer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.emp-person-cell { display: flex; align-items: center; gap: 10px; }
+.emp-row-photo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid #CBD5E1; }
+.emp-person-meta { display: flex; flex-direction: column; line-height: 1.25; }
+.emp-person-meta strong { font-size: .84rem; color: #0F172A; }
+.emp-person-meta small, .emp-sub-meta { display: block; font-size: .72rem; color: #64748B; }
+.emp-pager {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    margin-top: 14px; font-size: .8rem; color: #475569;
+}
+.emp-pager-btns { display: flex; gap: 8px; }
+
+@media (max-width: 1180px) {
+    .emp-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .emp-salary-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+    .emp-workspace-card { grid-template-columns: 1fr; }
+    .emp-side-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid #D8E3F2; }
+    .emp-side-tab { width: auto; white-space: nowrap; border-bottom: 0; border-right: 1px solid #D5E2F4; }
+}
+@media (max-width: 600px) {
+    .emp-grid-4 { grid-template-columns: 1fr; }
+    .emp-span-2 { grid-column: auto; }
+    .emp-salary-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

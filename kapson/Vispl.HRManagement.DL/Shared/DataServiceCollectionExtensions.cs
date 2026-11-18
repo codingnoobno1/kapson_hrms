@@ -50,6 +50,7 @@ public static class DataServiceCollectionExtensions
         services.AddScoped<Vispl.HRManagement.DL.ITF.Workforce.IMovementRepository, Workforce.MovementRepository>();
         services.AddScoped<Vispl.HRManagement.DL.ITF.Workforce.IOnDutyRepository, Workforce.OnDutyRepository>();
         services.AddScoped<Vispl.HRManagement.DL.ITF.Employee.IEmployeeRepository, Employee.EmployeeRepository>();
+        services.AddScoped<IEmployeeWorkspaceRepository, EmployeeWorkspaceRepository>();
         services.AddScoped<HrManagementDatabaseInitializer>();
         return services;
     }

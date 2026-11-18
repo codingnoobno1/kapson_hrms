@@ -17,9 +17,9 @@ public static class HrMegaMenuRegistry
 {
     public static IReadOnlyList<HrMenuCard> EmployeeCards(string? tenantKey) =>
     [
-        new("Employee Explorer", "Employee Explorer", "🗂️", Path(tenantKey, "people")),
-        new("Organisation Hierarchy", "Organisation Hierarchy", "🏛️", Path(tenantKey, "employees/hierarchy")),
-        new("Add New Employee", "Add New Employee", "➕", Path(tenantKey, "employees/new"))
+        new("Employees Explorer", "Directory, search and employee records", "🗂️", Path(tenantKey, "people")),
+        new("Organization Hierarchy", "Reporting lines and division structure", "🏛️", Path(tenantKey, "employees/hierarchy")),
+        new("Add New Employee", "Onboard and configure employee profile", "➕", Path(tenantKey, "employees/new"))
     ];
 
     public static IReadOnlyList<HrMenuCard> SalaryManagementCards(string? tenantKey) =>

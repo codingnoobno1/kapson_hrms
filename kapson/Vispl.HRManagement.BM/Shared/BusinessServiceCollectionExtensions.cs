@@ -22,6 +22,7 @@ public static class BusinessServiceCollectionExtensions
         services.AddScoped<IEmployeeAppSettingsService, EmployeeAppSettingsService>();
         services.AddScoped<IPayrollService, PayrollService>();
         services.AddScoped<IEmployeeReportService, EmployeeReportService>();
+        services.AddScoped<IEmployeeWorkspaceService, EmployeeWorkspaceService>();
         services.AddScoped<ILoanService, LoanService>();
 
         // Stateless workbook builder for every Excel download (Syncfusion XlsIO).

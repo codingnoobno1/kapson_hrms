@@ -428,6 +428,11 @@ public sealed class PayrollService(
         {
             lines.TryGetValue(person.Id, out var line);
 
+            if (line is null && (person.ExcludeFromPayroll || person.IsDraft))
+            {
+                continue;
+            }
+
             var divisionCode = line?.DivisionCode ?? person.DivisionCode ?? string.Empty;
             var departmentCode = line?.DepartmentCode ?? person.DepartmentCode;
 

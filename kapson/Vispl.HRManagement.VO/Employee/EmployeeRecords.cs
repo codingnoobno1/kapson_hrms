@@ -34,7 +34,9 @@ public sealed record EmployeeRecord(
     DateTimeOffset UpdatedUtc,
 
     /// <summary>Set on exit (offboarding, or HR directly). Null while still employed.</summary>
-    DateOnly? LeavingOn = null)
+    DateOnly? LeavingOn = null,
+    bool ExcludeFromPayroll = false,
+    bool IsDraft = false)
 {
     public string DisplayName => string.IsNullOrWhiteSpace(PreferredName)
         ? $"{LegalFirstName} {LegalLastName}".Trim()

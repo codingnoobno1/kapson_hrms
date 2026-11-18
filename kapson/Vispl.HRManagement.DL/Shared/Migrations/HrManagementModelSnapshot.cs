@@ -344,10 +344,18 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("AdvancedAccountCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
                     b.Property<string>("BankName")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("BranchName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
 
                     b.Property<long>("EmployeeId")
                         .HasColumnType("bigint");
@@ -363,10 +371,22 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("SalaryAccountCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("SalaryFormat")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<string>("TenantKey")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("TransferSalarySlipBy")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(450)
@@ -1470,6 +1490,60 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.ToTable("EmployeeDependants", "employee");
                 });
 
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeDocumentEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly?>("ExpiresOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("IssuedOn")
+                        .HasColumnType("date");
+
+                    b.Property<long?>("MediaAssetId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OriginalFileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("PublicUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId");
+
+                    b.ToTable("EmployeeDocuments", "employee");
+                });
+
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEducationEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -1481,6 +1555,13 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.Property<string>("BoardOrUniversity")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CertificationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly?>("CertificationValidTill")
+                        .HasColumnType("date");
 
                     b.Property<decimal?>("Cgpa")
                         .HasPrecision(4, 2)
@@ -1560,6 +1641,10 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("BloodGroupCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<long?>("CandidateId")
                         .HasColumnType("bigint");
 
@@ -1605,6 +1690,17 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<bool>("ExcludeFromPayroll")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("FatherName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("FatherOccupationCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<string>("GenderCode")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
@@ -1614,6 +1710,9 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasColumnType("nvarchar(40)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDraft")
                         .HasColumnType("bit");
 
                     b.Property<string>("JobTitle")
@@ -1652,9 +1751,21 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<string>("MotherName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("MotherOccupationCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<string>("NationalityCode")
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("OtherReligion")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(32)
@@ -1667,11 +1778,27 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                     b.Property<DateOnly?>("ProbationEndsOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("ReligionCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
+
+                    b.Property<string>("SpouseName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("SpouseOccupationCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SubDepartmentCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("TenantKey")
                         .IsRequired()
@@ -1715,6 +1842,65 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                             t.HasCheckConstraint("CK_Employees_ProbationAfterJoining", "[ProbationEndsOn] IS NULL OR [ProbationEndsOn] >= [JoinedOn]");
                         });
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeLeavingEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateOnly?>("DismissDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DismissRemarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly?>("FinalSettlementDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("HasLeftOrganization")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDismissed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LeavingReasonCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("LeavingRemarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly?>("ResignationSubmitDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("SettlementDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId")
+                        .IsUnique();
+
+                    b.ToTable("EmployeeLeavingDetails", "employee");
                 });
 
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeePreviousEmploymentEntity", b =>
@@ -1798,6 +1984,56 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeSalaryConfigEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("ApplyMaxLimit")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("BasicSalary")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ComponentsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EpfEmployerShareRule")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<bool>("EpfOnBasicOnly")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("TenantKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("TenantKey", "EmployeeId")
+                        .IsUnique();
+
+                    b.ToTable("EmployeeSalaryConfigs", "employee", t =>
+                        {
+                            t.HasCheckConstraint("CK_EmployeeSalaryConfigs_Basic", "[BasicSalary] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeStatutoryEntity", b =>
                 {
                     b.Property<long>("Id")
@@ -1817,6 +2053,14 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
 
                     b.Property<long>("EmployeeId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("EpfAccountCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("EsiAccountCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
 
                     b.Property<bool>("EsiApplicable")
                         .HasColumnType("bit");
@@ -4016,6 +4260,15 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeDocumentEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeEducationEntity", b =>
                 {
                     b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
@@ -4033,7 +4286,25 @@ namespace Vispl.HRManagement.DL.Shared.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeLeavingEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeePreviousEmploymentEntity", b =>
+                {
+                    b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vispl.HRManagement.DL.Employee.EmployeeSalaryConfigEntity", b =>
                 {
                     b.HasOne("Vispl.HRManagement.DL.Employee.EmployeeEntity", null)
                         .WithMany()

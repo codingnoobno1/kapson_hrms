@@ -26,7 +26,12 @@ public sealed class EmployeeBankAccountEntity
     public string AccountNumberProtected { get; set; } = string.Empty;
     public string AccountLast4 { get; set; } = string.Empty;
     public string Ifsc { get; set; } = string.Empty;
+    public string? BranchName { get; set; }
     public string AccountType { get; set; } = string.Empty;
+    public string? TransferSalarySlipBy { get; set; }
+    public string? SalaryFormat { get; set; }
+    public string? SalaryAccountCode { get; set; }
+    public string? AdvancedAccountCode { get; set; }
     public string? UpdatedBy { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
     public byte[] RowVersion { get; set; } = [];

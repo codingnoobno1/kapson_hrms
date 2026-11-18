@@ -16,10 +16,21 @@ public sealed class EmployeeEntity
     public DateOnly? DateOfBirth { get; set; }
     public string? GenderCode { get; set; }
     public string? MaritalStatusCode { get; set; }
+    public string? BloodGroupCode { get; set; }
+    public string? ReligionCode { get; set; }
+    public string? OtherReligion { get; set; }
     public string? NationalityCode { get; set; }
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
+
+    // Family
+    public string? FatherName { get; set; }
+    public string? FatherOccupationCode { get; set; }
+    public string? MotherName { get; set; }
+    public string? MotherOccupationCode { get; set; }
+    public string? SpouseName { get; set; }
+    public string? SpouseOccupationCode { get; set; }
 
     // Employment
     public DateOnly JoinedOn { get; set; }
@@ -36,6 +47,7 @@ public sealed class EmployeeEntity
     public string? CompanyCode { get; set; }
     public string? DivisionCode { get; set; }
     public string DepartmentCode { get; set; } = string.Empty;
+    public string? SubDepartmentCode { get; set; }
     public string LocationCode { get; set; } = string.Empty;
     public long? ManagerEmployeeId { get; set; }
     public string? CostCentre { get; set; }
@@ -46,6 +58,8 @@ public sealed class EmployeeEntity
     /// <summary>The applicant this employee was hired from, when they came through recruitment.</summary>
     public long? CandidateId { get; set; }
 
+    public bool ExcludeFromPayroll { get; set; }
+    public bool IsDraft { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedUtc { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }

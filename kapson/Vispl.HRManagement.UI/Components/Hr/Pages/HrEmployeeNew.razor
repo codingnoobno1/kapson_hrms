@@ -1,253 +1,1354 @@
 @page "/hr/employees/new"
 @page "/hr/{TenantKey}/employees/new"
+@page "/hr/employees/{EmployeeId:long}"
+@page "/hr/{TenantKey}/employees/{EmployeeId:long}"
 @attribute [Authorize(Policy = "HrPortal")]
-@using System.Text.RegularExpressions
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Forms
 @using Vispl.HRManagement.BM.ITF.Admin
 @using Vispl.HRManagement.BM.ITF.Mobile
 @using Vispl.HRManagement.Contracts.Admin
-@using Vispl.HRManagement.Contracts.Mobile.Employee
 @using Vispl.HRManagement.UI.Components.Hr.Shared
-@inject IMobileEmployeeService Employees
-@inject IEmployeeReportService Reports
+@inject IEmployeeWorkspaceService Workspace
 @inject IDesignationService Designations
+@inject IGradeSalaryService GradeSalaries
+@inject IBankAccountService BankAccounts
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
 @inject HrToastService Toast
+@inject NavigationManager Navigation
 
-<PageTitle>Add New Employee | HR Portal</PageTitle>
+<PageTitle>@(IsEditing ? "Edit Employee" : "New Employee") | HR Portal</PageTitle>
 
-@*
-    No reference layout exists for this destination (scopedocs/web-portal/10 §1): the form follows
-    the portal's existing form language and asks only for what the platform actually stores.
-*@
-<HrPageShell ActivePage="people" TenantKey="@TenantKey"
-             Kicker="EMPLOYEE" Title="Add New Employee"
-             Subtitle="Create the employee record. Placement uses the masters, so payroll, reports and the organisation chart can read it."
-             Error="@LoadError">
-    <ChildContent>
-        @if (IsLoading)
+<div class="hr-app">
+    <HrNav ActivePage="people" TenantKey="@TenantKey" />
+
+    <main class="hr-page">
+        <h1 class="hr-title-blue">@PageHeading</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Href("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            @if (IsEditing)
+            {
+                <a href="@Href("people")">Employees Explorer</a>
+                <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+                <strong>@EmployeeLabel</strong>
+            }
+            else
+            {
+                <strong>New Employee</strong>
+            }
+        </nav>
+
+        <HrEmployeeTabs ActiveTab="editor" TenantKey="@TenantKey" />
+
+        @if (LoadError is not null)
         {
-            <p class="hr-empty">Loading…</p>
+            <div class="hr-alert error">@LoadError</div>
         }
-        else if (!CanCreate)
+        else if (IsLoading)
         {
-            <div class="hr-alert warning">Adding employees needs EMPLOYEES.CREATE. Ask an administrator for the permission.</div>
+            <section class="hr-panel"><p class="hr-empty">Loading employee workspace…</p></section>
         }
-        else if (Created is { } created)
+        else if (!CanEdit)
         {
-            <section class="hr-panel emp-done">
-                <h2>✅ @created.Name added</h2>
-                <p>Employee number <strong>@created.Number</strong>. No sign-in account has been sent yet.</p>
-                <div class="emp-done-actions">
-                    <a class="hr-button small" href="@Href("people")">Open People</a>
-                    <a class="hr-button small ghost" href="@Href("payroll/bank-accounts")">Add salary bank account</a>
-                    <a class="hr-button small ghost" href="@Href("employees/hierarchy")">View organisation</a>
-                    <button class="hr-button small ghost" type="button" @onclick="StartAnother">Add another employee</button>
-                </div>
-            </section>
+            <div class="hr-alert warning">Adding or editing employees requires EMPLOYEES.CREATE or EMPLOYEES.EMPLOYMENT_MANAGE permission.</div>
         }
         else
         {
-            <EditForm Model="Form" OnValidSubmit="SubmitAsync" FormName="add-employee" class="emp-form">
-                <DataAnnotationsValidator />
+            <div class="emp-workspace-card">
+                <aside class="emp-side-nav" role="tablist" aria-label="Employee profile sections">
+                    @foreach (var tab in SectionTabs)
+                    {
+                        <button type="button" role="tab"
+                                aria-selected="@(ActiveSection == tab.Key)"
+                                class="emp-side-tab @(ActiveSection == tab.Key ? "active" : null)"
+                                @onclick="() => ActiveSection = tab.Key">
+                            <HrIcon Name="@tab.Icon" Size="16" />
+                            <span>@tab.Label</span>
+                        </button>
+                    }
+                </aside>
 
-                @if (SaveError is not null)
-                {
-                    <div class="hr-alert error compact">@SaveError</div>
-                }
-                <ValidationSummary class="hr-validation" />
+                <div class="emp-main-pane">
+                    <div class="emp-pane-body">
+                        @if (SaveError is not null)
+                        {
+                            <div class="hr-alert error compact">@SaveError</div>
+                        }
+                        @if (Model.IsDraft && IsEditing)
+                        {
+                            <div class="hr-alert warning compact">
+                                Draft record (<strong>@Model.Personal.EmployeeNumber</strong>). Complete required fields and click <strong>Submit</strong> to activate this employee.
+                            </div>
+                        }
 
-                <section class="hr-panel emp-section">
-                    <h2>👤 Personal details</h2>
-                    <div class="hr-form-grid">
-                        <label class="hr-form-wide">
-                            Legal name <em>*</em>
-                            <InputText @bind-Value="Form.LegalName" placeholder="First middle last" />
-                        </label>
-                        <label>
-                            Work email <em>*</em>
-                            <InputText @bind-Value="Form.Email" type="email" placeholder="name@kapsons.com" />
-                        </label>
-                        <label>
-                            Phone <em>*</em>
-                            <InputText @bind-Value="Form.Phone" inputmode="tel" placeholder="+91 98765 43210" />
-                            <small class="hr-hint">Email and phone must each belong to one employee only.</small>
-                        </label>
-                        <label>
-                            Gender
-                            <InputSelect @bind-Value="Form.GenderCode">
-                                <option value="">Not recorded</option>
-                                @foreach (var option in Options(MasterCategories.Gender))
-                                {
-                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Date of birth
-                            <InputDate @bind-Value="Form.DateOfBirth" />
-                        </label>
-                    </div>
-                </section>
+                        @if (ActiveSection == SecPersonal)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="user" Size="18" /> <span>Personal Details</span></h2>
 
-                <section class="hr-panel emp-section">
-                    <h2>💼 Employment</h2>
-                    <div class="hr-form-grid">
-                        <label>
-                            Employee number <em>*</em>
-                            <InputText @bind-Value="Form.EmployeeNumber" />
-                            <small class="hr-hint">Suggested from the highest number in use.</small>
-                        </label>
-                        <label>
-                            Joining date <em>*</em>
-                            <InputDate @bind-Value="Form.JoinedOn" />
-                        </label>
-                        <label>
-                            Designation
-                            <select value="@DesignationCode" @onchange="ChooseDesignation">
-                                <option value="">Not set</option>
-                                @foreach (var designation in DesignationList)
-                                {
-                                    <option @key="designation.Code" value="@designation.Code">@designation.Name</option>
-                                }
-                            </select>
-                            <small class="hr-hint">Fills grade and department from the Designation master.</small>
-                        </label>
-                        <label>
-                            Employment type
-                            <InputSelect @bind-Value="Form.EmploymentType">
-                                <option value="FULL_TIME">Full time</option>
-                                <option value="PART_TIME">Part time</option>
-                                <option value="CONTRACT">Contract</option>
-                                <option value="INTERN">Intern</option>
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Probation ends on
-                            <InputDate @bind-Value="Form.ProbationEndsOn" />
-                            <small class="hr-hint">Leave empty if there is no probation.</small>
-                        </label>
-                    </div>
-                </section>
+                            <div class="emp-grid-4">
+                                <div class="emp-field">
+                                    <span class="emp-label">Employee Profile Photo</span>
+                                    <div class="emp-photo-row">
+                                        <span class="emp-photo-thumb">
+                                            @if (!string.IsNullOrWhiteSpace(Model.Personal.AvatarUrl))
+                                            {
+                                                <img src="@Model.Personal.AvatarUrl" alt="Employee photo" />
+                                            }
+                                            else
+                                            {
+                                                <HrIcon Name="user" Size="20" />
+                                            }
+                                        </span>
+                                        <label class="emp-photo-drop">
+                                            <HrIcon Name="upload" Size="15" />
+                                            <span>@(IsUploadingPhoto ? "Uploading…" : "Drop photo here") <strong>@(IsUploadingPhoto ? "" : "or Browse")</strong></span>
+                                            <InputFile OnChange="UploadPhotoAsync" accept="image/*" disabled="@IsUploadingPhoto" />
+                                        </label>
+                                    </div>
+                                </div>
 
-                <section class="hr-panel emp-section">
-                    <h2>🏢 Placement</h2>
-                    <div class="hr-form-grid">
-                        <label>
-                            Division
-                            <InputSelect @bind-Value="Form.DivisionCode">
-                                <option value="">Not assigned</option>
-                                @foreach (var option in Options(MasterCategories.Division))
-                                {
-                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Department <em>*</em>
-                            <InputSelect @bind-Value="Form.DepartmentCode">
-                                <option value="">Choose a department</option>
-                                @foreach (var option in Options(MasterCategories.Department))
-                                {
-                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Location <em>*</em>
-                            <InputSelect @bind-Value="Form.LocationCode">
-                                <option value="">Choose a location</option>
-                                @foreach (var option in Options(MasterCategories.Location))
-                                {
-                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Grade
-                            <InputSelect @bind-Value="Form.GradeCode">
-                                <option value="">Not assigned — cannot be paid</option>
-                                @foreach (var option in Options(MasterCategories.Grade))
-                                {
-                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label class="hr-form-wide">
-                            Reports to
-                            <InputSelect @bind-Value="Form.ManagerEmployeeId">
-                                <option value="">Nobody recorded</option>
-                                @foreach (var person in Managers)
-                                {
-                                    <option @key="person.EmployeeId" value="@person.EmployeeId">@person.DisplayName (@person.EmployeeNumber)@(person.JobTitle is { } title ? " · " + title : null)</option>
-                                }
-                            </InputSelect>
-                        </label>
-                    </div>
-                </section>
+                                <label class="emp-field">
+                                    <span class="emp-label">First Name<em>*</em></span>
+                                    <input type="text" @bind="Model.Personal.FirstName" />
+                                </label>
 
-                @if (Duplicates.Count > 0)
-                {
-                    <section class="hr-panel emp-duplicates">
-                        <h2>⚠️ Already an employee</h2>
-                        <p>This email, phone number or employee number is already used by the record below. Change it to create a new employee — two people may share a name, but not an email or phone.</p>
-                        <ul>
-                            @foreach (var match in Duplicates)
+                                <label class="emp-field">
+                                    <span class="emp-label">Last Name<em>*</em></span>
+                                    <input type="text" @bind="Model.Personal.LastName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Email<em>*</em></span>
+                                    <input type="email" @bind="Model.Personal.Email" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Mobile<em>*</em></span>
+                                    <input type="tel" @bind="Model.Personal.Mobile" placeholder="+91 98765 43210" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Date of Birth<em>*</em></span>
+                                    <input type="date" @bind="Model.Personal.DateOfBirth" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Gender<em>*</em></span>
+                                    <select @bind="Model.Personal.GenderCode">
+                                        <option value=""></option>
+                                        @foreach (var opt in Options(MasterCategories.Gender))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Date of Joining<em>*</em></span>
+                                    <input type="date" @bind="Model.Personal.JoinedOn" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Department<em>*</em></span>
+                                    <select value="@Model.Personal.DepartmentCode" @onchange="OnDepartmentChanged">
+                                        <option value=""></option>
+                                        @foreach (var opt in TopDepartments)
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Sub-Department</span>
+                                    <select @bind="Model.Personal.SubDepartmentCode">
+                                        <option value=""></option>
+                                        @foreach (var opt in SubDepartments)
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Designation<em>*</em></span>
+                                    <select value="@Model.Personal.DesignationCode" @onchange="OnDesignationChangedAsync">
+                                        <option value=""></option>
+                                        @foreach (var des in DesignationList)
+                                        {
+                                            <option @key="des.Code" value="@des.Code">@des.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Division</span>
+                                    <select @bind="Model.Personal.DivisionCode">
+                                        <option value=""></option>
+                                        @foreach (var opt in Options(MasterCategories.Division))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Reporting to Manager</span>
+                                    <select @bind="Model.Personal.ReportingManagerId">
+                                        <option value=""></option>
+                                        @foreach (var mgr in ManagerCandidates)
+                                        {
+                                            <option @key="mgr.EmployeeId" value="@mgr.EmployeeId">@mgr.DisplayName (@mgr.EmployeeNumber)</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Location</span>
+                                    <select @bind="Model.Personal.LocationCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Location))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Employee Code<em>*</em></span>
+                                    <input type="text" @bind="Model.Personal.EmployeeNumber" />
+                                </label>
+                            </div>
+
+                            <hr class="emp-divider" />
+
+                            <h2 class="emp-sec-title"><HrIcon Name="heart" Size="18" /> <span>Personal &amp; Health</span></h2>
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Marital Status</span>
+                                    <select @bind="Model.Personal.MaritalStatusCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.MaritalStatus))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Blood Group</span>
+                                    <select @bind="Model.Personal.BloodGroupCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.BloodGroup))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <div class="emp-field">
+                                    <span class="emp-label">Religion</span>
+                                    <select @bind="Model.Personal.ReligionCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Religion))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                    <input class="emp-sub-input" type="text" placeholder="Other religion" @bind="Model.Personal.OtherReligion" />
+                                </div>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Nationality</span>
+                                    <select @bind="Model.Personal.NationalityCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Nationality))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+
+                            <hr class="emp-divider" />
+
+                            <h2 class="emp-sec-title"><HrIcon Name="users" Size="18" /> <span>Family Details</span></h2>
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Father Name</span>
+                                    <input type="text" @bind="Model.Personal.FatherName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Father Occupation</span>
+                                    <select @bind="Model.Personal.FatherOccupationCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Occupation))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Mother's Name</span>
+                                    <input type="text" @bind="Model.Personal.MotherName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Mother Occupation</span>
+                                    <select @bind="Model.Personal.MotherOccupationCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Occupation))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Spouse Name</span>
+                                    <input type="text" @bind="Model.Personal.SpouseName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Spouse Occupation</span>
+                                    <select @bind="Model.Personal.SpouseOccupationCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Occupation))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">PAN Number</span>
+                                    <input type="text" maxlength="10" placeholder="ABCDE1234F" @bind="Model.Personal.PanNumber" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Aadhaar Number</span>
+                                    <input type="text" maxlength="14"
+                                           placeholder="@(string.IsNullOrWhiteSpace(Model.Personal.AadhaarLast4) ? "12-digit Aadhaar" : $"Saved ••••{Model.Personal.AadhaarLast4}")"
+                                           @bind="Model.Personal.AadhaarNumber" />
+                                </label>
+                            </div>
+
+                            <hr class="emp-divider" />
+
+                            <h2 class="emp-sec-title"><HrIcon Name="id-card" Size="18" /> <span>Address &amp; Identity</span></h2>
+                            <div class="emp-grid-4">
+                                <label class="emp-field emp-span-2">
+                                    <span class="emp-label">Permanent Address Line 1</span>
+                                    <input type="text" @bind="Model.Personal.PermanentAddress.Line1" placeholder="House / Street / Locality" />
+                                </label>
+                                <label class="emp-field">
+                                    <span class="emp-label">State</span>
+                                    <select @bind="Model.Personal.PermanentAddress.StateCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.State))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label class="emp-field">
+                                    <span class="emp-label">City</span>
+                                    <select @bind="Model.Personal.PermanentAddress.CityCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.City))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label class="emp-field">
+                                    <span class="emp-label">Country</span>
+                                    <select @bind="Model.Personal.PermanentAddress.CountryCode">
+                                        <option value="">Select</option>
+                                        @foreach (var opt in Options(MasterCategories.Country))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label class="emp-field">
+                                    <span class="emp-label">Pincode</span>
+                                    <input type="text" maxlength="10" @bind="Model.Personal.PermanentAddress.Pincode" />
+                                </label>
+                                <label class="emp-field">
+                                    <span class="emp-label">Voter ID</span>
+                                    <input type="text" maxlength="20" @bind="Model.Personal.VoterId" />
+                                </label>
+                                <label class="emp-check-inline">
+                                    <input type="checkbox" @bind="Model.Personal.SameAsPermanentAddress" />
+                                    <span>Current address same as permanent</span>
+                                </label>
+                            </div>
+
+                            @if (!Model.Personal.SameAsPermanentAddress)
                             {
-                                <li @key="match.Id"><strong>@match.DisplayName</strong> · @match.EmployeeNumber · @match.Department</li>
+                                <div class="emp-grid-4 emp-mt-sm">
+                                    <label class="emp-field emp-span-2">
+                                        <span class="emp-label">Current Address Line 1</span>
+                                        <input type="text" @bind="Model.Personal.CurrentAddress.Line1" placeholder="Current residential address" />
+                                    </label>
+                                    <label class="emp-field">
+                                        <span class="emp-label">Current City</span>
+                                        <select @bind="Model.Personal.CurrentAddress.CityCode">
+                                            <option value="">Select</option>
+                                            @foreach (var opt in Options(MasterCategories.City))
+                                            {
+                                                <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="emp-field">
+                                        <span class="emp-label">Current Pincode</span>
+                                        <input type="text" maxlength="10" @bind="Model.Personal.CurrentAddress.Pincode" />
+                                    </label>
+                                </div>
                             }
-                        </ul>
-                    </section>
-                }
+                        }
+                        else if (ActiveSection == SecEducation)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="graduation-cap" Size="18" /> <span>Education Details</span></h2>
 
-                <div class="emp-actions">
-                    <a class="hr-button small ghost" href="@Href("people")">Cancel</a>
-                    <button class="hr-button small" type="submit" disabled="@IsSaving">
-                        @(IsSaving ? "Saving…" : "Create employee")
-                    </button>
+                            <div class="emp-add-bar">
+                                <button type="button" class="emp-plus-btn" title="Add Qualification" @onclick="StartAddEducation">
+                                    <HrIcon Name="plus" Size="18" StrokeWidth="2.4" />
+                                </button>
+                            </div>
+
+                            @if (EduEditor is not null)
+                            {
+                                <div class="emp-inline-editor">
+                                    <div class="emp-grid-4">
+                                        <label class="emp-field">
+                                            <span class="emp-label">Qualification</span>
+                                            <select @bind="EduEditor.QualificationCode">
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.Qualification))
+                                                {
+                                                    <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Education Level</span>
+                                            <select @bind="EduEditor.EducationLevelCode">
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.EducationLevel))
+                                                {
+                                                    <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Specialisation</span>
+                                            <input type="text" @bind="EduEditor.Specialisation" placeholder="e.g. Computer Applications" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Institute/University Name<em>*</em></span>
+                                            <input type="text" @bind="EduEditor.Institute" placeholder="e.g. ABC University" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Passing Year<em>*</em></span>
+                                            <input type="number" min="1950" max="2100" @bind="EduEditor.PassingYear" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">CGPA</span>
+                                            <input type="number" step="0.01" min="0" max="10" @bind="EduEditor.Cgpa" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Grade</span>
+                                            <input type="text" maxlength="5" @bind="EduEditor.GradeLetter" placeholder="e.g. A+" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Percentage</span>
+                                            <input type="number" step="0.01" min="0" max="100" @bind="EduEditor.Percentage" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Certification Name</span>
+                                            <input type="text" @bind="EduEditor.CertificationName" placeholder="e.g. AWS Cloud Practitioner" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Certification Valid Till</span>
+                                            <input type="date" @bind="EduEditor.CertificationValidTill" />
+                                        </label>
+                                    </div>
+                                    <div class="emp-inline-actions">
+                                        <button type="button" class="emp-btn-sm primary" @onclick="CommitEducation">@(EditingEduIndex >= 0 ? "Update" : "Add")</button>
+                                        <button type="button" class="emp-btn-sm muted" @onclick="CancelEducation">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="emp-table-wrap">
+                                <table class="emp-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Qualification</th>
+                                            <th>Education Level</th>
+                                            <th>Specialisation</th>
+                                            <th>Institute/University Name</th>
+                                            <th>Passing Year</th>
+                                            <th>CGPA</th>
+                                            <th>Grade</th>
+                                            <th>Percentage</th>
+                                            <th>Certification Name</th>
+                                            <th>Certification Valid Till</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (Model.Education.Count == 0)
+                                        {
+                                            <tr><td colspan="11" class="emp-empty-cell">No education details added yet. Click + to add a qualification.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @for (var i = 0; i < Model.Education.Count; i++)
+                                            {
+                                                var idx = i;
+                                                var row = Model.Education[i];
+                                                <tr>
+                                                    <td>@OptionName(MasterCategories.Qualification, row.QualificationCode)</td>
+                                                    <td>@OptionName(MasterCategories.EducationLevel, row.EducationLevelCode)</td>
+                                                    <td>@(row.Specialisation ?? "—")</td>
+                                                    <td>@row.Institute</td>
+                                                    <td>@row.PassingYear</td>
+                                                    <td>@(row.Cgpa?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—")</td>
+                                                    <td>@(row.GradeLetter ?? "—")</td>
+                                                    <td>@(row.Percentage is { } pct ? $"{pct:0.##}%" : "—")</td>
+                                                    <td>@(row.CertificationName ?? "—")</td>
+                                                    <td>@(row.CertificationValidTill?.ToString("MMM yyyy", CultureInfo.InvariantCulture) ?? "—")</td>
+                                                    <td class="emp-row-actions">
+                                                        <button type="button" class="emp-act-link" @onclick="() => EditEducation(idx)">
+                                                            <HrIcon Name="edit" Size="14" /> Edit
+                                                        </button>
+                                                        <button type="button" class="emp-act-link danger" @onclick="() => RemoveEducation(idx)">
+                                                            <HrIcon Name="trash" Size="14" /> Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (ActiveSection == SecPreviousCompany)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="building" Size="18" /> <span>Previous Company</span></h2>
+
+                            <div class="emp-add-bar">
+                                <button type="button" class="emp-plus-btn" title="Add Previous Employer" @onclick="StartAddPreviousCompany">
+                                    <HrIcon Name="plus" Size="18" StrokeWidth="2.4" />
+                                </button>
+                            </div>
+
+                            @if (PrevEditor is not null)
+                            {
+                                <div class="emp-inline-editor">
+                                    <div class="emp-grid-4">
+                                        <label class="emp-field">
+                                            <span class="emp-label">Company Name<em>*</em></span>
+                                            <input type="text" @bind="PrevEditor.CompanyName" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Designation</span>
+                                            <input type="text" @bind="PrevEditor.Designation" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Department</span>
+                                            <input type="text" @bind="PrevEditor.Department" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Previous Employee ID</span>
+                                            <input type="text" @bind="PrevEditor.PreviousEmployeeId" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Joining Date<em>*</em></span>
+                                            <input type="date" @bind="PrevEditor.JoinedOn" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Leaving Date<em>*</em></span>
+                                            <input type="date" @bind="PrevEditor.LeftOn" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Employment Type</span>
+                                            <select @bind="PrevEditor.EmploymentType">
+                                                <option value="Permanent">Permanent</option>
+                                                <option value="Contract">Contract</option>
+                                                <option value="Intern">Intern</option>
+                                                <option value="Consultant">Consultant</option>
+                                            </select>
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Last Annual CTC</span>
+                                            <input type="number" min="0" step="1000" @bind="PrevEditor.LastAnnualCtc" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Reporting Manager</span>
+                                            <input type="text" @bind="PrevEditor.ReportingManagerName" />
+                                        </label>
+                                        <label class="emp-field">
+                                            <span class="emp-label">Leaving Reason</span>
+                                            <select @bind="PrevEditor.LeavingReasonCode">
+                                                <option value="">Select</option>
+                                                @foreach (var opt in Options(MasterCategories.LeavingReason))
+                                                {
+                                                    <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="emp-field emp-span-2">
+                                            <span class="emp-label">Remarks</span>
+                                            <input type="text" @bind="PrevEditor.Remarks" />
+                                        </label>
+                                    </div>
+                                    <div class="emp-inline-actions">
+                                        <button type="button" class="emp-btn-sm primary" @onclick="CommitPreviousCompany">@(EditingPrevIndex >= 0 ? "Update" : "Add")</button>
+                                        <button type="button" class="emp-btn-sm muted" @onclick="CancelPreviousCompany">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="emp-table-wrap">
+                                <table class="emp-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Company Name</th>
+                                            <th>Designation</th>
+                                            <th>Department</th>
+                                            <th>Joining Date</th>
+                                            <th>Leaving Date</th>
+                                            <th>Employment Type</th>
+                                            <th>Last Annual CTC</th>
+                                            <th>Leaving Reason</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (Model.PreviousCompanies.Count == 0)
+                                        {
+                                            <tr><td colspan="9" class="emp-empty-cell">No previous employment records added. Click + to add previous company experience.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @for (var i = 0; i < Model.PreviousCompanies.Count; i++)
+                                            {
+                                                var idx = i;
+                                                var row = Model.PreviousCompanies[i];
+                                                <tr>
+                                                    <td>@row.CompanyName</td>
+                                                    <td>@(row.Designation ?? "—")</td>
+                                                    <td>@(row.Department ?? "—")</td>
+                                                    <td>@row.JoinedOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)</td>
+                                                    <td>@row.LeftOn.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)</td>
+                                                    <td>@(row.EmploymentType ?? "—")</td>
+                                                    <td>@(row.LastAnnualCtc is { } ctc ? $"₹{ctc:N0}" : "—")</td>
+                                                    <td>@OptionName(MasterCategories.LeavingReason, row.LeavingReasonCode)</td>
+                                                    <td class="emp-row-actions">
+                                                        <button type="button" class="emp-act-link" @onclick="() => EditPreviousCompany(idx)">
+                                                            <HrIcon Name="edit" Size="14" /> Edit
+                                                        </button>
+                                                        <button type="button" class="emp-act-link danger" @onclick="() => RemovePreviousCompany(idx)">
+                                                            <HrIcon Name="trash" Size="14" /> Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (ActiveSection == SecBank)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="landmark" Size="18" /> <span>Bank Details</span></h2>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Account Holder Name</span>
+                                    <input type="text" @bind="Model.Bank.AccountHolderName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Bank Name</span>
+                                    <input type="text" @bind="Model.Bank.BankName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Account Number</span>
+                                    <input type="text" maxlength="18"
+                                           placeholder="@(string.IsNullOrWhiteSpace(Model.Bank.MaskedAccountNumber) ? "" : $"Saved {Model.Bank.MaskedAccountNumber}")"
+                                           @bind="Model.Bank.AccountNumber" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">IFSC Code</span>
+                                    <input type="text" maxlength="11" @bind="Model.Bank.Ifsc" placeholder="HDFC0001234" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Branch Name</span>
+                                    <input type="text" @bind="Model.Bank.BranchName" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Account Type</span>
+                                    <select @bind="Model.Bank.AccountType">
+                                        <option value="">Select</option>
+                                        @foreach (var kind in BankAccountTypes.All)
+                                        {
+                                            <option @key="kind" value="@kind">@kind</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+
+                            <hr class="emp-divider" />
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Transfer Salary Slip By</span>
+                                    <select @bind="Model.Bank.TransferSalarySlipBy">
+                                        <option value=""></option>
+                                        <option value="Email">Email</option>
+                                        <option value="WhatsApp">WhatsApp</option>
+                                        <option value="SMS">SMS</option>
+                                        <option value="Portal">Portal</option>
+                                        <option value="None">None</option>
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Salary Format</span>
+                                    <select @bind="Model.Bank.SalaryFormat">
+                                        <option value=""></option>
+                                        <option value="NEFT">NEFT</option>
+                                        <option value="IMPS">IMPS</option>
+                                        <option value="RTGS">RTGS</option>
+                                        <option value="Cheque">Cheque</option>
+                                        <option value="Cash">Cash</option>
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Salary Account</span>
+                                    <select @bind="Model.Bank.SalaryAccountCode">
+                                        <option value=""></option>
+                                        @foreach (var acct in CompanyAccounts)
+                                        {
+                                            <option @key="acct.Id" value="@acct.Id">@acct.AccountLabel (@acct.BankName)</option>
+                                        }
+                                        @foreach (var opt in Options(MasterCategories.AllowanceType))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Advanced Account</span>
+                                    <select @bind="Model.Bank.AdvancedAccountCode">
+                                        <option value=""></option>
+                                        @foreach (var acct in CompanyAccounts)
+                                        {
+                                            <option @key="acct.Id" value="@acct.Id">@acct.AccountLabel (@acct.BankName)</option>
+                                        }
+                                        @foreach (var opt in Options(MasterCategories.AdvanceType))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+                        }
+                        else if (ActiveSection == SecPfEsi)
+                        {
+                            <label class="emp-scheme-toggle">
+                                <HrIcon Name="clipboard-list" Size="18" />
+                                <input type="checkbox" @bind="Model.PfEsi.PfApplicable" />
+                                <span>PF Scheme Applicable</span>
+                            </label>
+
+                            <div class="emp-sub-banner">P.F Details</div>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">P.F Join Date</span>
+                                    <input type="date" @bind="Model.PfEsi.PfJoinedOn" disabled="@(!Model.PfEsi.PfApplicable)" />
+                                </label>
+
+                                <div class="emp-field">
+                                    <span class="emp-label">P.F Scheme</span>
+                                    <div class="emp-radio-row">
+                                        <label>
+                                            <input type="radio" name="pf-scheme" value="Govt"
+                                                   checked="@(Model.PfEsi.PfScheme != "Company")"
+                                                   disabled="@(!Model.PfEsi.PfApplicable)"
+                                                   @onchange="@(() => Model.PfEsi.PfScheme = "Govt")" />
+                                            <span>Govt.</span>
+                                        </label>
+                                        <label>
+                                            <input type="radio" name="pf-scheme" value="Company"
+                                                   checked="@(Model.PfEsi.PfScheme == "Company")"
+                                                   disabled="@(!Model.PfEsi.PfApplicable)"
+                                                   @onchange="@(() => Model.PfEsi.PfScheme = "Company")" />
+                                            <span>Company</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">P.F Number</span>
+                                    <input type="text" maxlength="30" @bind="Model.PfEsi.PfNumber" disabled="@(!Model.PfEsi.PfApplicable)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">UAN (Universal A/C No.)</span>
+                                    <input type="text" maxlength="12" @bind="Model.PfEsi.UanNumber" disabled="@(!Model.PfEsi.PfApplicable)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Employee E.P.F Account</span>
+                                    <select @bind="Model.PfEsi.EpfAccountCode" disabled="@(!Model.PfEsi.PfApplicable)">
+                                        <option value="">Deduction Account</option>
+                                        @foreach (var opt in Options(MasterCategories.DeductionType))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+
+                            <label class="emp-scheme-toggle emp-mt-md">
+                                <HrIcon Name="clipboard-list" Size="18" />
+                                <input type="checkbox" @bind="Model.PfEsi.EsiApplicable" />
+                                <span>ESI Scheme Applicable</span>
+                            </label>
+
+                            <div class="emp-sub-banner">ESI Details</div>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">ESI Number</span>
+                                    <input type="text" maxlength="17" @bind="Model.PfEsi.EsiNumber" disabled="@(!Model.PfEsi.EsiApplicable)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Employee ESI Account</span>
+                                    <select @bind="Model.PfEsi.EsiAccountCode" disabled="@(!Model.PfEsi.EsiApplicable)">
+                                        <option value="">Select Account</option>
+                                        @foreach (var opt in Options(MasterCategories.DeductionType))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+                        }
+                        else if (ActiveSection == SecSalary)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="coins" Size="18" /> <span>Salary Details</span></h2>
+
+                            <div class="emp-grid-4 emp-align-center">
+                                <label class="emp-check-inline">
+                                    <input type="checkbox" @bind="Model.Salary.ApplyMaxLimit" />
+                                    <span>Apply Allowances/Deductions on Maxlimit</span>
+                                </label>
+
+                                <div class="emp-field">
+                                    <select @bind="Model.Salary.EpfEmployerShareRule">
+                                        <option value="Apply EPF Employer Share on Maxlimit">Apply EPF Employer Share on Maxlimit</option>
+                                        <option value="Apply EPF Employer Share on Actual">Apply EPF Employer Share on Actual</option>
+                                        <option value="None">Do Not Apply Employer Share</option>
+                                    </select>
+                                </div>
+
+                                <label class="emp-check-inline">
+                                    <input type="checkbox" @bind="Model.Salary.EpfOnBasicOnly" />
+                                    <span>EPF on Basic Only</span>
+                                </label>
+
+                                <label class="emp-check-inline">
+                                    <input type="checkbox" @bind="Model.Salary.ExcludeFromPayroll" />
+                                    <span>Exclude Employee for PayRoll Processing</span>
+                                </label>
+                            </div>
+
+                            <div class="emp-grid-4 emp-mt-sm">
+                                <label class="emp-field">
+                                    <span class="emp-label">Grade Name</span>
+                                    <select value="@Model.Salary.GradeCode" @onchange="OnSalaryGradeChanged">
+                                        <option value=""></option>
+                                        @foreach (var opt in Options(MasterCategories.Grade))
+                                        {
+                                            <option @key="opt.Code" value="@opt.Code">@opt.Name</option>
+                                        }
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Basic Salary</span>
+                                    <input type="number" min="0" step="1"
+                                           value="@Model.Salary.BasicSalary.ToString(CultureInfo.InvariantCulture)"
+                                           @onchange="OnBasicSalaryChanged" />
+                                </label>
+                            </div>
+
+                            <hr class="emp-divider" />
+
+                            <h2 class="emp-sec-title"><HrIcon Name="file-text" Size="18" /> <span>Allowances/Deduction Details</span></h2>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Allowance/Deduction Name</span>
+                                    <select value="@CompEditor.Code" @onchange="OnComponentPicked">
+                                        <option value="">Select</option>
+                                        <optgroup label="Allowances">
+                                            @foreach (var opt in Options(MasterCategories.AllowanceType))
+                                            {
+                                                <option @key="'A' + opt.Code" value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </optgroup>
+                                        <optgroup label="Deductions">
+                                            @foreach (var opt in Options(MasterCategories.DeductionType))
+                                            {
+                                                <option @key="'D' + opt.Code" value="@opt.Code">@opt.Name</option>
+                                            }
+                                        </optgroup>
+                                    </select>
+                                </label>
+
+                                <div class="emp-field">
+                                    <span class="emp-label">Calculation On</span>
+                                    <div class="emp-radio-row">
+                                        <label>
+                                            <input type="radio" name="calc-on" value="Salary"
+                                                   checked="@(CompEditor.CalculationOn != "Amount")"
+                                                   @onchange="@(() => CompEditor.CalculationOn = "Salary")" />
+                                            <span>Salary</span>
+                                        </label>
+                                        <label>
+                                            <input type="radio" name="calc-on" value="Amount"
+                                                   checked="@(CompEditor.CalculationOn == "Amount")"
+                                                   @onchange="@(() => CompEditor.CalculationOn = "Amount")" />
+                                            <span>Amount</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Vary On Days</span>
+                                    <select value="@(CompEditor.VaryOnDays ? "True" : "False")"
+                                            @onchange="@(e => CompEditor.VaryOnDays = e.Value?.ToString() == "True")">
+                                        <option value="True">True</option>
+                                        <option value="False">False</option>
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Allowance/Deduction Amt.</span>
+                                    <input type="number" min="0" step="0.01" @bind="CompEditor.Amount" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">On Basic/Gross</span>
+                                    <select @bind="CompEditor.OnBasicOrGross">
+                                        <option value="Basic">Basic</option>
+                                        <option value="Gross">Gross</option>
+                                        <option value="On Amount">On Amount</option>
+                                    </select>
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Percentage</span>
+                                    <select value="@(CompEditor.IsPercentage ? "True" : "False")"
+                                            @onchange="@(e => CompEditor.IsPercentage = e.Value?.ToString() == "True")">
+                                        <option value="True">True</option>
+                                        <option value="False">False</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <div class="emp-salary-bar">
+                                <div class="emp-salary-bar-left">
+                                    <button type="button" class="emp-btn-sm @(string.IsNullOrWhiteSpace(CompEditor.Code) ? "disabled" : "primary")"
+                                            disabled="@string.IsNullOrWhiteSpace(CompEditor.Code)"
+                                            @onclick="CommitSalaryComponent">
+                                        @(EditingCompIndex >= 0 ? "Update" : "Add")
+                                    </button>
+                                    <button type="button" class="emp-btn-sm muted" @onclick="ResetComponentEditor">Cancel</button>
+                                </div>
+                                <button type="button" class="emp-chart-btn" @onclick="() => ShowSalaryChart = !ShowSalaryChart">
+                                    <HrIcon Name="bar-chart" Size="15" /> <span>Salary Chart</span>
+                                </button>
+                            </div>
+
+                            @if (ShowSalaryChart)
+                            {
+                                <div class="emp-salary-chart-card">
+                                    <div class="emp-salary-chart-head">
+                                        <strong>Monthly Salary Breakdown</strong>
+                                        <button type="button" class="emp-act-link" @onclick="() => ShowSalaryChart = false">Close</button>
+                                    </div>
+                                    <div class="emp-salary-summary-grid">
+                                        <div><span>Basic Salary</span><strong>₹@Model.Salary.BasicSalary.ToString("N0", CultureInfo.InvariantCulture)</strong></div>
+                                        <div><span>Total Allowances</span><strong>₹@TotalAllowances.ToString("N0", CultureInfo.InvariantCulture)</strong></div>
+                                        <div><span>Gross Monthly</span><strong>₹@GrossSalary.ToString("N0", CultureInfo.InvariantCulture)</strong></div>
+                                        <div><span>Total Deductions</span><strong>₹@TotalDeductions.ToString("N0", CultureInfo.InvariantCulture)</strong></div>
+                                        <div class="net"><span>Net Take-Home</span><strong>₹@NetSalary.ToString("N0", CultureInfo.InvariantCulture)</strong></div>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="emp-table-wrap">
+                                <table class="emp-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Percentage</th>
+                                            <th>Amount</th>
+                                            <th>Gross Basic</th>
+                                            <th>Vary On Days</th>
+                                            <th>Call On Salary</th>
+                                            <th>C Amount</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (Model.Salary.Components.Count == 0)
+                                        {
+                                            <tr><td colspan="8" class="emp-empty-cell">Select a Grade Name or add allowances and deductions above.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @for (var i = 0; i < Model.Salary.Components.Count; i++)
+                                            {
+                                                var idx = i;
+                                                var row = Model.Salary.Components[i];
+                                                <tr>
+                                                    <td>@row.Name</td>
+                                                    <td>@(row.IsPercentage ? "True" : "False")</td>
+                                                    <td>@row.Amount.ToString("0.##", CultureInfo.InvariantCulture)</td>
+                                                    <td>@row.OnBasicOrGross</td>
+                                                    <td>@(row.VaryOnDays ? "True" : "False")</td>
+                                                    <td>@row.CalculationOn</td>
+                                                    <td>@row.CalculatedAmount.ToString("0.##", CultureInfo.InvariantCulture)</td>
+                                                    <td class="emp-row-actions">
+                                                        <button type="button" class="emp-act-link" @onclick="() => EditSalaryComponent(idx)">
+                                                            <HrIcon Name="edit" Size="14" /> Edit
+                                                        </button>
+                                                        <button type="button" class="emp-act-link danger" @onclick="() => RemoveSalaryComponent(idx)">
+                                                            <HrIcon Name="trash" Size="14" /> Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (ActiveSection == SecDocuments)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="file-text" Size="18" /> <span>Documents</span></h2>
+
+                            <div class="emp-add-bar">
+                                <button type="button" class="emp-plus-btn" title="Add Document Row" @onclick="AddDocumentRow">
+                                    <HrIcon Name="plus" Size="18" StrokeWidth="2.4" />
+                                </button>
+                            </div>
+
+                            <datalist id="emp-doc-categories">
+                                @foreach (var opt in Options(MasterCategories.DocumentCategory))
+                                {
+                                    <option value="@opt.Name"></option>
+                                }
+                            </datalist>
+
+                            <div class="emp-table-wrap">
+                                <table class="emp-table emp-doc-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Document Type</th>
+                                            <th>Document ID</th>
+                                            <th>Issue Date</th>
+                                            <th>Expiry Date</th>
+                                            <th>File</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (var i = 0; i < Model.Documents.Count; i++)
+                                        {
+                                            var idx = i;
+                                            var doc = Model.Documents[i];
+                                            <tr>
+                                                <td>
+                                                    <input type="text" list="emp-doc-categories" @bind="doc.DocumentType" placeholder="e.g. Aadhaar, PAN, Resume" />
+                                                </td>
+                                                <td>
+                                                    <input type="text" @bind="doc.DocumentNumber" />
+                                                </td>
+                                                <td>
+                                                    <input type="date" @bind="doc.IssuedOn" />
+                                                </td>
+                                                <td>
+                                                    <input type="date" @bind="doc.ExpiresOn" />
+                                                </td>
+                                                <td>
+                                                    <div class="emp-doc-file-box">
+                                                        <InputFile OnChange="e => UploadDocumentRowAsync(idx, e)" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" />
+                                                        @if (!string.IsNullOrWhiteSpace(doc.PublicUrl))
+                                                        {
+                                                            <a href="@doc.PublicUrl" target="_blank" rel="noopener" class="emp-doc-uploaded">@doc.FileName</a>
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <button type="button" class="emp-remove-btn" @onclick="() => RemoveDocumentRow(idx)">Remove</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (ActiveSection == SecLeaving)
+                        {
+                            <h2 class="emp-sec-title"><HrIcon Name="door-open" Size="18" /> <span>Leaving Details</span></h2>
+
+                            <label class="emp-check-bold">
+                                <input type="checkbox" @bind="Model.Leaving.HasLeftOrganization" />
+                                <span>Employee Has Left The Organization</span>
+                            </label>
+
+                            <div class="emp-sub-banner">Resignation Details</div>
+
+                            <datalist id="emp-leaving-reasons">
+                                @foreach (var opt in Options(MasterCategories.LeavingReason))
+                                {
+                                    <option value="@opt.Name"></option>
+                                }
+                            </datalist>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Resignation Submit Date</span>
+                                    <input type="date" @bind="Model.Leaving.ResignationSubmitDate" disabled="@(!Model.Leaving.HasLeftOrganization)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Final Settlement Date</span>
+                                    <input type="date" @bind="Model.Leaving.FinalSettlementDate" disabled="@(!Model.Leaving.HasLeftOrganization)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Leaving Reason</span>
+                                    <input type="text" list="emp-leaving-reasons" @bind="Model.Leaving.LeavingReasonCode" disabled="@(!Model.Leaving.HasLeftOrganization)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Leaving Remarks</span>
+                                    <input type="text" @bind="Model.Leaving.LeavingRemarks" disabled="@(!Model.Leaving.HasLeftOrganization)" />
+                                </label>
+                            </div>
+
+                            <label class="emp-check-bold emp-mt-md">
+                                <input type="checkbox" @bind="Model.Leaving.IsDismissed" />
+                                <span>Dismiss/Terminate</span>
+                            </label>
+
+                            <div class="emp-sub-banner">Dismiss/Terminate Details</div>
+
+                            <div class="emp-grid-4">
+                                <label class="emp-field">
+                                    <span class="emp-label">Dismiss Date</span>
+                                    <input type="date" @bind="Model.Leaving.DismissDate" disabled="@(!Model.Leaving.IsDismissed)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Dismiss Remarks</span>
+                                    <input type="text" @bind="Model.Leaving.DismissRemarks" disabled="@(!Model.Leaving.IsDismissed)" />
+                                </label>
+
+                                <label class="emp-field">
+                                    <span class="emp-label">Settlement Date</span>
+                                    <input type="date" @bind="Model.Leaving.SettlementDate" disabled="@(!Model.Leaving.IsDismissed)" />
+                                </label>
+                            </div>
+                        }
+                    </div>
+
+                    <footer class="emp-footer-actions">
+                        <a class="emp-footer-btn cancel" href="@Href("people")">Cancel</a>
+                        <button type="button" class="emp-footer-btn draft" disabled="@IsSaving" @onclick="() => SaveAsync(true)">
+                            @(IsSaving && SavingDraft ? "Saving…" : "Save Draft")
+                        </button>
+                        <button type="button" class="emp-footer-btn submit" disabled="@IsSaving" @onclick="() => SaveAsync(false)">
+                            @(IsSaving && !SavingDraft ? "Submitting…" : "Submit")
+                        </button>
+                    </footer>
                 </div>
-            </EditForm>
+            </div>
         }
-    </ChildContent>
-</HrPageShell>
+    </main>
+</div>
 
 @code {
     [Parameter] public string? TenantKey { get; set; }
+    [Parameter] public long? EmployeeId { get; set; }
 
-    private sealed record CreatedEmployee(string Name, string Number);
+    private const string SecPersonal = "personal";
+    private const string SecEducation = "education";
+    private const string SecPreviousCompany = "previous";
+    private const string SecBank = "bank";
+    private const string SecPfEsi = "pfesi";
+    private const string SecSalary = "salary";
+    private const string SecDocuments = "documents";
+    private const string SecLeaving = "leaving";
 
-    private CreateEmployeeRequest Form = new();
+    private sealed record SectionTab(string Key, string Label, string Icon);
+
+    private static readonly SectionTab[] SectionTabs =
+    [
+        new(SecPersonal, "Personal Details", "user"),
+        new(SecEducation, "Education Details", "graduation-cap"),
+        new(SecPreviousCompany, "Previous Company", "building"),
+        new(SecBank, "Bank Details", "landmark"),
+        new(SecPfEsi, "PF/ESI Details", "clipboard-list"),
+        new(SecSalary, "Salary Details", "coins"),
+        new(SecDocuments, "Documents", "file-text"),
+        new(SecLeaving, "Leaving Details", "door-open")
+    ];
+
+    private string ActiveSection = SecPersonal;
+    private EmployeeWorkspaceDto Model = new();
     private IReadOnlyList<MasterOptionDto> AllOptions = [];
     private IReadOnlyList<DesignationDto> DesignationList = [];
-    private IReadOnlyList<EmployeeDirectoryRowDto> Directory = [];
-    private IReadOnlyList<EmployeeListItemDto> Duplicates = [];
-    private string DesignationCode = string.Empty;
+    private IReadOnlyList<GradeSalaryStructureDto> GradeStructures = [];
+    private IReadOnlyList<CompanyBankAccountDto> CompanyAccounts = [];
+    private IReadOnlyList<EmployeeExplorerRowDto> AllEmployees = [];
 
+    private long? LoadedEmployeeId = -1;
     private bool IsLoading = true;
     private bool IsSaving;
-    private bool CanCreate;
+    private bool SavingDraft;
+    private bool IsUploadingPhoto;
+    private bool CanEdit;
+    private bool ShowSalaryChart;
     private string? LoadError;
     private string? SaveError;
-    private CreatedEmployee? Created;
 
-    private IEnumerable<EmployeeDirectoryRowDto> Managers => Directory.Where(row => row.IsActive);
+    // Inline editors
+    private EmployeeEducationItemDto? EduEditor;
+    private int EditingEduIndex = -1;
 
-    protected override async Task OnInitializedAsync()
+    private EmployeePreviousCompanyItemDto? PrevEditor;
+    private int EditingPrevIndex = -1;
+
+    private EmployeeSalaryAllowanceRowDto CompEditor = new();
+    private int EditingCompIndex = -1;
+
+    private bool IsEditing => EmployeeId is > 0;
+
+    private string EmployeeLabel
     {
+        get
+        {
+            var full = $"{Model.Personal.FirstName} {Model.Personal.LastName}".Trim();
+            return string.IsNullOrWhiteSpace(full) ? Model.Personal.EmployeeNumber : full;
+        }
+    }
+
+    private string PageHeading => IsEditing ? $"Employee — {EmployeeLabel}" : "New Employee";
+
+    private IEnumerable<MasterOptionDto> TopDepartments =>
+        Options(MasterCategories.Department).Where(o => string.IsNullOrWhiteSpace(o.ParentCode));
+
+    private IEnumerable<MasterOptionDto> SubDepartments =>
+        string.IsNullOrWhiteSpace(Model.Personal.DepartmentCode)
+            ? []
+            : Options(MasterCategories.Department).Where(o => Same(o.ParentCode, Model.Personal.DepartmentCode));
+
+    private IEnumerable<EmployeeExplorerRowDto> ManagerCandidates =>
+        AllEmployees.Where(e => e.IsActive && !e.IsDraft && e.EmployeeId != EmployeeId?.ToString(CultureInfo.InvariantCulture));
+
+    private decimal TotalAllowances =>
+        Model.Salary.Components.Where(c => c.Kind == SalaryComponentKinds.Allowance).Sum(c => c.CalculatedAmount);
+
+    private decimal GrossSalary => Model.Salary.BasicSalary + TotalAllowances;
+
+    private decimal TotalDeductions =>
+        Model.Salary.Components.Where(c => c.Kind != SalaryComponentKinds.Allowance).Sum(c => c.CalculatedAmount);
+
+    private decimal NetSalary => Math.Max(0m, GrossSalary - TotalDeductions);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (LoadedEmployeeId == EmployeeId && !IsLoading)
+        {
+            return;
+        }
+
+        LoadedEmployeeId = EmployeeId;
+        await LoadWorkspaceAsync();
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        IsLoading = true;
+        LoadError = null;
+        SaveError = null;
+        EduEditor = null;
+        PrevEditor = null;
+        ResetComponentEditor();
+
         try
         {
             var caller = await PortalCaller.GetAsync();
-            CanCreate = await PortalCaller.HasAsync("EMPLOYEES.CREATE");
+            var canCreate = await PortalCaller.HasAsync("EMPLOYEES.CREATE");
+            var canManageEmp = await PortalCaller.HasAsync("EMPLOYEES.EMPLOYMENT_MANAGE");
+            var canManageOrg = await PortalCaller.HasAsync("EMPLOYEES.ORGANISATION_MANAGE");
+            CanEdit = IsEditing ? (canCreate || canManageEmp || canManageOrg) : canCreate;
 
             AllOptions = await Masters.GetAllAsync(caller.TenantKey);
-            DesignationList = (await Designations.GetAllAsync(caller.TenantKey)).Where(item => item.IsActive).ToList();
+            DesignationList = (await Designations.GetAllAsync(caller.TenantKey)).Where(d => d.IsActive).ToList();
+            GradeStructures = await GradeSalaries.GetAllAsync(caller.TenantKey);
 
-            if (await PortalCaller.HasAsync("EMPLOYEES.VIEW"))
+            if (await PortalCaller.HasAsync("PAYROLL.VIEW"))
             {
-                Directory = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery());
+                CompanyAccounts = (await BankAccounts.GetCompanyAccountsAsync(caller)).Where(c => c.IsActive).ToList();
             }
 
-            ResetForm();
+            if (await PortalCaller.HasAsync("EMPLOYEES.VIEW") || canCreate)
+            {
+                AllEmployees = await Workspace.GetExplorerAsync(caller, new EmployeeExplorerQuery());
+            }
+
+            if (IsEditing && EmployeeId is { } empId)
+            {
+                var loaded = await Workspace.GetWorkspaceAsync(caller, empId.ToString(CultureInfo.InvariantCulture));
+                if (loaded is null)
+                {
+                    LoadError = "Employee record was not found.";
+                    return;
+                }
+                Model = loaded;
+            }
+            else
+            {
+                Model = await Workspace.GetNewTemplateAsync(caller);
+                ActiveSection = SecPersonal;
+            }
         }
         catch (Exception ex)
         {
@@ -259,79 +1360,394 @@
         }
     }
 
-    private void ResetForm()
+    private void OnDepartmentChanged(ChangeEventArgs e)
     {
-        Form = new CreateEmployeeRequest
+        Model.Personal.DepartmentCode = e.Value?.ToString() ?? string.Empty;
+        if (!SubDepartments.Any(s => Same(s.Code, Model.Personal.SubDepartmentCode)))
         {
-            EmployeeNumber = SuggestNumber(),
-            JoinedOn = DateOnly.FromDateTime(DateTime.Today),
-            EmploymentType = "FULL_TIME"
-        };
-        DesignationCode = string.Empty;
-        Duplicates = [];
-        SaveError = null;
-    }
-
-    private void StartAnother()
-    {
-        Created = null;
-        ResetForm();
-    }
-
-    private void ChooseDesignation(ChangeEventArgs args)
-    {
-        DesignationCode = args.Value?.ToString() ?? string.Empty;
-        var designation = DesignationList.FirstOrDefault(item => item.Code == DesignationCode);
-
-        Form.JobTitle = designation?.Name;
-        if (designation is not null)
-        {
-            Form.GradeCode = designation.GradeCode;
-            Form.DepartmentCode = designation.DepartmentCode;
+            Model.Personal.SubDepartmentCode = null;
         }
     }
 
-    private async Task SubmitAsync()
+    private Task OnDesignationChangedAsync(ChangeEventArgs e)
     {
-        IsSaving = true;
+        var code = e.Value?.ToString() ?? string.Empty;
+        Model.Personal.DesignationCode = code;
+
+        var des = DesignationList.FirstOrDefault(d => Same(d.Code, code));
+        if (des is not null)
+        {
+            Model.Personal.JobTitle = des.Name;
+            if (string.IsNullOrWhiteSpace(Model.Personal.DepartmentCode))
+            {
+                Model.Personal.DepartmentCode = des.DepartmentCode;
+            }
+
+            if (!string.IsNullOrWhiteSpace(des.GradeCode) && string.IsNullOrWhiteSpace(Model.Salary.GradeCode))
+            {
+                ApplyGradeDefaults(des.GradeCode);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void OnSalaryGradeChanged(ChangeEventArgs e)
+    {
+        var gradeCode = e.Value?.ToString() ?? string.Empty;
+        ApplyGradeDefaults(gradeCode);
+    }
+
+    private void ApplyGradeDefaults(string gradeCode)
+    {
+        Model.Salary.GradeCode = string.IsNullOrWhiteSpace(gradeCode) ? null : gradeCode;
+        var structure = GradeStructures.FirstOrDefault(g => Same(g.GradeCode, gradeCode));
+        if (structure is not null && structure.IsConfigured)
+        {
+            Model.Salary.BasicSalary = structure.BasicMonthly;
+            Model.Salary.Components = structure.Components.Select(c => new EmployeeSalaryAllowanceRowDto
+            {
+                Code = c.ComponentCode,
+                Name = c.ComponentName ?? c.ComponentCode,
+                Kind = c.Kind,
+                IsPercentage = c.CalculationType != SalaryCalculationTypes.Fixed,
+                Amount = c.Value,
+                OnBasicOrGross = c.CalculationType == SalaryCalculationTypes.PercentOfGross ? "Gross" : "Basic",
+                VaryOnDays = true,
+                CalculationOn = "Salary"
+            }).ToList();
+            Model.Salary.Recalculate();
+        }
+    }
+
+    private void OnBasicSalaryChanged(ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0)
+        {
+            Model.Salary.BasicSalary = parsed;
+            Model.Salary.Recalculate();
+        }
+    }
+
+    private void OnComponentPicked(ChangeEventArgs e)
+    {
+        var code = e.Value?.ToString() ?? string.Empty;
+        CompEditor.Code = code;
+
+        var allowance = Options(MasterCategories.AllowanceType).FirstOrDefault(o => Same(o.Code, code));
+        if (allowance is not null)
+        {
+            CompEditor.Name = allowance.Name;
+            CompEditor.Kind = SalaryComponentKinds.Allowance;
+            return;
+        }
+
+        var deduction = Options(MasterCategories.DeductionType).FirstOrDefault(o => Same(o.Code, code));
+        if (deduction is not null)
+        {
+            CompEditor.Name = deduction.Name;
+            CompEditor.Kind = SalaryComponentKinds.Deduction;
+        }
+    }
+
+    private void CommitSalaryComponent()
+    {
+        if (string.IsNullOrWhiteSpace(CompEditor.Code))
+        {
+            return;
+        }
+
+        var item = new EmployeeSalaryAllowanceRowDto
+        {
+            Code = CompEditor.Code,
+            Name = string.IsNullOrWhiteSpace(CompEditor.Name) ? CompEditor.Code : CompEditor.Name,
+            Kind = CompEditor.Kind,
+            IsPercentage = CompEditor.IsPercentage,
+            Amount = CompEditor.Amount,
+            OnBasicOrGross = CompEditor.OnBasicOrGross,
+            VaryOnDays = CompEditor.VaryOnDays,
+            CalculationOn = CompEditor.CalculationOn
+        };
+
+        if (EditingCompIndex >= 0 && EditingCompIndex < Model.Salary.Components.Count)
+        {
+            Model.Salary.Components[EditingCompIndex] = item;
+        }
+        else
+        {
+            Model.Salary.Components.Add(item);
+        }
+
+        Model.Salary.Recalculate();
+        ResetComponentEditor();
+    }
+
+    private void EditSalaryComponent(int index)
+    {
+        var row = Model.Salary.Components[index];
+        EditingCompIndex = index;
+        CompEditor = new EmployeeSalaryAllowanceRowDto
+        {
+            Code = row.Code,
+            Name = row.Name,
+            Kind = row.Kind,
+            IsPercentage = row.IsPercentage,
+            Amount = row.Amount,
+            OnBasicOrGross = row.OnBasicOrGross,
+            VaryOnDays = row.VaryOnDays,
+            CalculationOn = row.CalculationOn,
+            CalculatedAmount = row.CalculatedAmount
+        };
+    }
+
+    private void RemoveSalaryComponent(int index)
+    {
+        Model.Salary.Components.RemoveAt(index);
+        Model.Salary.Recalculate();
+        if (EditingCompIndex == index)
+        {
+            ResetComponentEditor();
+        }
+    }
+
+    private void ResetComponentEditor()
+    {
+        EditingCompIndex = -1;
+        CompEditor = new EmployeeSalaryAllowanceRowDto
+        {
+            IsPercentage = true,
+            OnBasicOrGross = "Basic",
+            VaryOnDays = true,
+            CalculationOn = "Salary"
+        };
+    }
+
+    // ---- Education editor ---------------------------------------------------
+
+    private void StartAddEducation()
+    {
+        EditingEduIndex = -1;
+        EduEditor = new EmployeeEducationItemDto { PassingYear = DateTime.Today.Year };
+    }
+
+    private void EditEducation(int index)
+    {
+        var row = Model.Education[index];
+        EditingEduIndex = index;
+        EduEditor = new EmployeeEducationItemDto
+        {
+            Id = row.Id,
+            QualificationCode = row.QualificationCode,
+            EducationLevelCode = row.EducationLevelCode,
+            Specialisation = row.Specialisation,
+            Institute = row.Institute,
+            BoardOrUniversity = row.BoardOrUniversity,
+            PassingYear = row.PassingYear,
+            Cgpa = row.Cgpa,
+            GradeLetter = row.GradeLetter,
+            Percentage = row.Percentage,
+            CertificationName = row.CertificationName,
+            CertificationValidTill = row.CertificationValidTill,
+            IsHighest = row.IsHighest
+        };
+    }
+
+    private void CommitEducation()
+    {
+        if (EduEditor is null) return;
+        if (string.IsNullOrWhiteSpace(EduEditor.Institute))
+        {
+            SaveError = "Enter the Institute / University Name for the education entry.";
+            return;
+        }
+        SaveError = null;
+
+        if (EditingEduIndex >= 0 && EditingEduIndex < Model.Education.Count)
+        {
+            Model.Education[EditingEduIndex] = EduEditor;
+        }
+        else
+        {
+            Model.Education.Add(EduEditor);
+        }
+
+        EduEditor = null;
+        EditingEduIndex = -1;
+    }
+
+    private void CancelEducation()
+    {
+        EduEditor = null;
+        EditingEduIndex = -1;
+    }
+
+    private void RemoveEducation(int index) => Model.Education.RemoveAt(index);
+
+    // ---- Previous Company editor --------------------------------------------
+
+    private void StartAddPreviousCompany()
+    {
+        EditingPrevIndex = -1;
+        PrevEditor = new EmployeePreviousCompanyItemDto();
+    }
+
+    private void EditPreviousCompany(int index)
+    {
+        var row = Model.PreviousCompanies[index];
+        EditingPrevIndex = index;
+        PrevEditor = new EmployeePreviousCompanyItemDto
+        {
+            Id = row.Id,
+            CompanyName = row.CompanyName,
+            Designation = row.Designation,
+            Department = row.Department,
+            PreviousEmployeeId = row.PreviousEmployeeId,
+            JoinedOn = row.JoinedOn,
+            LeftOn = row.LeftOn,
+            EmploymentType = row.EmploymentType,
+            LastAnnualCtc = row.LastAnnualCtc,
+            ReportingManagerName = row.ReportingManagerName,
+            LeavingReasonCode = row.LeavingReasonCode,
+            NoticeServed = row.NoticeServed,
+            Remarks = row.Remarks
+        };
+    }
+
+    private void CommitPreviousCompany()
+    {
+        if (PrevEditor is null) return;
+        if (string.IsNullOrWhiteSpace(PrevEditor.CompanyName))
+        {
+            SaveError = "Enter the Company Name for the previous employment entry.";
+            return;
+        }
+        if (PrevEditor.LeftOn < PrevEditor.JoinedOn)
+        {
+            SaveError = "Leaving Date cannot be earlier than Joining Date.";
+            return;
+        }
+        SaveError = null;
+
+        if (EditingPrevIndex >= 0 && EditingPrevIndex < Model.PreviousCompanies.Count)
+        {
+            Model.PreviousCompanies[EditingPrevIndex] = PrevEditor;
+        }
+        else
+        {
+            Model.PreviousCompanies.Add(PrevEditor);
+        }
+
+        PrevEditor = null;
+        EditingPrevIndex = -1;
+    }
+
+    private void CancelPreviousCompany()
+    {
+        PrevEditor = null;
+        EditingPrevIndex = -1;
+    }
+
+    private void RemovePreviousCompany(int index) => Model.PreviousCompanies.RemoveAt(index);
+
+    // ---- Documents & Photo upload -------------------------------------------
+
+    private void AddDocumentRow() => Model.Documents.Add(new EmployeeDocumentItemDto());
+
+    private void RemoveDocumentRow(int index)
+    {
+        Model.Documents.RemoveAt(index);
+        if (Model.Documents.Count == 0)
+        {
+            Model.Documents.Add(new EmployeeDocumentItemDto());
+        }
+    }
+
+    private async Task UploadPhotoAsync(InputFileChangeEventArgs e)
+    {
+        SaveError = null;
+        IsUploadingPhoto = true;
+
+        try
+        {
+            var file = e.File;
+            var caller = await PortalCaller.GetAsync();
+            await using var stream = file.OpenReadStream(5L * 1024 * 1024);
+            var uploaded = await Workspace.UploadMediaAsync(caller, file.Name, file.ContentType, file.Size, stream, imageOnly: true);
+            Model.Personal.AvatarUrl = uploaded.PublicUrl;
+            Toast.Success("Profile photo uploaded.");
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            IsUploadingPhoto = false;
+        }
+    }
+
+    private async Task UploadDocumentRowAsync(int index, InputFileChangeEventArgs e)
+    {
+        if (index < 0 || index >= Model.Documents.Count) return;
         SaveError = null;
 
         try
         {
-            if (string.IsNullOrWhiteSpace(Form.Phone))
-            {
-                SaveError = "Enter the employee's phone number.";
-                return;
-            }
-
+            var file = e.File;
             var caller = await PortalCaller.GetAsync();
+            await using var stream = file.OpenReadStream(10L * 1024 * 1024);
+            var uploaded = await Workspace.UploadMediaAsync(caller, file.Name, file.ContentType, file.Size, stream, imageOnly: false);
 
-            // Email, phone and employee number each identify one employee, so a match blocks
-            // the save until it is changed. The service enforces the same rule.
-            Duplicates = await Employees.CheckDuplicateAsync(caller, Form, CancellationToken.None);
-            if (Duplicates.Count > 0)
+            var row = Model.Documents[index];
+            row.MediaAssetId = uploaded.MediaAssetId;
+            row.FileName = uploaded.FileName;
+            row.PublicUrl = uploaded.PublicUrl;
+            if (string.IsNullOrWhiteSpace(row.DocumentType))
             {
-                SaveError = "This employee already exists. Use a different email, phone number or employee number.";
-                return;
+                row.DocumentType = Path.GetFileNameWithoutExtension(file.Name);
             }
+            Toast.Success($"Uploaded \"{uploaded.FileName}\".");
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+    }
 
-            var name = Form.LegalName.Trim();
-            var number = Form.EmployeeNumber.Trim();
-            Form.ManagerEmployeeId = string.IsNullOrWhiteSpace(Form.ManagerEmployeeId) ? null : Form.ManagerEmployeeId;
+    // ---- Save Draft / Submit ------------------------------------------------
 
-            await Employees.CreateAsync(caller, Form, CancellationToken.None);
-            Created = new CreatedEmployee(name, number);
-            Toast.Success($"Employee {name} ({number}) saved successfully.");
+    private async Task SaveAsync(bool asDraft)
+    {
+        IsSaving = true;
+        SavingDraft = asDraft;
+        SaveError = null;
 
-            Directory = await Reports.GetDirectoryAsync(caller, new EmployeeReportQuery());
+        try
+        {
+            var caller = await PortalCaller.GetAsync();
+            var savedId = await Workspace.SaveWorkspaceAsync(caller, Model, asDraft);
+            Model.EmployeeId = savedId;
+            Model.IsDraft = asDraft;
+
+            var label = $"{Model.Personal.FirstName} {Model.Personal.LastName}".Trim();
+            if (asDraft)
+            {
+                Toast.Success($"Draft saved for {label}.");
+                if (!IsEditing && long.TryParse(savedId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var newId))
+                {
+                    LoadedEmployeeId = newId;
+                    Navigation.NavigateTo(Href($"employees/{newId}"), replace: true);
+                }
+            }
+            else
+            {
+                Toast.Success($"Employee {label} ({Model.Personal.EmployeeNumber}) saved successfully.");
+                Navigation.NavigateTo(Href("people"));
+            }
         }
         catch (MobileAccessDeniedException denied)
         {
-            SaveError = $"This needs {denied.Permission}.";
-        }
-        catch (Exception ex) when (ex is MobileValidationException or MobileNotFoundException)
-        {
-            SaveError = ex.Message;
+            SaveError = $"Permission required: {denied.Permission}.";
         }
         catch (Exception ex)
         {
@@ -343,24 +1759,18 @@
         }
     }
 
-    /// <summary>The next number after the highest "PREFIX-digits" in use, keeping the prefix and width.</summary>
-    private string SuggestNumber()
-    {
-        var best = Directory
-            .Select(row => Regex.Match(row.EmployeeNumber, @"^([A-Za-z]+-)(\d+)$"))
-            .Where(match => match.Success)
-            .Select(match => (Prefix: match.Groups[1].Value, Digits: match.Groups[2].Value, Value: long.Parse(match.Groups[2].Value)))
-            .OrderByDescending(item => item.Value)
-            .FirstOrDefault();
+    private IEnumerable<MasterOptionDto> Options(string category) =>
+        AllOptions.Where(o => o.Category == category && o.IsActive)
+            .OrderBy(o => o.SortOrder).ThenBy(o => o.Name);
 
-        return best.Prefix is null
-            ? "EMP-0001"
-            : best.Prefix + (best.Value + 1).ToString().PadLeft(best.Digits.Length, '0');
+    private string OptionName(string category, string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return "—";
+        return AllOptions.FirstOrDefault(o => o.Category == category && Same(o.Code, code))?.Name ?? code;
     }
 
-    private IEnumerable<MasterOptionDto> Options(string category) =>
-        AllOptions.Where(option => option.Category == category && option.IsActive)
-            .OrderBy(option => option.SortOrder).ThenBy(option => option.Name);
+    private static bool Same(string? left, string? right) =>
+        string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private string Href(string suffix) =>
         string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";

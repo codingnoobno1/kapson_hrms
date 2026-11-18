@@ -32,10 +32,12 @@ public sealed class EmployeeStatutoryEntity
     public string? PfNumber { get; set; }
     /// <summary>12-digit Universal Account Number.</summary>
     public string? UanNumber { get; set; }
+    public string? EpfAccountCode { get; set; }
 
     public bool EsiApplicable { get; set; }
     /// <summary>17-digit ESI insurance number.</summary>
     public string? EsiNumber { get; set; }
+    public string? EsiAccountCode { get; set; }
 
     public string? UpdatedBy { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
@@ -58,6 +60,8 @@ public sealed class EmployeeEducationEntity
     /// <summary>Out of 10.</summary>
     public decimal? Cgpa { get; set; }
     public string? GradeLetter { get; set; }
+    public string? CertificationName { get; set; }
+    public DateOnly? CertificationValidTill { get; set; }
     public bool IsHighest { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
 }
@@ -99,5 +103,53 @@ public sealed class EmployeeAddressEntity
     public string? StateCode { get; set; }
     public string? CountryCode { get; set; }
     public string? Pincode { get; set; }
+    public DateTimeOffset UpdatedUtc { get; set; }
+}
+
+/// <summary>Per-employee salary flags and allowance/deduction overrides (Salary Details tab).</summary>
+public sealed class EmployeeSalaryConfigEntity
+{
+    public long Id { get; set; }
+    public string TenantKey { get; set; } = string.Empty;
+    public long EmployeeId { get; set; }
+    public decimal BasicSalary { get; set; }
+    public bool ApplyMaxLimit { get; set; } = true;
+    public string? EpfEmployerShareRule { get; set; }
+    public bool EpfOnBasicOnly { get; set; } = true;
+    public string ComponentsJson { get; set; } = "[]";
+    public DateTimeOffset UpdatedUtc { get; set; }
+}
+
+/// <summary>Uploaded employee document row (Documents tab).</summary>
+public sealed class EmployeeDocumentEntity
+{
+    public long Id { get; set; }
+    public string TenantKey { get; set; } = string.Empty;
+    public long EmployeeId { get; set; }
+    public string DocumentType { get; set; } = string.Empty;
+    public string? DocumentNumber { get; set; }
+    public DateOnly? IssuedOn { get; set; }
+    public DateOnly? ExpiresOn { get; set; }
+    public long? MediaAssetId { get; set; }
+    public string? OriginalFileName { get; set; }
+    public string? PublicUrl { get; set; }
+    public DateTimeOffset UpdatedUtc { get; set; }
+}
+
+/// <summary>Resignation / dismissal exit record (Leaving Details tab).</summary>
+public sealed class EmployeeLeavingEntity
+{
+    public long Id { get; set; }
+    public string TenantKey { get; set; } = string.Empty;
+    public long EmployeeId { get; set; }
+    public bool HasLeftOrganization { get; set; }
+    public DateOnly? ResignationSubmitDate { get; set; }
+    public DateOnly? FinalSettlementDate { get; set; }
+    public string? LeavingReasonCode { get; set; }
+    public string? LeavingRemarks { get; set; }
+    public bool IsDismissed { get; set; }
+    public DateOnly? DismissDate { get; set; }
+    public string? DismissRemarks { get; set; }
+    public DateOnly? SettlementDate { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
 }

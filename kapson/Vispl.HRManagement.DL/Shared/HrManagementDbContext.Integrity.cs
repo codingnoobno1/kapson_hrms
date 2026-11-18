@@ -44,7 +44,9 @@ public sealed partial class HrManagementDbContext
             entity.Property(item => item.PfScheme).HasMaxLength(10);
             entity.Property(item => item.PfNumber).HasMaxLength(30);
             entity.Property(item => item.UanNumber).HasMaxLength(12);
+            entity.Property(item => item.EpfAccountCode).HasMaxLength(80);
             entity.Property(item => item.EsiNumber).HasMaxLength(17);
+            entity.Property(item => item.EsiAccountCode).HasMaxLength(80);
             entity.Property(item => item.UpdatedBy).HasMaxLength(450);
             entity.Property(item => item.RowVersion).IsRowVersion();
             entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
@@ -69,6 +71,7 @@ public sealed partial class HrManagementDbContext
             entity.Property(item => item.Percentage).HasPrecision(5, 2);
             entity.Property(item => item.Cgpa).HasPrecision(4, 2);
             entity.Property(item => item.GradeLetter).HasMaxLength(5);
+            entity.Property(item => item.CertificationName).HasMaxLength(200);
             entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -114,6 +117,46 @@ public sealed partial class HrManagementDbContext
             entity.Property(item => item.StateCode).HasMaxLength(64);
             entity.Property(item => item.CountryCode).HasMaxLength(64);
             entity.Property(item => item.Pincode).HasMaxLength(10);
+            entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmployeeSalaryConfigEntity>(entity =>
+        {
+            entity.ToTable("EmployeeSalaryConfigs", "employee", table =>
+            {
+                table.HasCheckConstraint("CK_EmployeeSalaryConfigs_Basic", "[BasicSalary] >= 0");
+            });
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantKey, item.EmployeeId }).IsUnique();
+            entity.Property(item => item.TenantKey).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.BasicSalary).HasPrecision(18, 2);
+            entity.Property(item => item.EpfEmployerShareRule).HasMaxLength(80);
+            entity.Property(item => item.ComponentsJson).HasColumnType("nvarchar(max)").IsRequired();
+            entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmployeeDocumentEntity>(entity =>
+        {
+            entity.ToTable("EmployeeDocuments", "employee");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantKey, item.EmployeeId });
+            entity.Property(item => item.TenantKey).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.DocumentType).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.DocumentNumber).HasMaxLength(100);
+            entity.Property(item => item.OriginalFileName).HasMaxLength(260);
+            entity.Property(item => item.PublicUrl).HasMaxLength(500);
+            entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmployeeLeavingEntity>(entity =>
+        {
+            entity.ToTable("EmployeeLeavingDetails", "employee");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.TenantKey, item.EmployeeId }).IsUnique();
+            entity.Property(item => item.TenantKey).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.LeavingReasonCode).HasMaxLength(80);
+            entity.Property(item => item.LeavingRemarks).HasMaxLength(500);
+            entity.Property(item => item.DismissRemarks).HasMaxLength(500);
             entity.HasOne<EmployeeEntity>().WithMany().HasForeignKey(item => item.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         });
     }

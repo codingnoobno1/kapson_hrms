@@ -9,137 +9,159 @@
 @inject IMasterDataService Masters
 @inject HrPortalCaller PortalCaller
 
-<PageTitle>Organisation Hierarchy | HR Portal</PageTitle>
+<PageTitle>Organization Hierarchy | HR Portal</PageTitle>
 
-@*
-    No reference layout exists for this destination (scopedocs/web-portal/10 §1). Two views of the
-    same people: who reports to whom, and where each person sits by division and department.
-*@
-<HrPageShell ActivePage="people" TenantKey="@TenantKey"
-             Kicker="EMPLOYEE" Title="Organisation Hierarchy"
-             Subtitle="Reporting lines and placement, from the employee records."
-             Error="@LoadError">
-    <Filters>
-        <label>
-            Division
-            <select value="@DivisionCode" @onchange="args => ChangeAsync(() => DivisionCode = Text(args))">
-                <option value="">All divisions</option>
-                @foreach (var option in Options(MasterCategories.Division))
-                {
-                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                }
-            </select>
-        </label>
-        <label>
-            Department
-            <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
-                <option value="">All departments</option>
-                @foreach (var option in Options(MasterCategories.Department))
-                {
-                    <option @key="option.Code" value="@option.Code">@option.Name</option>
-                }
-            </select>
-        </label>
-        <label>
-            Status
-            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="">Everyone</option>
-            </select>
-        </label>
-        <label>
-            Search
-            <input type="search" placeholder="Name, number or title" value="@Search"
-                   @onchange="args => ChangeAsync(() => Search = Text(args))" />
-        </label>
-        <a class="hr-button small" href="@Href("employees/new")">+ Add New Employee</a>
-    </Filters>
+<div class="hr-app">
+    <HrNav ActivePage="people" TenantKey="@TenantKey" />
 
-    <ChildContent>
-        @if (IsLoading)
+    <main class="hr-page">
+        <h1 class="hr-title-blue">Organization Hierarchy</h1>
+        <nav class="hr-breadcrumb" aria-label="Breadcrumb">
+            <a href="@Href("dashboard")">Dashboard</a>
+            <span aria-hidden="true"><HrIcon Name="chevron-right" Size="15" StrokeWidth="2.2" /></span>
+            <strong>Organization Hierarchy</strong>
+        </nav>
+
+        <HrEmployeeTabs ActiveTab="hierarchy" TenantKey="@TenantKey" />
+
+        @if (LoadError is not null)
         {
-            <p class="hr-empty">Loading organisation…</p>
+            <div class="hr-alert error">@LoadError</div>
         }
-        else if (Hierarchy is { } org)
+        else
         {
-            <section class="org-tiles">
-                <div><span>Employees</span><strong>@org.TotalEmployees</strong></div>
-                <div><span>Managers</span><strong>@org.ManagerCount</strong><small>with direct reports</small></div>
-                <div class="@(org.WithoutManager > 0 ? "warn" : null)"><span>No manager recorded</span><strong>@org.WithoutManager</strong></div>
-                <div><span>Reporting levels</span><strong>@org.MaxDepth</strong></div>
-            </section>
-
-            @if (org.TotalEmployees > 0 && org.ManagerCount == 0)
-            {
-                <div class="hr-alert warning compact">
-                    No reporting lines are recorded yet, so everyone appears at the top level. Set "Reports to" on each person from People.
-                </div>
-            }
-
-            <div class="pay-tabs" role="tablist">
-                <button type="button" role="tab" class="@(View == OrgView.Reporting ? "active" : null)" @onclick="() => View = OrgView.Reporting">
-                    🧭 Reporting lines <span>@org.ReportingRoots.Count</span>
-                </button>
-                <button type="button" role="tab" class="@(View == OrgView.Divisions ? "active" : null)" @onclick="() => View = OrgView.Divisions">
-                    🏢 By division <span>@org.Divisions.Count</span>
-                </button>
-            </div>
-
-            <section class="hr-panel org-panel">
-                @if (org.TotalEmployees == 0)
-                {
-                    <p class="hr-empty">Nobody matches these filters.</p>
-                }
-                else if (View == OrgView.Reporting)
-                {
-                    <div class="org-tree-tools">
-                        <button class="hr-button small ghost" type="button" @onclick="ExpandAll">Expand all</button>
-                        <button class="hr-button small ghost" type="button" @onclick="() => CollapseAll(org)">Collapse all</button>
-                    </div>
-                    <ul class="org-tree">
-                        @foreach (var root in org.ReportingRoots)
-                        {
-                            @NodeView(root)
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <div class="org-divisions">
-                        @foreach (var division in org.Divisions)
-                        {
-                            <article class="org-division" @key="division.DivisionCode">
-                                <header>
-                                    <h3>🏢 @division.DivisionName</h3>
-                                    <span>@division.EmployeeCount</span>
-                                </header>
-                                @foreach (var department in division.Departments)
+            <section class="hr-panel emp-explorer-card emp-mt-sm">
+                <div class="emp-explorer-toolbar">
+                    <div class="emp-explorer-filters">
+                        <label class="emp-field">
+                            <span class="emp-label">Division</span>
+                            <select value="@DivisionCode" @onchange="args => ChangeAsync(() => DivisionCode = Text(args))">
+                                <option value="">All Divisions</option>
+                                @foreach (var option in Options(MasterCategories.Division))
                                 {
-                                    <div class="org-department" @key="division.DivisionCode + department.DepartmentCode">
-                                        <h4>📁 @department.DepartmentName <small>@department.Employees.Count</small></h4>
-                                        <ul>
-                                            @foreach (var person in department.Employees)
-                                            {
-                                                <li @key="person.EmployeeId">
-                                                    <span class="pay-avatar c@(PayrollFormat.AvatarTone(person.DisplayName))">@PayrollFormat.Initials(person.DisplayName)</span>
-                                                    <span class="org-person">
-                                                        <strong>@person.DisplayName</strong>
-                                                        <small>@person.EmployeeNumber · @(person.JobTitle ?? "No designation")@(person.ManagerName is { } manager ? " · reports to " + manager : null)</small>
-                                                    </span>
-                                                </li>
-                                            }
-                                        </ul>
-                                    </div>
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
                                 }
-                            </article>
+                            </select>
+                        </label>
+                        <label class="emp-field">
+                            <span class="emp-label">Department</span>
+                            <select value="@DepartmentCode" @onchange="args => ChangeAsync(() => DepartmentCode = Text(args))">
+                                <option value="">All Departments</option>
+                                @foreach (var option in Options(MasterCategories.Department).Where(d => string.IsNullOrWhiteSpace(d.ParentCode)))
+                                {
+                                    <option @key="option.Code" value="@option.Code">@option.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="emp-field">
+                            <span class="emp-label">Status</span>
+                            <select value="@Status" @onchange="args => ChangeAsync(() => Status = Text(args))">
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="">Everyone</option>
+                            </select>
+                        </label>
+                        <label class="emp-field">
+                            <span class="emp-label">Search</span>
+                            <input type="search" placeholder="Name, number or title…" value="@Search"
+                                   @onchange="args => ChangeAsync(() => Search = Text(args))" />
+                        </label>
+                    </div>
+                    <div class="emp-explorer-actions">
+                        <a class="hr-button small" href="@Href("employees/new")">
+                            <HrIcon Name="plus" Size="14" StrokeWidth="2.4" /> Add New Employee
+                        </a>
+                    </div>
+                </div>
+
+                @if (IsLoading)
+                {
+                    <p class="hr-empty">Loading organization hierarchy…</p>
+                }
+                else if (Hierarchy is { } org)
+                {
+                    <section class="org-tiles">
+                        <div><span>Employees</span><strong>@org.TotalEmployees</strong></div>
+                        <div><span>Managers</span><strong>@org.ManagerCount</strong><small>with direct reports</small></div>
+                        <div class="@(org.WithoutManager > 0 ? "warn" : null)"><span>No manager recorded</span><strong>@org.WithoutManager</strong></div>
+                        <div><span>Reporting levels</span><strong>@org.MaxDepth</strong></div>
+                    </section>
+
+                    @if (org.TotalEmployees > 0 && org.ManagerCount == 0)
+                    {
+                        <div class="hr-alert warning compact">
+                            No reporting lines are recorded yet, so everyone appears at the top level. Set "Reporting to Manager" on each employee from Employees Explorer.
+                        </div>
+                    }
+
+                    <div class="pay-tabs" role="tablist">
+                        <button type="button" role="tab" class="@(View == OrgView.Reporting ? "active" : null)" @onclick="() => View = OrgView.Reporting">
+                            🧭 Reporting lines <span>@org.ReportingRoots.Count</span>
+                        </button>
+                        <button type="button" role="tab" class="@(View == OrgView.Divisions ? "active" : null)" @onclick="() => View = OrgView.Divisions">
+                            🏢 By division <span>@org.Divisions.Count</span>
+                        </button>
+                    </div>
+
+                    <div class="org-panel">
+                        @if (org.TotalEmployees == 0)
+                        {
+                            <p class="hr-empty">Nobody matches these filters.</p>
+                        }
+                        else if (View == OrgView.Reporting)
+                        {
+                            <div class="org-tree-tools">
+                                <button class="hr-button small ghost" type="button" @onclick="ExpandAll">Expand all</button>
+                                <button class="hr-button small ghost" type="button" @onclick="() => CollapseAll(org)">Collapse all</button>
+                            </div>
+                            <ul class="org-tree">
+                                @foreach (var root in org.ReportingRoots)
+                                {
+                                    @NodeView(root)
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <div class="org-divisions">
+                                @foreach (var division in org.Divisions)
+                                {
+                                    <article class="org-division" @key="division.DivisionCode">
+                                        <header>
+                                            <h3>🏢 @division.DivisionName</h3>
+                                            <span>@division.EmployeeCount</span>
+                                        </header>
+                                        @foreach (var department in division.Departments)
+                                        {
+                                            <div class="org-department" @key="division.DivisionCode + department.DepartmentCode">
+                                                <h4>📁 @department.DepartmentName <small>@department.Employees.Count</small></h4>
+                                                <ul>
+                                                    @foreach (var person in department.Employees)
+                                                    {
+                                                        <li @key="person.EmployeeId">
+                                                            <span class="pay-avatar c@(PayrollFormat.AvatarTone(person.DisplayName))">@PayrollFormat.Initials(person.DisplayName)</span>
+                                                            <span class="org-person">
+                                                                <strong>@person.DisplayName</strong>
+                                                                <small>@person.EmployeeNumber · @(person.JobTitle ?? "No designation")@(person.ManagerName is { } manager ? " · reports to " + manager : null)</small>
+                                                            </span>
+                                                            <a class="emp-act-link" href="@Href($"employees/{person.EmployeeId}")" title="Edit employee">
+                                                                <HrIcon Name="edit" Size="13" />
+                                                            </a>
+                                                        </li>
+                                                    }
+                                                </ul>
+                                            </div>
+                                        }
+                                    </article>
+                                }
+                            </div>
                         }
                     </div>
                 }
             </section>
         }
-    </ChildContent>
-</HrPageShell>
+    </main>
+</div>
 
 @code {
     [Parameter] public string? TenantKey { get; set; }
@@ -192,7 +214,7 @@
         catch (MobileAccessDeniedException denied)
         {
             Hierarchy = null;
-            LoadError = $"This account does not hold {denied.Permission}, so the organisation cannot be shown.";
+            LoadError = $"This account does not hold {denied.Permission}, so the organization cannot be shown.";
         }
         catch (Exception ex)
         {
@@ -261,6 +283,9 @@
                 {
                     <span class="hr-tag tone-neutral">Inactive</span>
                 }
+                <a class="emp-act-link" href="@Href($"employees/{person.EmployeeId}")" title="Edit employee">
+                    <HrIcon Name="edit" Size="14" /> Edit
+                </a>
             </div>
             @if (isOpen)
             {

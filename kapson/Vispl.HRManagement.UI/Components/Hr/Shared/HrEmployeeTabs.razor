@@ -1,0 +1,22 @@
+<div class="emp-top-tabs" role="navigation" aria-label="Employee module views">
+    <a class="emp-top-tab @(ActiveTab == "explorer" ? "active" : null)" href="@Href("people")">
+        <HrIcon Name="clipboard-list" Size="16" />
+        <span>Employees Explorer</span>
+    </a>
+    <a class="emp-top-tab @(ActiveTab == "hierarchy" ? "active" : null)" href="@Href("employees/hierarchy")">
+        <HrIcon Name="building" Size="16" />
+        <span>Organization Hierarchy</span>
+    </a>
+    <a class="emp-top-tab @(ActiveTab == "editor" ? "active" : null)" href="@Href("employees/new")">
+        <HrIcon Name="plus" Size="16" StrokeWidth="2.4" />
+        <span>Add New Employee</span>
+    </a>
+</div>
+
+@code {
+    [Parameter] public string ActiveTab { get; set; } = "explorer";
+    [Parameter] public string? TenantKey { get; set; }
+
+    private string Href(string suffix) =>
+        string.IsNullOrWhiteSpace(TenantKey) ? $"/hr/{suffix}" : $"/hr/{TenantKey}/{suffix}";
+}
